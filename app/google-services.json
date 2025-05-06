@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "95600173813",
+    "firebase_url": "https://inkrollers-13595-default-rtdb.firebaseio.com",
+    "project_id": "inkrollers-13595",
+    "storage_bucket": "inkrollers-13595.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:95600173813:android:ab10c56ebf916e31871bbc",
+        "android_client_info": {
+          "package_name": "com.spiritwisestudios.inkrollers"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBPXc_z6Ed481dk1Vx3r8nv_S20iejviPM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

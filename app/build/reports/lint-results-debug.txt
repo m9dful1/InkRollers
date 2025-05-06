@@ -1,0 +1,213 @@
+/Users/cthul/AndroidStudioProjects/InkRollers/app/src/main/java/com/spiritwisestudios/inkrollers/GameView.kt:260: Error: Overriding method should call super.draw [MissingSuperCall]
+  override fun draw(c:Canvas){
+               ~~~~
+
+   Explanation for issues of type "MissingSuperCall":
+   Some methods, such as View#onDetachedFromWindow, require that you also call
+   the super implementation as part of your method.
+
+/Users/cthul/AndroidStudioProjects/InkRollers/app/src/main/java/com/spiritwisestudios/inkrollers/TimerHudView.kt:41: Warning: Implicitly using the default locale is a common source of bugs: Use String.format(Locale, ...) instead [DefaultLocale]
+        val timeText = String.format("%02d:%02d", minutes, seconds)
+                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "DefaultLocale":
+   Calling String#toLowerCase() or #toUpperCase() without specifying an
+   explicit locale is a common source of bugs. The reason for that is that
+   those methods will use the current locale on the user's device, and even
+   though the code appears to work correctly when you are developing the app,
+   it will fail in some locales. For example, in the Turkish locale, the
+   uppercase replacement for i is not I.
+
+   If you want the methods to just perform ASCII replacement, for example to
+   convert an enum name, call String#toUpperCase(Locale.ROOT) instead. If you
+   really want to use the current locale, call
+   String#toUpperCase(Locale.getDefault()) instead.
+
+   https://developer.android.com/reference/java/util/Locale.html#default_locale
+
+/Users/cthul/AndroidStudioProjects/InkRollers/app/build.gradle:12: Warning: Not targeting the latest versions of Android; compatibility modes apply. Consider testing and updating this version. Consult the android.os.Build.VERSION_CODES javadoc for details. [OldTargetApi]
+      targetSdk 34 
+      ~~~~~~~~~~~~
+
+   Explanation for issues of type "OldTargetApi":
+   When your application or sdk runs on a version of Android that is more
+   recent than your targetSdkVersion specifies that it has been tested with,
+   various compatibility modes kick in. This ensures that your application
+   continues to work, but it may look out of place. For example, if the
+   targetSdkVersion is less than 14, your app may get an option button in the
+   UI.
+
+   To fix this issue, set the targetSdkVersion to the highest available value.
+   Then test your app to make sure everything works correctly. You may want to
+   consult the compatibility notes to see what changes apply to each version
+   you are adding support for:
+   https://developer.android.com/reference/android/os/Build.VERSION_CODES.html
+   as well as follow this guide:
+   https://developer.android.com/distribute/best-practices/develop/target-sdk.
+   html
+
+   https://developer.android.com/distribute/best-practices/develop/target-sdk.html
+
+/Users/cthul/AndroidStudioProjects/InkRollers/app/build.gradle:8: Warning: A newer version of compileSdkVersion than 34 is available: 35 [GradleDependency]
+  compileSdk 34
+  ~~~~~~~~~~~~~
+/Users/cthul/AndroidStudioProjects/InkRollers/app/build.gradle:19: Warning: A newer version of org.jetbrains.kotlin:kotlin-stdlib-jdk8 than 1.9.0 is available: 2.1.0 [GradleDependency]
+  implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
+                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/cthul/AndroidStudioProjects/InkRollers/app/build.gradle:20: Warning: A newer version of androidx.core:core-ktx than 1.12.0 is available: 1.16.0 [GradleDependency]
+  implementation 'androidx.core:core-ktx:1.12.0'
+                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/cthul/AndroidStudioProjects/InkRollers/app/build.gradle:25: Warning: A newer version of com.google.firebase:firebase-bom than 33.1.2 is available: 33.13.0 [GradleDependency]
+  implementation platform('com.google.firebase:firebase-bom:33.1.2') // Updated BoM version slightly
+                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "GradleDependency":
+   This detector looks for usages of libraries where the version you are using
+   is not the current stable release. Using older versions is fine, and there
+   are cases where you deliberately want to stick with an older version.
+   However, you may simply not be aware that a more recent version is
+   available, and that is what this lint check helps find.
+
+/Users/cthul/AndroidStudioProjects/InkRollers/app/src/main/AndroidManifest.xml:15: Warning: Should not restrict activity to fixed orientation. This may not be suitable for different form factors, causing the app to be letterboxed. [DiscouragedApi]
+        android:screenOrientation="sensorLandscape"> 
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/cthul/AndroidStudioProjects/InkRollers/app/src/main/AndroidManifest.xml:26: Warning: Should not restrict activity to fixed orientation. This may not be suitable for different form factors, causing the app to be letterboxed. [DiscouragedApi]
+        android:screenOrientation="sensorLandscape">
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "DiscouragedApi":
+   Discouraged APIs are allowed and are not deprecated, but they may be unfit
+   for common use (e.g. due to slow performance or subtle behavior).
+
+/Users/cthul/AndroidStudioProjects/InkRollers/app/src/main/res/layout/activity_home.xml:55: Warning: Missing autofillHints attribute [Autofill]
+        <EditText
+         ~~~~~~~~
+
+   Explanation for issues of type "Autofill":
+   Specify an autofillHints attribute when targeting SDK version 26 or higher
+   or explicitly specify that the view is not important for autofill. Your app
+   can help an autofill service classify the data correctly by providing the
+   meaning of each view that could be autofillable, such as views representing
+   usernames, passwords, credit card fields, email addresses, etc.
+
+   The hints can have any value, but it is recommended to use predefined
+   values like 'username' for a username or 'creditCardNumber' for a credit
+   card number. For a list of all predefined autofill hint constants, see the
+   AUTOFILL_HINT_ constants in the View reference at
+   https://developer.android.com/reference/android/view/View.html.
+
+   You can mark a view unimportant for autofill by specifying an
+   importantForAutofill attribute on that view or a parent view. See
+   https://developer.android.com/reference/android/view/View.html#setImportant
+   ForAutofill(int).
+
+   https://developer.android.com/guide/topics/text/autofill.html
+
+/Users/cthul/AndroidStudioProjects/InkRollers/app/src/main/java/com/spiritwisestudios/inkrollers/PaintSurface.kt:9: Warning: Use the KTX function createBitmap instead? [UseKtx]
+  private val bmp=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888)
+                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/cthul/AndroidStudioProjects/InkRollers/app/src/main/java/com/spiritwisestudios/inkrollers/PaintSurface.kt:17: Warning: Use the KTX extension function Bitmap.get instead? [UseKtx]
+  fun getPixelColor(x:Int,y:Int):Int = bmp.getPixel(x,y)
+                                       ~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "UseKtx":
+   The Android KTX libraries decorates the Android platform SDK as well as
+   various libraries with more convenient extension functions available from
+   Kotlin, allowing you to use default parameters, named parameters, and
+   more.
+
+   Available options:
+
+   **remove-defaults** (default is true):
+   Whether to skip arguments that match the defaults provided by the extension.
+
+   Extensions often provide default values for some of the parameters. For example:
+   ```kotlin
+   fun Path.readLines(charset: Charset = Charsets.UTF_8): List<String> { return Files.readAllLines(this, charset) }
+   ```
+   This lint check will by default automatically omit parameters that match the default, so if your code was calling ```kotlin
+   Files.readAllLines(file, Charset.UTF_8)
+   ```
+   lint would replace this with
+   ```kotlin
+   file.readLines()
+   ```
+   rather than
+   ```kotlin
+   file.readLines(Charset.UTF_8
+   ```
+   You can turn this behavior off using this option.
+
+   To configure this option, use a `lint.xml` file with an <option> like this:
+
+   ```xml
+   <lint>
+       <issue id="UseKtx">
+           <option name="remove-defaults" value="true" />
+       </issue>
+   </lint>
+   ```
+
+   **require-present** (default is true):
+   Whether to only offer extensions already available.
+
+   This option lets you only have lint suggest extension replacements if those extensions are already available on the class path (in other words, you're already depending on the library containing the extension method.)
+
+   To configure this option, use a `lint.xml` file with an <option> like this:
+
+   ```xml
+   <lint>
+       <issue id="UseKtx">
+           <option name="require-present" value="true" />
+       </issue>
+   </lint>
+   ```
+
+/Users/cthul/AndroidStudioProjects/InkRollers/app/src/main/java/com/spiritwisestudios/inkrollers/GameView.kt:297: Warning: Custom view GameView overrides onTouchEvent but not performClick [ClickableViewAccessibility]
+  override fun onTouchEvent(e:MotionEvent):Boolean{
+               ~~~~~~~~~~~~
+
+   Explanation for issues of type "ClickableViewAccessibility":
+   If a View that overrides onTouchEvent or uses an OnTouchListener does not
+   also implement performClick and call it when clicks are detected, the View
+   may not handle accessibility actions properly. Logic handling the click
+   actions should ideally be placed in View#performClick as some accessibility
+   services invoke performClick when a click action should occur.
+
+/Users/cthul/AndroidStudioProjects/InkRollers/app/src/main/res/layout/activity_home.xml:14: Warning: Hardcoded string "InkRollers", should use @string resource [HardcodedText]
+        android:text="InkRollers"
+        ~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/cthul/AndroidStudioProjects/InkRollers/app/src/main/res/layout/activity_home.xml:28: Warning: Hardcoded string "Play", should use @string resource [HardcodedText]
+        android:text="Play"
+        ~~~~~~~~~~~~~~~~~~~
+/Users/cthul/AndroidStudioProjects/InkRollers/app/src/main/res/layout/activity_home.xml:53: Warning: Hardcoded string "Host New Game", should use @string resource [HardcodedText]
+            android:text="Host New Game" />
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/cthul/AndroidStudioProjects/InkRollers/app/src/main/res/layout/activity_home.xml:60: Warning: Hardcoded string "Enter Game ID", should use @string resource [HardcodedText]
+            android:hint="Enter Game ID"
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/cthul/AndroidStudioProjects/InkRollers/app/src/main/res/layout/activity_home.xml:71: Warning: Hardcoded string "Join Game", should use @string resource [HardcodedText]
+            android:text="Join Game" />
+            ~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/cthul/AndroidStudioProjects/InkRollers/app/src/main/res/layout/activity_main.xml:47: Warning: Hardcoded string "P2 Toggle", should use @string resource [HardcodedText]
+      android:text="P2 Toggle"
+      ~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/cthul/AndroidStudioProjects/InkRollers/app/src/main/res/layout/activity_main.xml:56: Warning: Hardcoded string "P1 Toggle", should use @string resource [HardcodedText]
+      android:text="P1 Toggle"
+      ~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "HardcodedText":
+   Hardcoding text attributes directly in layout files is bad for several
+   reasons:
+
+   * When creating configuration variations (for example for landscape or
+   portrait) you have to repeat the actual text (and keep it up to date when
+   making changes)
+
+   * The application cannot be translated to other languages by just adding
+   new translations for existing string resources.
+
+   There are quickfixes to automatically extract this hardcoded string into a
+   resource lookup.
+
+1 errors, 19 warnings

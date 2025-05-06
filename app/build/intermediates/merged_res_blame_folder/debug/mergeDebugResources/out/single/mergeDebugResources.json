@@ -1,0 +1,30 @@
+[
+    {
+        "merged": "/Users/cthul/.gradle/daemon/8.11.1/com.spiritwisestudios.inkrollers.app-debug-28:/drawable_ic_launcher_foreground.xml.flat",
+        "source": "/Users/cthul/.gradle/daemon/8.11.1/com.spiritwisestudios.inkrollers.app-main-30:/drawable/ic_launcher_foreground.xml"
+    },
+    {
+        "merged": "/Users/cthul/.gradle/daemon/8.11.1/com.spiritwisestudios.inkrollers.app-debug-28:/layout_activity_main.xml.flat",
+        "source": "/Users/cthul/.gradle/daemon/8.11.1/com.spiritwisestudios.inkrollers.app-main-30:/layout/activity_main.xml"
+    },
+    {
+        "merged": "/Users/cthul/.gradle/daemon/8.11.1/com.spiritwisestudios.inkrollers.app-debug-28:/layout_activity_home.xml.flat",
+        "source": "/Users/cthul/.gradle/daemon/8.11.1/com.spiritwisestudios.inkrollers.app-main-30:/layout/activity_home.xml"
+    },
+    {
+        "merged": "/Users/cthul/.gradle/daemon/8.11.1/com.spiritwisestudios.inkrollers.app-debug-28:/drawable_ic_launcher_background.xml.flat",
+        "source": "/Users/cthul/.gradle/daemon/8.11.1/com.spiritwisestudios.inkrollers.app-main-30:/drawable/ic_launcher_background.xml"
+    },
+    {
+        "merged": "/Users/cthul/.gradle/daemon/8.11.1/com.spiritwisestudios.inkrollers.app-debug-28:/mipmap_ic_launcher_round.xml.flat",
+        "source": "/Users/cthul/.gradle/daemon/8.11.1/com.spiritwisestudios.inkrollers.app-main-30:/mipmap/ic_launcher_round.xml"
+    },
+    {
+        "merged": "/Users/cthul/.gradle/daemon/8.11.1/com.spiritwisestudios.inkrollers.app-debug-28:/mipmap_ic_launcher.xml.flat",
+        "source": "/Users/cthul/.gradle/daemon/8.11.1/com.spiritwisestudios.inkrollers.app-main-30:/mipmap/ic_launcher.xml"
+    },
+    {
+        "merged": "com.spiritwisestudios.inkrollers.app-debug-28:/layout_activity_home.xml.flat",
+        "source": "com.spiritwisestudios.inkrollers.app-main-30:/layout/activity_home.xml"
+    }
+]

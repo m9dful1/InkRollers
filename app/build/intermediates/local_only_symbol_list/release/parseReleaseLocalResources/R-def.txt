@@ -1,0 +1,27 @@
+R_DEF: Internal format may change without notice
+local
+drawable ic_launcher_background
+drawable ic_launcher_foreground
+id btn_toggle
+id btn_toggle_p2
+id button_host_game
+id button_join_game
+id button_play
+id coverage_hud_view
+id editText_game_id
+id game_view
+id ink_hud_view
+id layout_submenu
+id textView_title
+id timer_hud_view
+layout activity_home
+layout activity_main
+mipmap ic_launcher
+mipmap ic_launcher_round
+string firebase_database_url
+string gcm_defaultSenderId
+string google_api_key
+string google_app_id
+string google_crash_reporting_api_key
+string google_storage_bucket
+string project_id
