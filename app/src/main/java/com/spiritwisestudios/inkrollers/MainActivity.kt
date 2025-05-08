@@ -10,6 +10,9 @@ import android.os.Handler
 import android.os.Looper
 import com.spiritwisestudios.inkrollers.TimerHudView
 import com.spiritwisestudios.inkrollers.GameModeManager
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.ktx.auth
+import com.google.firebase.ktx.Firebase
 
 class MainActivity:AppCompatActivity(){
   private lateinit var gameView:GameView
@@ -26,6 +29,9 @@ class MainActivity:AppCompatActivity(){
   private var waitingDialog: AlertDialog? = null
   private var countdownDialog: AlertDialog? = null
   
+  // Add Firebase Auth field
+  private lateinit var auth: FirebaseAuth
+
   companion object {
       private const val TAG = "MainActivity"
   }
@@ -33,12 +39,24 @@ class MainActivity:AppCompatActivity(){
   override fun onCreate(savedInstanceState: Bundle?){
     super.onCreate(savedInstanceState)
     setContentView(R.layout.activity_main)
+
+    // Initialize Firebase Auth
+    auth = Firebase.auth
+
     gameView=findViewById(R.id.game_view)
     inkHudView = findViewById(R.id.ink_hud_view)
     coverageHudView = findViewById(R.id.coverage_hud_view)
     timerHudView = findViewById(R.id.timer_hud_view)
 
     multiplayerManager = MultiplayerManager()
+    
+    // Listen for database permission/connectivity issues
+    multiplayerManager.onDatabaseError = { errorMessage ->
+        runOnUiThread {
+            Toast.makeText(this, "Firebase error: $errorMessage", Toast.LENGTH_LONG).show()
+            Log.e(TAG, "Firebase database error: $errorMessage")
+        }
+    }
     
     // Listen for rematch decision
     multiplayerManager.onRematchDecision = { bothYes ->
@@ -47,7 +65,7 @@ class MainActivity:AppCompatActivity(){
       }
     }
 
-    handleIntentExtras()
+    // Removed: handleIntentExtras() here to prevent duplicate game creation
 
     findViewById<Button>(R.id.btn_toggle).setOnClickListener {
         gameView.getLocalPlayer()?.toggleMode()
@@ -63,6 +81,29 @@ class MainActivity:AppCompatActivity(){
     gameView.onMatchEnd = { didWin ->
       Handler(Looper.getMainLooper()).post { showRematchDialog(didWin) }
     }
+
+    // Sign in anonymously, then proceed with game setup
+    signInAnonymouslyAndProceed()
+  }
+
+  private fun signInAnonymouslyAndProceed() {
+      Log.d(TAG, "Attempting anonymous sign-in...")
+      auth.signInAnonymously()
+          .addOnCompleteListener(this) { task ->
+              if (task.isSuccessful) {
+                  // Sign in success, proceed with game flow
+                  Log.d(TAG, "Anonymous sign-in successful")
+                  val user = auth.currentUser
+                  Log.d(TAG, "Authenticated with UID: ${user?.uid}")
+                  handleIntentExtras() // Now proceed with hosting/joining
+              } else {
+                  // If sign in fails, display a message to the user.
+                  Log.w(TAG, "Anonymous sign-in failed", task.exception)
+                  Toast.makeText(baseContext, "Authentication failed: ${task.exception?.message}",
+                      Toast.LENGTH_SHORT).show()
+                  finish() // Can't play without auth
+              }
+          }
   }
 
   private fun handleIntentExtras() {
@@ -84,30 +125,44 @@ class MainActivity:AppCompatActivity(){
               multiplayerManager.hostGame(initialState, matchDurationMs, mazeComplexity) { success, gameId, gameSettings ->
                   if (success && gameId != null) {
                       this.localPlayerId = multiplayerManager.localPlayerId
-                      // Host doesn't typically need to use gameSettings from its own hostGame callback,
-                      // as it sourced these settings. But the signature must match.
                       Log.d(TAG, "Host game successful. Game ID: $gameId. Settings: Duration=${gameSettings?.durationMs}, Complexity=${gameSettings?.complexity}")
-                      // Show waiting dialog until someone joins
-                      runOnUiThread {
-                          showWaitingForPlayersDialog()
-                          Toast.makeText(this, "Hosting Game: $gameId", Toast.LENGTH_LONG).show()
-                      }
+                      
+                      // Set up player count listener *immediately* after confirmation
                       multiplayerManager.onPlayerCountChanged = { count ->
+                          Log.d(TAG, "Host: onPlayerCountChanged received count: $count") // Add log
                           if (count >= 2) {
                               // Only trigger once
-                              multiplayerManager.onPlayerCountChanged = null
+                              Log.d(TAG, "Host: Player count >= 2, triggering countdown.")
+                              multiplayerManager.onPlayerCountChanged = null // Nullify listener *before* UI action
                               runOnUiThread {
-                                  waitingDialog?.dismiss()
-                                  // Host signals all clients to start countdown and begins countdown
-                                  startPreMatchCountdown(isHost = true)
+                                  if (!isFinishing && !isDestroyed) { // Add check before UI update
+                                     waitingDialog?.dismiss()
+                                     startPreMatchCountdown(isHost = true)
+                                  } else {
+                                     Log.w(TAG, "Host: Activity finishing, cannot start countdown.")
+                                  }
                               }
+                          } else {
+                              Log.d(TAG, "Host: Player count is $count, waiting for more players.")
                           }
                       }
-                      Log.i(TAG, "Hosting successful. Game ID: $gameId, Player ID: ${this.localPlayerId}")
+                      Log.d(TAG, "Host: Player count listener attached.") // Confirm listener attachment
+
+                      // Show waiting dialog and toast *after* setting up listener
+                      runOnUiThread {
+                          if (!isFinishing && !isDestroyed) { // Add check
+                             showWaitingForPlayersDialog()
+                             Toast.makeText(this, "Hosting Game: $gameId", Toast.LENGTH_LONG).show()
+                          } 
+                      }
+                      
+                      Log.i(TAG, "Hosting setup complete. Game ID: $gameId, Player ID: ${this.localPlayerId}")
                   } else {
                       Log.e(TAG, "Failed to host game.")
                       runOnUiThread {
-                          Toast.makeText(this, "Failed to host game", Toast.LENGTH_SHORT).show()
+                           if (!isFinishing && !isDestroyed) { // Add check
+                              Toast.makeText(this, "Failed to host game", Toast.LENGTH_SHORT).show()
+                           } 
                       }
                       finish()
                   }
@@ -288,6 +343,12 @@ class MainActivity:AppCompatActivity(){
 
   // Helper: show dialog for host waiting for other players
   private fun showWaitingForPlayersDialog() {
+      // Check if activity is finishing or destroyed before showing
+      if (isFinishing || isDestroyed) {
+          Log.w(TAG, "Activity is finishing, cannot show waiting dialog.")
+          return
+      }
+      
       // Dismiss any existing dialogs first
       waitingDialog?.dismiss()
       
@@ -302,6 +363,12 @@ class MainActivity:AppCompatActivity(){
 
   // Helper: show dialog for joiner waiting for host
   private fun showWaitingForHostDialog() {
+      // Check if activity is finishing or destroyed before showing
+      if (isFinishing || isDestroyed) {
+          Log.w(TAG, "Activity is finishing, cannot show waiting dialog.")
+          return
+      }
+      
       // Dismiss any existing dialogs first
       waitingDialog?.dismiss()
       
@@ -316,6 +383,13 @@ class MainActivity:AppCompatActivity(){
 
   // Helper: countdown 3-2-1-GO, host signals start when countdown begins
   private fun startPreMatchCountdown(isHost: Boolean) {
+      // Check if activity is finishing or destroyed before showing
+      if (isFinishing || isDestroyed) {
+          Log.w(TAG, "Activity is finishing, cannot show countdown dialog.")
+          // If activity is finishing, we probably shouldn't start the match either
+          return 
+      }
+      
       try {
           Log.d(TAG, "Starting pre-match countdown, isHost=$isHost")
           

@@ -127,6 +127,7 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun startGameActivity(mode: String, gameId: String? = null, timeLimit: Int? = null, mazeComplexity: String? = null) {
+        android.util.Log.d("HomeActivity", "Starting MainActivity with mode: $mode, gameId: $gameId, timeLimit: $timeLimit, mazeComplexity: $mazeComplexity")
         val intent = Intent(this, MainActivity::class.java).apply {
             putExtra(EXTRA_MODE, mode)
             if (mode == MODE_JOIN && gameId != null) {

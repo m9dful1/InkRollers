@@ -483,21 +483,40 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
 
   // --- Existing Methods --- 
   
-  fun pause(){ thread.running=false }
+  fun pause(){ 
+    if (::thread.isInitialized) {
+        thread.running=false 
+    } else {
+        Log.w(TAG, "pause() called but thread is not initialized.")
+    }
+  }
+  
   fun resume(){ 
       if (::thread.isInitialized) {
           if (thread.state == Thread.State.TERMINATED) {
               // Need to handle recreating the thread and potentially restoring game state
               Log.w(TAG, "Thread was terminated. Need to implement thread recreation for resume.")
-              // For now, just mark as running, but it won't restart the old thread.
-              // A proper implementation would likely re-initialize more state.
-              // thread = GameThread(holder, this) // Example: Creating a new thread
+              // For now, just log. A proper implementation would likely re-initialize more state.
+              // Re-create and start a new thread for now - needs careful state management
+              // thread = GameThread(holder, this) 
+              // thread.running = true
               // thread.start()
-          } else {
+          } else if (!thread.running) {
+              Log.d(TAG, "Resuming game thread.")
               thread.running = true 
+              // If thread wasn't alive, start it (shouldn't happen often here unless paused before start)
+              if (!thread.isAlive) {
+                  try {
+                      thread.start()
+                  } catch (e: IllegalThreadStateException) {
+                       Log.e(TAG, "Failed to restart game thread on resume", e)
+                  }
+              }
           }
       } else {
           Log.w(TAG, "resume() called but thread is not initialized.")
+          // If thread isn't initialized, we might need to trigger game setup if appropriate
+          // This depends on the expected state when resume is called before initGame
       }
   }
 
