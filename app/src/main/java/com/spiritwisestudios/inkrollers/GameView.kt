@@ -542,14 +542,19 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
   
   fun resume(){ 
       if (::thread.isInitialized) {
-          if (thread.state == Thread.State.TERMINATED) {
-              // Need to handle recreating the thread and potentially restoring game state
-              Log.w(TAG, "Thread was terminated. Need to implement thread recreation for resume.")
-              // For now, just log. A proper implementation would likely re-initialize more state.
-              // Re-create and start a new thread for now - needs careful state management
-              // thread = GameThread(holder, this) 
-              // thread.running = true
-              // thread.start()
+      if (thread.state == Thread.State.TERMINATED) {
+              // The thread was stopped when the surface was destroyed. Create a
+              // fresh instance so the game can resume correctly.
+              Log.w(TAG, "Game thread terminated. Recreating for resume().")
+
+              thread = GameThread(holder, this)
+              thread.running = true
+              try {
+                  thread.start()
+              } catch (e: Exception) {
+                  Log.e(TAG, "Failed to restart game thread", e)
+              }
+
           } else if (!thread.running) {
               Log.d(TAG, "Resuming game thread.")
               thread.running = true 
