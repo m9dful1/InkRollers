@@ -137,17 +137,5 @@ class Player(
     val shadowRadius = radius * 0.9f
     c.drawCircle(x + radius * 0.2f, y + radius * 0.2f, shadowRadius, shadowPaint)
 
-    // Draw player name
-    if (playerName.isNotEmpty()) {
-        val textPaint = Paint().apply {
-            color = Color.BLACK // Or a contrasting color
-            textSize = PLAYER_RADIUS * 0.7f // Adjust text size based on player radius
-            textAlign = Paint.Align.CENTER
-            isAntiAlias = true
-            typeface = Typeface.DEFAULT_BOLD // Make name bold
-        }
-        // Draw name centered above the player circle
-        c.drawText(playerName, x, y - PLAYER_RADIUS - 10f, textPaint)
-    }
   }
 }

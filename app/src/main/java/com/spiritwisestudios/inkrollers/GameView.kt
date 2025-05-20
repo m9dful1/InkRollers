@@ -2,6 +2,8 @@ package com.spiritwisestudios.inkrollers
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Typeface
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.SurfaceHolder
@@ -265,11 +267,32 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
         // Log.d(TAG, "GameView.draw() - Drawing player $id")
         player.draw(c)
     }
-    
+
     // Draw local joystick only
     // Log.d(TAG, "GameView.draw() - Before localPlayerId?.let for joystick. localPlayerId: $localPlayerId")
     localPlayerId?.let { joysticks[it]?.draw(c) }
     // Log.d(TAG, "GameView.draw() - After joystick draw.")
+
+    drawCornerNames(c)
+  }
+
+  /** Draw the names of the players in the screen corners. */
+  private fun drawCornerNames(canvas: Canvas) {
+      val textPaint = Paint().apply {
+          color = Color.BLACK
+          textSize = 40f
+          isAntiAlias = true
+          typeface = Typeface.DEFAULT_BOLD
+      }
+      val margin = 16f
+      players["player0"]?.playerName?.takeIf { it.isNotEmpty() }?.let { name ->
+          textPaint.textAlign = Paint.Align.LEFT
+          canvas.drawText(name, margin, margin + textPaint.textSize, textPaint)
+      }
+      players["player1"]?.playerName?.takeIf { it.isNotEmpty() }?.let { name ->
+          textPaint.textAlign = Paint.Align.RIGHT
+          canvas.drawText(name, width - margin, height - margin, textPaint)
+      }
   }
   
   override fun onTouchEvent(e:MotionEvent):Boolean{
