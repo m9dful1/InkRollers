@@ -270,8 +270,8 @@ class MultiplayerManager {
                 val gameMazeSeed = snapshot.child("mazeSeed").getValue(Long::class.java)
                 // Get game settings
                 val duration = snapshot.child("matchDurationMs").getValue(Long::class.java) ?: 180000L // Default 3 mins
-                val complxty = snapshot.child("mazeComplexity").getValue(String::class.java) ?: HomeActivity.COMPLEXITY_HIGH
-                gameSettings = GameSettings(duration, complxty)
+                val complexity = snapshot.child("mazeComplexity").getValue(String::class.java) ?: HomeActivity.COMPLEXITY_HIGH
+                gameSettings = GameSettings(duration, complexity)
 
                 if (gameMazeSeed != null) {
                     mazeSeed = gameMazeSeed
