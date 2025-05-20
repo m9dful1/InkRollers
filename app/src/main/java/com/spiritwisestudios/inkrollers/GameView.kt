@@ -16,12 +16,15 @@ import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
 import com.spiritwisestudios.inkrollers.TimerHudView
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.RectF
 
 class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
     SurfaceView(ctx,attrs),SurfaceHolder.Callback, MultiplayerManager.RemoteUpdateListener { // Implement listener
   private lateinit var surface:PaintSurface
   // Use a Map to store players, keyed by their Firebase ID (player0, player1, etc.)
-  private val players = ConcurrentHashMap<String, Player>()
+  val players = ConcurrentHashMap<String, Player>()
   private val joysticks = ConcurrentHashMap<String, VirtualJoystick>() // Also map joysticks by player ID
   private val pendingPlayerStates = ConcurrentHashMap<String, PlayerState>() // Cache for early arrivals
   private var inkHudView: InkHudView? = null
@@ -48,6 +51,9 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
   // Flag to prevent multiple match end notifications
   private var endNotified: Boolean = false
   
+  // Background image for the maze (center-cropped)
+  private val bgBitmap: Bitmap by lazy { BitmapFactory.decodeResource(context.resources, R.drawable.space_bg) }
+  
   companion object {
       private const val TAG = "GameView"
   }
@@ -60,65 +66,75 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
   }
   
   override fun surfaceCreated(h:SurfaceHolder){
+    Log.i(TAG, "surfaceCreated called. SurfaceView size: ${width}x${height}")
     // Only initialize the drawing surface here; actual maze init is deferred until after seed is set
     surface = PaintSurface(width, height)
   }
   
   override fun surfaceDestroyed(h:SurfaceHolder){ 
-      stopThread() // Ensure thread is stopped cleanly when surface is destroyed
-      Log.d(TAG, "Surface destroyed, game thread stopped.")
+    Log.i(TAG, "surfaceDestroyed called. Stopping game thread if running.")
+    stopThread() // Ensure thread is stopped cleanly when surface is destroyed
+    Log.d(TAG, "Surface destroyed, game thread stopped.")
   }
   override fun surfaceChanged(h:SurfaceHolder,f:Int,w:Int,h2:Int){}
   
   /** Stop the game thread and wait for it to finish. */
   fun stopThread() {
-      // Check if thread is initialized and alive before trying to stop
-      if (::thread.isInitialized && thread.isAlive) {
-          var retry = true
-          thread.running = false
-          while (retry) {
-              try {
-                  thread.join() // Wait for thread to die
-                  retry = false
-                  Log.d(TAG, "Game thread stopped and joined.")
-              } catch (e: InterruptedException) {
-                  Log.w(TAG, "Interrupted while joining game thread", e)
-                  // Optionally retry or break
+      synchronized(this) {
+          // Check if thread is initialized and alive before trying to stop
+          if (::thread.isInitialized && thread.isAlive) {
+              Log.d(TAG, "stopThread: Attempting to stop game thread. State: ${thread.state}")
+              var retry = true
+              thread.running = false
+              while (retry) {
+                  try {
+                      thread.join(500)
+                      if (!thread.isAlive) {
+                          retry = false
+                          Log.d(TAG, "Game thread stopped and joined.")
+                      } else {
+                          Log.w(TAG, "Game thread still alive after join timeout. Retrying...")
+                      }
+                  } catch (e: InterruptedException) {
+                      Log.w(TAG, "Interrupted while joining game thread", e)
+                  }
               }
+          } else {
+              Log.d(TAG, "stopThread called but thread not initialized or not alive. State: ${if (::thread.isInitialized) thread.state else "not initialized"}")
           }
-      } else {
-          Log.d(TAG, "stopThread called but thread not initialized or not alive.")
       }
   }
 
   /** Starts the current game thread instance if initialized and not alive. */
   fun startGameLoop() {
-      if (!::thread.isInitialized) {
-          Log.e(TAG, "Cannot start game loop: thread not initialized.")
-          return
-      }
-      if (!thread.isAlive) {
-          try {
-             // We expect the thread to be NEW here after initGame
-             if (thread.state == Thread.State.NEW) {
-                thread.running = true // Set running to true BEFORE starting
-                thread.start()
-                Log.d(TAG, "Game thread started.")
-             } else {
-                 Log.w(TAG, "Attempting to start thread in unexpected state: ${thread.state}. Re-initializing.")
-                 // If not NEW, something went wrong. Re-init might be needed.
-                 // For now, just log. A more robust solution might re-run parts of initGame.
-                 // As a safety measure, create and start a new one
-                 thread = GameThread(holder, this)
-                 thread.running = true
-                 thread.start()
-             }
-          } catch(e: IllegalThreadStateException) {
-              Log.e(TAG, "Failed to start game thread", e)
-              // This suggests it might have been started already somehow.
+      synchronized(this) {
+          Log.d(TAG, "startGameLoop: Called. Thread initialized: ${if (::thread.isInitialized) "yes" else "no"}, Thread state: ${if (::thread.isInitialized) thread.state else "not initialized"}")
+          if (!::thread.isInitialized) {
+              Log.e(TAG, "Cannot start game loop: thread not initialized.")
+              return
           }
-      } else {
-          Log.d(TAG, "startGameLoop called but thread already running.")
+          Log.d(TAG, "startGameLoop: Thread state before start: ${thread.state}")
+          if (!thread.isAlive) {
+              try {
+                 if (thread.state == Thread.State.NEW) {
+                    thread.running = true // Set running to true BEFORE starting
+                    Log.d(TAG, "startGameLoop: Starting thread (NEW state)")
+                    thread.start()
+                    Log.d(TAG, "Game thread started.")
+                 } else {
+                     Log.w(TAG, "Attempting to start thread in unexpected state: ${thread.state}. Re-initializing.")
+                     thread = GameThread(holder, this)
+                     thread.running = true
+                     Log.d(TAG, "startGameLoop: Re-initialized thread, now starting.")
+                     thread.start()
+                     Log.d(TAG, "Game thread re-initialized and started.")
+                 }
+              } catch(e: IllegalThreadStateException) {
+                  Log.e(TAG, "Failed to start game thread", e)
+              }
+          } else {
+              Log.d(TAG, "startGameLoop called but thread already running.")
+          }
       }
   }
 
@@ -127,11 +143,11 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
       val localJoystick = if (localPlayerId != null) joysticks[localPlayerId] else null
 
       // Added Log
-      if (localJoystick != null) {
-           Log.d(TAG, "update: Joystick state: dirX=${localJoystick.directionX}, dirY=${localJoystick.directionY}, mag=${localJoystick.magnitude}")
-      } else {
-           Log.d(TAG, "update: Local joystick is null")
-      }
+      // if (localJoystick != null) {
+      //      Log.d(TAG, "update: Joystick state: dirX=${localJoystick.directionX}, dirY=${localJoystick.directionY}, mag=${localJoystick.magnitude}")
+      // } else {
+      //      Log.d(TAG, "update: Local joystick is null")
+      // }
 
       // --- Update Local Player --- 
       if (localPlayer != null && localJoystick != null && currentLevel is MazeLevel) { // Ensure level is MazeLevel
@@ -147,7 +163,8 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
               color = localPlayer.getColor(),
               mode = localPlayer.mode,
               ink = localPlayer.ink,
-              active = true // Mark as active
+              active = true, // Mark as active
+              playerName = localPlayer.playerName // Pass player name
           )
           multiplayerManager?.updateLocalPlayerState(currentState)
       }
@@ -187,30 +204,7 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
               if (!endNotified) {
                 endNotified = true
                 thread.running = false // Stop the game loop
-                Log.i(TAG, "Match finished")
-
-                // Determine win/loss AFTER stopping the loop and notifying
-                var didWin = false // Default to loss
-                if (mgr.mode == GameMode.COVERAGE && currentLevel is MazeLevel) {
-                  try {
-                    val allStats = (currentLevel as MazeLevel).calculateCoverage(surface)
-                    val localColor = getLocalPlayer()?.getColor()
-                    // Filter stats to only include currently connected players
-                    val activeColors = players.values.map { it.getColor() }.toSet()
-                    val activeStats = allStats.filterKeys { it in activeColors }
-
-                    val localFrac = if (localColor != null) activeStats[localColor] ?: 0f else 0f
-                    // Calculate max score among *active* opponents
-                    val maxOther = activeStats.filterKeys { it != localColor }.values.maxOrNull() ?: 0f
-                    didWin = localFrac >= maxOther // Win includes tie
-                  } catch (e: Exception) {
-                      Log.e(TAG, "Error calculating winner", e)
-                  }
-                }
-                // Post result back to main thread to show dialog
-                Handler(Looper.getMainLooper()).post {
-                  onMatchEnd?.invoke(didWin)
-                }
+                finishMatch("timer_expired")
               } // end !endNotified
             } else {
               // Match is ongoing, update coverage HUD if applicable
@@ -230,32 +224,48 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
   }
   
   override fun draw(c:Canvas){
-    Log.d(TAG, "GameView.draw() called. Canvas: $c")
-    c.drawColor(Color.WHITE)
-    
-    Log.d(TAG, "GameView.draw() - Before surface.drawTo(c)")
-    if(::surface.isInitialized) { // Add this check for safety, though it should be by now
-        surface.drawTo(c)
-        Log.d(TAG, "GameView.draw() - After surface.drawTo(c)")
-    } else {
-        Log.w(TAG, "GameView.draw() - Surface not initialized, skipping surface.drawTo(c)")
+    // Draw center-cropped background image
+    run {
+      val bmp = bgBitmap
+      val viewW = width.toFloat()
+      val viewH = height.toFloat()
+      val bmpW = bmp.width.toFloat()
+      val bmpH = bmp.height.toFloat()
+      val scale = maxOf(viewW / bmpW, viewH / bmpH)
+      val scaledW = bmpW * scale
+      val scaledH = bmpH * scale
+      val left = (viewW - scaledW) / 2
+      val top = (viewH - scaledH) / 2
+      val dest = RectF(left, top, left + scaledW, top + scaledH)
+      c.drawBitmap(bmp, null, dest, null)
     }
     
-    Log.d(TAG, "GameView.draw() - Before currentLevel?.draw(c). currentLevel is null: ${currentLevel == null}")
+    // Log.d(TAG, "GameView.draw() called. Canvas: $c")
+    // background image covers the canvas; remove white fill
+    
+    // Log.d(TAG, "GameView.draw() - Before surface.drawTo(c)")
+    if(::surface.isInitialized) { // Add this check for safety, though it should be by now
+        surface.drawTo(c)
+        // Log.d(TAG, "GameView.draw() - After surface.drawTo(c)")
+    } else {
+        // Log.w(TAG, "GameView.draw() - Surface not initialized, skipping surface.drawTo(c)")
+    }
+    
+    // Log.d(TAG, "GameView.draw() - Before currentLevel?.draw(c). currentLevel is null: ${currentLevel == null}")
     currentLevel?.draw(c)
-    Log.d(TAG, "GameView.draw() - After currentLevel?.draw(c)")
+    // Log.d(TAG, "GameView.draw() - After currentLevel?.draw(c)")
 
     // Draw all players (local and remote)
-    Log.d(TAG, "GameView.draw() - Drawing ${players.size} players.")
+    // Log.d(TAG, "GameView.draw() - Drawing ${players.size} players.")
     for ((id, player) in players) { // Changed to iterate with ID for better logging
-        Log.d(TAG, "GameView.draw() - Drawing player $id")
+        // Log.d(TAG, "GameView.draw() - Drawing player $id")
         player.draw(c)
     }
     
     // Draw local joystick only
-    Log.d(TAG, "GameView.draw() - Before localPlayerId?.let for joystick. localPlayerId: $localPlayerId")
+    // Log.d(TAG, "GameView.draw() - Before localPlayerId?.let for joystick. localPlayerId: $localPlayerId")
     localPlayerId?.let { joysticks[it]?.draw(c) }
-    Log.d(TAG, "GameView.draw() - After joystick draw.")
+    // Log.d(TAG, "GameView.draw() - After joystick draw.")
   }
   
   override fun onTouchEvent(e:MotionEvent):Boolean{
@@ -299,10 +309,10 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
       Log.d(TAG, "MultiplayerManager set.")
   }
 
-  fun setLocalPlayerId(id: String?) {
+  fun setLocalPlayerId(id: String?, playerColor: Int? = null, playerName: String = "") {
+      Log.d(TAG, "setLocalPlayerId called with id: $id, color: $playerColor, name: $playerName")
       this.localPlayerId = id
       if (id == null) return // Exit early if ID is null
-
       Log.d(TAG, "Local player ID set: $id")
       
       try {
@@ -323,7 +333,9 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
                }
                
                val startPos = currentLevel!!.getPlayerStartPosition(playerIndex)
-               val playerColor = if (playerIndex == 0) Color.RED else Color.BLUE // Host is red, others are blue
+               // Use provided color or fallback to default colors
+               val defaultColor = if (playerIndex == 0) Color.parseColor("#39FF14") else Color.parseColor("#1F51FF")
+               val playerColor = playerColor ?: defaultColor
                
                // Check if player already exists (e.g., from a very fast Firebase update after initGame)
                var localPlayer = players[id]
@@ -335,7 +347,8 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
                        startPos.second,
                        playerColor,
                        multiplayerManager,
-                       currentLevel // Pass level reference
+                       currentLevel, // Pass level reference
+                       playerName // Pass the provided player name
                    )
                    players[id] = localPlayer
                } else {
@@ -343,6 +356,7 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
                    Log.d(TAG, "Updating existing local player $id object to definite start position (${startPos.first}, ${startPos.second})")
                    localPlayer.x = startPos.first
                    localPlayer.y = startPos.second
+                   localPlayer.playerName = playerName // Set player name for local player directly
                    // Potentially update color/other fields if needed, though less likely
                }
                
@@ -394,7 +408,8 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
               sy,
               newState.color,
               multiplayerManager,
-              currentLevel
+              currentLevel,
+              newState.playerName // Pass player name from newState
           )
           players[playerId] = player
       } else {
@@ -409,11 +424,18 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
       // Always update mode and ink for all players based on Firebase state
       player.mode = newState.mode
       player.ink = newState.ink
-      Log.d(TAG, "Player $playerId state processed. Position: (${player.x}, ${player.y}), Ink: ${player.ink}, Mode: ${player.mode}")
+      if (playerId != localPlayerId) { // Only update name from state for remote players
+          player.playerName = newState.playerName // Update player name directly
+      }
+      // Commented out per-frame logs to reduce clutter
+      // Log.d(TAG, "Player $playerId state processed. Position: (${player.x}, ${player.y}), Ink: ${player.ink}, Mode: ${player.mode}")
   }
 
   override fun onPlayerStateChanged(playerId: String, newState: PlayerState) {
-      Log.d(TAG, "onPlayerStateChanged for $playerId. Active: ${newState.active}, NormPos: (${newState.normX}, ${newState.normY})")
+      // Commented out per-frame logs to reduce clutter
+      // Log.d(TAG, "onPlayerStateChanged for $playerId. Active: ${newState.active}, NormPos: (${newState.normX}, ${newState.normY})")
+      // Log.d(TAG, "Processing player state for $playerId as currentLevel is available.")
+      // Log.d(TAG, "Player $playerId state processed. Position: (${player.x}, ${player.y}), Ink: ${player.ink}, Mode: ${player.mode}")
 
       if (!newState.active) {
           Log.i(TAG, "Player $playerId reported as inactive. Removing.")
@@ -532,12 +554,13 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
 
   /** Helper to safely get the current level instance. */
   fun getCurrentLevel(): Level? {
+      Log.v(TAG, "getCurrentLevel called. currentLevel is null: ${currentLevel == null}")
       return currentLevel
   }
 
   /** Helper to get the IDs of currently active players in the local map. */
   fun getActivePlayerIds(): Set<String> {
-      // Consider filtering players by an internal active flag if needed
+      Log.v(TAG, "getActivePlayerIds called. Player keys: ${players.keys}")
       return players.keys
   }
 
@@ -546,13 +569,13 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
    * It will create the maze, players, and a NEW GameThread instance.
    */
   fun initGame(mazeComplexity: String) { // Added mazeComplexity parameter
+    Log.d(TAG, "initGame called with complexity: $mazeComplexity. Surface initialized: ${::surface.isInitialized}")
     if (!::surface.isInitialized) {
         Log.w(TAG, "initGame called but surface not ready")
         return
     }
-    // Stop any potentially existing old thread first
     stopThread()
-
+    Log.d(TAG, "initGame: After stopThread. Thread state: ${if (::thread.isInitialized) thread.state else "not initialized"}")
     // Determine the seed from the multiplayer manager, fallback to current time
     val seed = multiplayerManager?.mazeSeed?.takeIf { it != 0L } ?: System.currentTimeMillis()
     Log.d(TAG, "Initializing maze with seed: $seed, complexity: $mazeComplexity")
@@ -598,6 +621,10 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
     Log.d(TAG, "New GameThread instance created.")
 
     // Do NOT start the thread here; wait for startGameLoop() call
+    Log.d(TAG, "initGame: Created maze with seed: $seed, complexity: $mazeComplexity")
+    Log.d(TAG, "initGame: Cleared previous game objects. Players: ${players.size}, Joysticks: ${joysticks.size}")
+    Log.d(TAG, "initGame: Processed pending player states. Remaining: ${pendingPlayerStates.size}")
+    Log.d(TAG, "initGame: New GameThread instance created. Thread state: ${thread.state}")
   }
 
   /**
@@ -610,10 +637,14 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
   /**
    * Start the given game mode for the specified duration (ms).
    */
-  fun startGameMode(mode: GameMode, durationMs: Long) {
-    gameModeManager = GameModeManager(mode, durationMs)
+  fun startGameMode(mode: GameMode, durationMs: Long, startTime: Long? = null) {
+    Log.d(TAG, "startGameMode called with mode: $mode, durationMs: $durationMs, startTime: $startTime")
+    gameModeManager = if (startTime != null) {
+        GameModeManager(mode, durationMs, startTime)
+    } else {
+        GameModeManager(mode, durationMs)
+    }
     gameModeManager?.start()
-    // Match is now ready to be evaluated for end condition
     isMatchReady = true
   }
 
@@ -627,6 +658,30 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
   fun setTimerHudView(view: TimerHudView) {
     this.timerHudView = view
   }
+
+  // When match finishes, log the reason and handle win/loss
+  private fun finishMatch(reason: String = "unknown") {
+      Log.i(TAG, "finishMatch called. Reason: $reason")
+      var didWin = false // Default to loss
+      try {
+          if (gameModeManager?.mode == GameMode.COVERAGE && currentLevel is MazeLevel) {
+              val allStats = (currentLevel as MazeLevel).calculateCoverage(surface)
+              val localColor = getLocalPlayer()?.getColor()
+              val activeColors = players.values.map { it.getColor() }.toSet()
+              val activeStats = allStats.filterKeys { it in activeColors }
+              val localFrac = if (localColor != null) activeStats[localColor] ?: 0f else 0f
+              val maxOther = activeStats.filterKeys { it != localColor }.values.maxOrNull() ?: 0f
+              didWin = localFrac >= maxOther // Win includes tie
+          }
+      } catch (e: Exception) {
+          Log.e(TAG, "Error calculating winner in finishMatch", e)
+      }
+      Log.i(TAG, "finishMatch: didWin=$didWin, calling onMatchEnd")
+      Handler(Looper.getMainLooper()).post {
+          Log.i(TAG, "onMatchEnd invoked from finishMatch. didWin=$didWin")
+          onMatchEnd?.invoke(didWin)
+      }
+  }
 }
 
 class GameThread(private val sh:SurfaceHolder,private val gv:GameView):Thread(){
@@ -635,42 +690,58 @@ class GameThread(private val sh:SurfaceHolder,private val gv:GameView):Thread(){
   private var lastTimeNanos: Long = System.nanoTime() // For delta time calculation
 
   override fun run(){ 
-      Log.d(TAG, "run() started. Initial running state: $running")
+      Log.i(TAG, "run() started. Initial running state: $running")
       lastTimeNanos = System.nanoTime() // Initialize lastTimeNanos before the loop starts
-      while(running){ 
-          val currentTimeNanos = System.nanoTime()
-          val deltaTimeSeconds = (currentTimeNanos - lastTimeNanos) / 1_000_000_000.0f
-          lastTimeNanos = currentTimeNanos
-
-          Log.d(TAG, "run() loop. running: $running, deltaTime: $deltaTimeSeconds")
-          var c: Canvas? = null // Declare c outside try so it can be logged in finally
-          try {
-              c = sh.lockCanvas()
-              Log.d(TAG, "run() loop. Canvas locked: ${c != null}")
-              if(c!=null){ 
-                  Log.d(TAG, "run() loop. Canvas is not null. Calling gv.update() and gv.draw(c)")
-                  gv.update(deltaTimeSeconds) // Pass deltaTime here
-                  gv.draw(c)
-                  Log.d(TAG, "run() loop. Finished gv.update() and gv.draw(c)")
-              } else {
-                  Log.w(TAG, "run() loop. Canvas is NULL, skipping update and draw.")
-                  // If canvas is consistently null, the surface might not be ready or valid.
-                  // Consider a small sleep here to prevent a tight loop if surface is not available.
-                  try { Thread.sleep(16) } catch (e: InterruptedException) { /* ignore */ }
+      try {
+          while(running){ 
+              // --- SAFETY CHECK: Ensure surface is valid before drawing ---
+              if (!sh.surface.isValid) {
+                  Log.w(TAG, "Surface is not valid, skipping frame.")
+                  try { Thread.sleep(8) } catch (e: InterruptedException) { /* ignore */ }
+                  continue
               }
-          } catch (e: Exception) {
-              Log.e(TAG, "Exception in GameThread run loop", e)
-          } finally {
-              if (c != null) {
-                  Log.d(TAG, "run() loop. Unlocking canvas.")
-                  sh.unlockCanvasAndPost(c)
-              } else {
-                  Log.d(TAG, "run() loop. Canvas was null, no unlock needed.")
-              }
+              val currentTimeNanos = System.nanoTime()
+              val deltaTimeSeconds = (currentTimeNanos - lastTimeNanos) / 1_000_000_000.0f
+              lastTimeNanos = currentTimeNanos
+              var c: Canvas? = null // Declare c outside try so it can be logged in finally
+              try {
+                  c = sh.lockCanvas()
+                  if(c!=null){ 
+                      try {
+                          gv.update(deltaTimeSeconds) // Pass deltaTime here
+                      } catch (e: Exception) {
+                          Log.e(TAG, "Exception in GameView.update()", e)
+                      }
+                      try {
+                          gv.draw(c)
+                      } catch (e: Exception) {
+                          Log.e(TAG, "Exception in GameView.draw()", e)
+                      }
+                  } else {
+                      // If canvas is consistently null, the surface might not be ready or valid.
+                      Log.w(TAG, "lockCanvas() returned null. Surface may not be ready.")
+                      try { Thread.sleep(16) } catch (e: InterruptedException) { /* ignore */ }
+                  }
+              } catch (e: Exception) {
+                  Log.e(TAG, "Exception in GameThread run loop (lockCanvas or unlock)", e)
+              } finally {
+                  // --- SAFETY CHECK: Only unlock if surface is still valid ---
+                  if (c != null) {
+                      if (sh.surface.isValid) {
+                          try {
+                              sh.unlockCanvasAndPost(c)
+                          } catch (e: Exception) {
+                              Log.e(TAG, "Exception in unlockCanvasAndPost", e)
+                          }
+                      } else {
+                          Log.w(TAG, "Surface became invalid before unlockCanvasAndPost. Skipping post.")
+                      }
+                  }
+              } 
           } 
-          // Optional: Add a small sleep to control frame rate if not handled above
-          // try { Thread.sleep(16) } catch (e: InterruptedException) {}
-      } 
-      Log.d(TAG, "run() finished. Final running state: $running")
+      } catch (e: Exception) {
+          Log.e(TAG, "Exception in GameThread main loop", e)
+      }
+      Log.i(TAG, "run() finished. Final running state: $running")
   }
 }

@@ -1,0 +1,200 @@
+
+classDiagram
+%% Android framework roots
+class AppCompatActivity
+class SurfaceView
+class View
+
+%% Activities
+AppCompatActivity <|-- HomeActivity
+AppCompatActivity <|-- MainActivity
+
+%% Core game view & loop
+SurfaceView <|-- GameView
+GameView "1" *-- PaintSurface : rendersTo
+GameView "1" *-- Level : currentLevel
+GameView "1" o-- VirtualJoystick : local control
+GameView "1" *-- Player : players
+GameView ..> MultiplayerManager : sync
+GameView ..> GameModeManager : timing
+GameView ..> CoverageCalculator : stats
+
+%% Level abstraction
+class Level["Level\n<<interface>>"]
+Level <|.. MazeLevel
+
+%% Player state sync
+Player --> PlayerState : state
+
+%% HUD overlays
+View <|-- InkHudView
+View <|-- CoverageHudView
+View <|-- TimerHudView
+
+%% Utility & managers
+%% ----------------------------------------------------------------------
+
+class TimerHudView {
+    -remainingMs: Long
+    -textPaint: Paint
+    +totalSec: Int
+    +minutes: Int
+    +seconds: Int
+    +timeText: String
+    +updateTime(ms: Long): void
+}
+
+class HomeActivity {
+    +gameId: String
+    +timeOptions: Array
+    +timeValues: Array
+    +selectedTimeIndex: Int
+    +complexityOptions: Array
+    +complexityValues: Array
+    -showMatchSettingsDialog(): void
+    -startGameActivity(gameId: String, hostId: String? = null, durationMs: Int? = null, complexity: String? = null): void
+}
+
+class GameView {
+    -players: List<Player>
+    -joysticks: List<VirtualJoystick>
+    -pendingPlayerStates: Map<String, PlayerState>
+    -inkHudView: InkHudView?
+    -coverageHudView: CoverageHudView?
+    -gameModeManager: GameModeManager?
+    +stopThread(): void
+    +startGameLoop(): void
+    +update(deltaTime: Float): void
+    +setMultiplayerManager(manager: MultiplayerManager): void
+    +setLocalPlayerId(id: String?): void
+    +getLocalPlayer(): Player?
+}
+
+class InkHudView {
+    -inkPercent: Float
+    -modeText: String
+    -barPaint: Paint
+    -barBackgroundPaint: Paint
+    -borderPaint: Paint
+    -textPaint: Paint
+    +updateHud(percent: Float, mode: String): void
+}
+
+class MainActivity {
+    -matchDurationMs: Long
+    -mazeComplexity: String
+    -localPlayerId: String?
+    -waitingDialog: AlertDialog?
+    -countdownDialog: AlertDialog?
+    -rematchInProgressHandled: Boolean
+    -signInAnonymouslyAndProceed(): void
+    -handleIntentExtras(): void
+    -showRematchDialog(hostAnswered: Boolean): void
+    -restartMatchForRematch(): void
+    -showRematchCountdownAndStart(): void
+    -restartMatch(isRematch: Boolean = false): void
+}
+
+class Level {
+    +update(): Boolean
+    +draw(canvas: Canvas)
+    +checkCollision(x: Float, y: Float): Boolean
+    +getPlayerStartPosition(index: Int): Pair<Float, Float>
+    +calculateCoverage(surface: PaintSurface): Map<Int, Float>
+}
+
+class MazeLevel {
+    -calculatedCellDimensions: Pair<Int, Int>
+    +baseCellsX: Int
+    +baseCellsY: Int
+    +cX: Int
+    +cY: Int
+    -cellsX: Int
+    -calculateScaling(): void
+    -generateGrids(): void
+    -generateMaze(): void
+    +oppositeDir(dir: Int): Int
+    +knockDownWall(x: Int, y: Int, dir: Int): void
+    +markVisited(x: Int, y: Int): void
+}
+
+class GameModeManager {
+    -startTime: Long
+    -durationMs: Long
+    -finished: Boolean
+    +elapsed: Long
+    +start(durationMs: Long): void
+    +update(): void
+    +isFinished(): Boolean
+    +timeRemainingMs(): Long
+}
+
+class CoverageHudView {
+    -coverageData: Map<Int, Float>
+    -paint: Paint
+    -textPaint: Paint
+    +data: Map<Int, Float>
+    +density: Float
+    +baseGutter: Float
+    +updateCoverage(data: Map<Int, Float>): void
+}
+
+class PaintSurface {
+    -bitmap: Bitmap
+    -canvas: Canvas
+    +clearSurface(): void
+    +getCanvas(): Canvas
+    +getBitmap(): Bitmap
+}
+
+class VirtualJoystick {
+    -baseX: Float
+    -baseY: Float
+    -currentX: Float
+    -currentY: Float
+    -radius: Float
+    +onTouch(event: MotionEvent): Boolean
+    +getDirection(): Pair<Float, Float>
+    +getMagnitude(): Float
+}
+
+class MultiplayerManager {
+    -db: DatabaseReference
+    -currentGameId: String?
+    -isHost: Boolean
+    +hostGame(initialState: PlayerState, durationMs: Long, complexity: String, callback)
+    +joinGame(gameId: String?, initialState: PlayerState, callback)
+    +leaveGame(): void
+    +updatePlayerState(id: String, state: PlayerState): void
+    +sendRematchAnswer(answer: Boolean): void
+}
+
+class CoverageCalculator {
+    +calculateCoverage(bitmap: Bitmap, walls: List<RectF>): Map<Int, Float>
+}
+
+class Player {
+    +id: String
+    -x: Float
+    -y: Float
+    -dirX: Float
+    -dirY: Float
+    -ink: Float
+    -color: Int
+    -mode: String
+    +move(dx: Float, dy: Float, deltaTime: Float): void
+    +paint(surface: PaintSurface): void
+    +refill(): void
+    +toState(): PlayerState
+}
+
+class PlayerState {
+    +normX: Float
+    +normY: Float
+    +color: Int
+    +mode: String
+    +ink: Float
+    +active: Boolean
+    +mazeSeed: Long
+}
+

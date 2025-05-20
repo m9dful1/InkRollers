@@ -29,5 +29,7 @@ dependencies {
   // implementation 'com.google.firebase:firebase-database-ktx:21.0.0' // REMOVED: Duplicate and overrides BoM
   // implementation 'com.google.firebase:firebase-analytics' // REMOVED: Not needed for DB MVP
   implementation 'com.google.firebase:firebase-auth-ktx' // Rely on BoM for version
+  implementation 'androidx.recyclerview:recyclerview:1.3.2'
+    implementation 'com.google.android.material:material:1.12.0'
 
 }

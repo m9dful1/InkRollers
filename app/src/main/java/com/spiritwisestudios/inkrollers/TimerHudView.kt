@@ -18,7 +18,7 @@ class TimerHudView @JvmOverloads constructor(
 
     private var remainingMs: Long = 0L
     private val textPaint = Paint().apply {
-        color = Color.BLACK
+        color = Color.WHITE
         textSize = 48f * resources.displayMetrics.density
         isAntiAlias = true
         textAlign = Paint.Align.RIGHT

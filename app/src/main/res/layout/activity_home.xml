@@ -4,47 +4,80 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:padding="32dp"
     tools:context=".HomeActivity">
 
-    <TextView
-        android:id="@+id/textView_title"
+    <ImageView
+        android:id="@+id/bg_image"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="centerCrop"
+        android:src="@drawable/title_bg"
+        android:contentDescription="Background image"
+        android:layout_alignParentTop="true"
+        android:layout_alignParentBottom="true"
+        android:layout_alignParentStart="true"
+        android:layout_alignParentEnd="true"/>
+
+    <!-- Add a vertical guideline at 66% from the top -->
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/guideline_66"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="InkRollers"
-        android:textSize="34sp"
-        android:textStyle="bold"
-        app:layout_constraintBottom_toTopOf="@+id/button_play"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintVertical_chainStyle="packed" />
+        android:orientation="horizontal"
+        app:layout_constraintGuide_percent="0.66" />
 
     <Button
         android:id="@+id/button_play"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="64dp"
         android:text="Play"
-        android:textSize="20sp"
-        app:layout_constraintBottom_toTopOf="@+id/layout_submenu"
+        android:textSize="32sp"
+        android:textStyle="bold"
+        android:paddingStart="48dp"
+        android:paddingEnd="48dp"
+        android:paddingTop="16dp"
+        android:paddingBottom="16dp"
+        android:background="@drawable/play_button_background"
+        android:elevation="8dp"
+        android:stateListAnimator="@null"
+        android:textColor="@android:color/white"
+        app:layout_constraintTop_toTopOf="@id/guideline_66"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/textView_title" />
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <Button
+        android:id="@+id/button_profile"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Profile"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp"
+        android:background="@drawable/play_button_background"
+        android:elevation="4dp"
+        android:stateListAnimator="@null"
+        android:textColor="@android:color/white"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:layout_marginTop="16dp"
+        android:layout_marginEnd="16dp"/>
 
     <!-- Submenu Layout (Initially Gone) -->
     <LinearLayout
         android:id="@+id/layout_submenu"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="32dp"
+        android:layout_marginBottom="25dp"
         android:orientation="vertical"
         android:visibility="gone"
         tools:visibility="visible" 
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/button_play"
-        app:layout_constraintBottom_toBottomOf="parent" >
+        app:layout_constraintBottom_toTopOf="@+id/button_play"
+        android:translationY="32dp">
 
         <Button
             android:id="@+id/button_host_game"
@@ -56,12 +89,13 @@
             android:id="@+id/editText_game_id"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="8dp"
+            android:background="@android:color/white"
+            android:padding="12dp"
             android:hint="Enter Game ID or leave blank for random game"
             android:inputType="textCapCharacters"
             android:maxLength="6"
-            android:maxLines="1"
-             />
+            android:maxLines="1" />
 
         <Button
             android:id="@+id/button_join_game"

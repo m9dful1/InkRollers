@@ -18,7 +18,7 @@ class PaintSurface(val w:Int,val h:Int){
   fun getPixelColor(x:Int,y:Int):Int = bmp.getPixel(x,y)
   fun eraseAt(x:Float,y:Float){ cvs.drawCircle(x,y,20f,clearPaint) }
   fun drawTo(c:Canvas){ 
-    Log.d("PaintSurface", "drawTo() called. Bitmap w: ${bmp.width}, h: ${bmp.height}")
+    // Log.d("PaintSurface", "drawTo() called. Bitmap w: ${bmp.width}, h: ${bmp.height}")
     c.drawBitmap(bmp,0f,0f,null) 
   }
   /** Clear the entire paint surface. */

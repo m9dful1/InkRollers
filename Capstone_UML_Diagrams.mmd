@@ -1,0 +1,68 @@
+
+# UML Diagrams for Capstone Project
+
+## Class Diagram
+
+```mermaid
+classDiagram
+%% ─── Android framework roots ─────────────────────────────────────────────
+class AppCompatActivity
+class SurfaceView
+class View
+
+%% ─── Activities ──────────────────────────────────────────────────────────
+AppCompatActivity <|-- HomeActivity
+AppCompatActivity <|-- MainActivity
+
+%% ─── Core game view & loop ───────────────────────────────────────────────
+SurfaceView      <|-- GameView
+GameView "1" *-- GameThread          : owns (inner class)
+GameView "1" *-- PaintSurface        : renders to
+GameView "1" *-- Level               : currentLevel
+GameView "1" o-- VirtualJoystick     : local control
+GameView "1" *-- Player              : players map
+GameView  ..>  MultiplayerManager    : synchronises
+GameView  ..>  GameModeManager       : match timing
+GameView  ..>  CoverageCalculator    : coverage stats
+
+%% ─── Level abstraction ───────────────────────────────────────────────────
+class Level <<interface>>
+Level <|.. MazeLevel
+
+%% ─── Player state sync ───────────────────────────────────────────────────
+Player --> PlayerState               : serialises/deserialises
+
+%% ─── HUD overlays ────────────────────────────────────────────────────────
+View <|-- InkHudView
+View <|-- CoverageHudView
+View <|-- TimerHudView
+
+%% ─── Utility & managers ──────────────────────────────────────────────────
+class MultiplayerManager
+class GameModeManager
+class CoverageCalculator
+class PaintSurface
+class VirtualJoystick
+```
+
+---
+
+## State Machine Diagram
+
+```mermaid
+stateDiagram-v2
+    [*] --> HomeScreen : app launch
+    HomeScreen --> HostJoinSubmenu : "Play" tapped
+    HostJoinSubmenu --> WaitingHost : Host + settings chosen
+    HostJoinSubmenu --> WaitingJoin : Join (ID / random)
+
+    WaitingHost --> Countdown : 2nd player joins
+    WaitingJoin --> Countdown : Host starts match
+
+    Countdown --> GameplayInit : "3 2 1 GO"
+    GameplayInit --> GameplayLoop
+    GameplayLoop --> MatchEnd : timer expires
+
+    MatchEnd --> GameplayInit : all players rematch = YES
+    MatchEnd --> HomeScreen   : any NO / back press
+```

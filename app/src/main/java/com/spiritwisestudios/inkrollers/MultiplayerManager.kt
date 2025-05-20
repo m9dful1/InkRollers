@@ -8,6 +8,7 @@ import com.google.firebase.database.ChildEventListener
 import kotlin.random.Random
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.ktx.auth
+import android.os.Handler
 
 // Data class to hold game settings read by clients
 data class GameSettings(val durationMs: Long, val complexity: String)
@@ -100,6 +101,13 @@ class MultiplayerManager {
     /** Callback to notify when both players have answered rematch: true=both yes, false=at least one no */
     var onRematchDecision: ((Boolean) -> Unit)? = null
 
+    // Add a new flag for rematch coordination
+    private var rematchInProgressRef: DatabaseReference? = null
+    private var rematchInProgressListener: ValueEventListener? = null
+
+    // Callback for when rematch should actually start (after both YES)
+    var onRematchStartSignal: (() -> Unit)? = null
+
     fun hostGame(initialPlayerState: PlayerState, durationMs: Long, complexity: String, callback: (success: Boolean, gameId: String?, gameSettings: GameSettings?) -> Unit) {
         clearListeners() // Clear any previous listeners
         
@@ -142,7 +150,8 @@ class MultiplayerManager {
                 "matchDurationMs" to durationMs, // Store match duration
                 "mazeComplexity" to complexity,   // Store maze complexity
                 "createdAt" to ServerValue.TIMESTAMP, // Optional: track game creation time
-                "started" to false // Explicitly set initial started state
+                "started" to false, // Explicitly set initial started state
+                "playerCount" to 1L // Set initial player count
             )
 
             Log.d(TAG, "Attempting to write game data to Firebase: $currentGameId")
@@ -165,7 +174,6 @@ class MultiplayerManager {
                             if (storedSeed == mazeSeed) {
                                 Log.d(TAG, "Verified game data was written correctly (mazeSeed matches)")
                                 setupFirebaseListeners() // Start listening for other players
-                                setupRematchListener()
                                 callback(true, currentGameId, gameSettings)
                             } else {
                                 Log.e(TAG, "Game data verification failed - mazeSeed doesn't match: stored=$storedSeed, local=$mazeSeed")
@@ -314,7 +322,7 @@ class MultiplayerManager {
                     .addOnSuccessListener {
                         Log.i(TAG, "Added $assignedId to Firebase game $gameId.")
                         setupFirebaseListeners()
-                        // start listening for rematch decisions
+                        // After both players (host and this joiner) are present, start listening for rematch decisions
                         setupRematchListener()
                         callback(true, assignedId, gameSettings)
                     }
@@ -443,7 +451,7 @@ class MultiplayerManager {
         Log.v(TAG, "Updating partial state for $localPlayerId: ${updateMap.keys}") // Verbose log
     }
 
-    private fun setupFirebaseListeners() {
+    fun setupFirebaseListeners() {
         if (playersRef == null) return
         clearListeners() // Ensure no old listeners are active
 
@@ -494,17 +502,6 @@ class MultiplayerManager {
 
         /* 3️⃣ Listen for paint actions */
         setupPaintListener()
-
-        // Determine expected rematch participants count
-        playersRef?.addListenerForSingleValueEvent(object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                expectedRematchCount = snapshot.childrenCount
-                Log.d(TAG, "Expected rematch count set to: $expectedRematchCount for game $currentGameId")
-            }
-            override fun onCancelled(error: DatabaseError) {
-                 Log.w(TAG, "Failed to get initial player count for rematch in $currentGameId", error.toException())
-            }
-        })
 
         // Listen for number of connected players (to trigger pre-match)
         playerCountListener = object : ValueEventListener {
@@ -676,15 +673,84 @@ class MultiplayerManager {
         Log.d(TAG, "Detached Firebase listeners (player, paint, count, start). Rematch listener managed separately.")
     }
 
+    /**
+     * Fetches the current state of all players in the game.
+     * @param callback Called with a map of player ID to PlayerState.
+     */
+    fun getPlayersState(callback: (Map<String, PlayerState?>) -> Unit) {
+        if (playersRef == null) {
+            Log.w(TAG, "getPlayersState: playersRef is null.")
+            callback(emptyMap())
+            return
+        }
+        playersRef?.addListenerForSingleValueEvent(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val playerStates = mutableMapOf<String, PlayerState?>()
+                snapshot.children.forEach { playerSnapshot ->
+                    val playerId = playerSnapshot.key
+                    if (playerId != null) {
+                        try {
+                            val playerState = playerSnapshot.getValue(PlayerState::class.java)
+                            playerStates[playerId] = playerState
+                        } catch (e: DatabaseException) {
+                            Log.e(TAG, "getPlayersState: Failed to parse player state for $playerId", e)
+                            playerStates[playerId] = null // Indicate parse failure
+                        }
+                    } else {
+                         Log.w(TAG, "getPlayersState: Received null playerId in snapshot.")
+                    }
+                }
+                Log.d(TAG, "getPlayersState: Fetched ${playerStates.size} player states.")
+                callback(playerStates)
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Log.w(TAG, "getPlayersState: Database query cancelled", error.toException())
+                onDatabaseError?.invoke("Error fetching player states: ${error.message}")
+                callback(emptyMap())
+            }
+        })
+    }
+
     /** Host invokes this to signal all clients to begin countdown */
     fun sendMatchStart() {
         if (gameRef == null) return
         Log.d(TAG, "Host sending match start signal for game $currentGameId")
-        gameRef!!.child("started").setValue(true)
-            .addOnFailureListener { e -> 
-                Log.w(TAG, "Failed to send match start for $currentGameId", e) 
-                onDatabaseError?.invoke("Failed to send start signal: ${e.message}")
+        // Store the player count at match start
+        playersRef?.addListenerForSingleValueEvent(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val playerCount = snapshot.childrenCount
+                Log.d(TAG, "sendMatchStart: Storing playerCount=$playerCount in game node for $currentGameId")
+                gameRef!!.child("playerCount").setValue(playerCount)
+                    .addOnCompleteListener {
+                        // Write a synchronized startTime (2 seconds in the future)
+                        val startTime = System.currentTimeMillis() + 2000L
+                        val updates = mapOf(
+                            "started" to true,
+                            "startTime" to startTime
+                        )
+                        gameRef!!.updateChildren(updates)
+                            .addOnFailureListener { e ->
+                                Log.w(TAG, "Failed to send match start for $currentGameId", e)
+                                onDatabaseError?.invoke("Failed to send start signal: "+e.message)
+                            }
+                    }
             }
+            override fun onCancelled(error: DatabaseError) {
+                Log.w(TAG, "sendMatchStart: Failed to get player count", error.toException())
+                // Fallback: still try to start
+                val startTime = System.currentTimeMillis() + 2000L
+                val updates = mapOf(
+                    "started" to true,
+                    "startTime" to startTime
+                )
+                gameRef!!.updateChildren(updates)
+                    .addOnFailureListener { e ->
+                        Log.w(TAG, "Failed to send match start for $currentGameId", e)
+                        onDatabaseError?.invoke("Failed to send start signal: "+e.message)
+                    }
+            }
+        })
     }
 
     /**
@@ -805,7 +871,11 @@ class MultiplayerManager {
      * Send this player's rematch answer (true=Yes, false=No) to Firebase.
      */
     fun sendRematchAnswer(wantRematch: Boolean) {
-        if (currentGameId == null || localPlayerId == null) return
+        Log.d(TAG, "sendRematchAnswer called. wantRematch=$wantRematch, currentGameId=$currentGameId, localPlayerId=$localPlayerId")
+        if (currentGameId == null || localPlayerId == null) {
+            Log.w(TAG, "sendRematchAnswer: currentGameId or localPlayerId is null. Aborting.")
+            return
+        }
         if (rematchRef == null) rematchRef = gameRef?.child(REMATCH_NODE)
         Log.d(TAG, "Sending rematch answer ($wantRematch) for player $localPlayerId in game $currentGameId")
         rematchRef?.child(localPlayerId!!)?.setValue(wantRematch)
@@ -820,6 +890,7 @@ class MultiplayerManager {
      * Only the host should ideally call this during restart logic.
      */
     fun clearRematchAnswers() {
+        Log.d(TAG, "clearRematchAnswers called for game $currentGameId")
         Log.d(TAG, "Clearing rematch answers for game $currentGameId")
         rematchRef?.removeValue()
             ?.addOnFailureListener { e -> 
@@ -836,53 +907,115 @@ class MultiplayerManager {
      * and re-attached in restartMatch.
      */
     fun setupRematchListener() {
+        Log.d(TAG, "setupRematchListener called for game $currentGameId")
         if (rematchRef == null) rematchRef = gameRef?.child(REMATCH_NODE)
-        
+        if (rematchInProgressRef == null) rematchInProgressRef = gameRef?.child("rematchInProgress")
         // Remove previous listener if any to avoid duplicates
         rematchListener?.let { listener ->
-             try { rematchRef?.removeEventListener(listener) } catch (e: Exception) { Log.w(TAG, "Error removing old rematch listener", e) } 
+             try { rematchRef?.removeEventListener(listener) } catch (e: Exception) { Log.w(TAG, "Error removing old rematch listener", e) }
         }
         rematchListener = null
+        rematchInProgressListener?.let { listener ->
+            try { rematchInProgressRef?.removeEventListener(listener) } catch (e: Exception) { Log.w(TAG, "Error removing old rematchInProgress listener", e) }
+        }
+        rematchInProgressListener = null
         Log.d(TAG, "Setting up rematch listener for game $currentGameId")
-        
-        // Use addValueEventListener to react to any change in rematch answers
+
+        // Always clear rematchInProgress before attaching listeners to avoid stale triggers
+        rematchInProgressRef?.setValue(false)?.addOnCompleteListener {
+            Log.d(TAG, "rematchInProgress explicitly set to FALSE before attaching rematch listeners for $currentGameId")
+            // Always fetch the number of *active* players from the players node
+            playersRef?.addListenerForSingleValueEvent(object : ValueEventListener {
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    expectedRematchCount = snapshot.children.filter {
+                        it.child("active").getValue(Boolean::class.java) == true
+                    }.count().toLong()
+                    Log.d(TAG, "setupRematchListener: expectedRematchCount updated to $expectedRematchCount for game $currentGameId (from active players)")
+                    attachRematchListener()
+                }
+                override fun onCancelled(error: DatabaseError) {
+                    Log.w(TAG, "setupRematchListener: failed to get player count, using fallback expectedRematchCount=2", error.toException())
+                    expectedRematchCount = 2L
+                    attachRematchListener()
+                }
+            })
+        }
+    }
+
+    private fun attachRematchListener() {
         rematchListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                // Expect rematch answers from all connected players
-                // Re-check expected count in case someone disconnected during match
-                val currentPlayers = playersRef?.let { ref ->
-                     var count = 0L
-                     ref.get().addOnSuccessListener { playersSnapshot -> 
-                        count = playersSnapshot.childrenCount 
-                     }.addOnFailureListener { 
-                        count = expectedRematchCount // fallback 
-                     }
-                     count
-                } ?: expectedRematchCount
-                
+                Log.d(TAG, "Rematch listener onDataChange: ${snapshot.childrenCount} answers received.")
+                val currentPlayers = expectedRematchCount
+                Log.d(TAG, "Rematch listener: using expectedRematchCount=$expectedRematchCount as currentPlayers, snapshot.childrenCount=${snapshot.childrenCount}")
                 if (currentPlayers > 0 && snapshot.childrenCount >= currentPlayers) {
                     Log.d(TAG, "All rematch answers received for $currentGameId (${snapshot.childrenCount}/$currentPlayers)")
-                    // All have answered
                     var allYes = true
-                    snapshot.children.forEach { 
+                    snapshot.children.forEach {
                         val ans = it.getValue(Boolean::class.java) ?: false
                         if (!ans) allYes = false
                     }
+                    Log.d(TAG, "Rematch listener: allYes=$allYes. Invoking onRematchDecision callback.")
+                    if (allYes) {
+                        Log.d(TAG, "Setting rematchInProgress to TRUE after all players answered YES for $currentGameId")
+                        rematchInProgressRef?.setValue(true)?.addOnCompleteListener {
+                            Log.d(TAG, "rematchInProgress explicitly set to TRUE after allYes for $currentGameId")
+                        }
+                    }
                     onRematchDecision?.invoke(allYes)
-                    // Clean up listener *after* invoking callback
                     rematchRef?.removeEventListener(this)
                     rematchListener = null
                     Log.d(TAG, "Removed rematch listener for $currentGameId after decision.")
                 } else {
-                    Log.v(TAG, "Waiting for rematch answers in $currentGameId (${snapshot.childrenCount}/$currentPlayers received)") // Verbose
+                    Log.v(TAG, "Waiting for rematch answers in $currentGameId (${snapshot.childrenCount}/$currentPlayers received)")
                 }
             }
             override fun onCancelled(error: DatabaseError) {
                 Log.w(TAG, "Rematch listener cancelled for $currentGameId", error.toException())
-                 onDatabaseError?.invoke("Rematch listener error: ${error.message}")
+                onDatabaseError?.invoke("Rematch listener error: ${error.message}")
             }
         }
         rematchRef?.addValueEventListener(rematchListener!!)
+
+        // Listen for rematchInProgress flag to coordinate reset
+        rematchInProgressListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val inProgress = snapshot.getValue(Boolean::class.java) ?: false
+                Log.d(TAG, "rematchInProgressListener: rematchInProgress=$inProgress for $currentGameId")
+                if (inProgress) {
+                    // Defensive: Only allow if all players have answered YES
+                    if (expectedRematchCount > 0) {
+                        rematchRef?.addListenerForSingleValueEvent(object : ValueEventListener {
+                            override fun onDataChange(rematchSnap: DataSnapshot) {
+                                val yesCount = rematchSnap.children.count { it.getValue(Boolean::class.java) == true }
+                                if (yesCount.toLong() == expectedRematchCount) {
+                                    Log.d(TAG, "rematchInProgressListener: All players answered YES, proceeding with rematch for $currentGameId")
+                                    onRematchStartSignal?.invoke()
+                                    if (localPlayerId == "player0") {
+                                        Handler(android.os.Looper.getMainLooper()).postDelayed({
+                                            clearRematchAnswers()
+                                            rematchInProgressRef?.setValue(false)
+                                            Log.d(TAG, "rematchInProgress explicitly set to FALSE after rematch start for $currentGameId")
+                                        }, 2000)
+                                    }
+                                } else {
+                                    Log.w(TAG, "rematchInProgressListener: inProgress==true but not all players answered YES ($yesCount/$expectedRematchCount) for $currentGameId. Ignoring trigger.")
+                                }
+                            }
+                            override fun onCancelled(error: DatabaseError) {
+                                Log.w(TAG, "rematchInProgressListener: failed to check rematch answers for $currentGameId", error.toException())
+                            }
+                        })
+                    } else {
+                        Log.w(TAG, "rematchInProgressListener: inProgress==true but expectedRematchCount==0 for $currentGameId. Ignoring trigger.")
+                    }
+                }
+            }
+            override fun onCancelled(error: DatabaseError) {
+                Log.w(TAG, "rematchInProgressListener cancelled for $currentGameId", error.toException())
+            }
+        }
+        rematchInProgressRef?.addValueEventListener(rematchInProgressListener!!)
     }
 
     /**
@@ -891,6 +1024,7 @@ class MultiplayerManager {
      * @param initialStates Map of player ID -> initial PlayerState object.
      */
     fun resetAllPlayerStatesFirebase(initialStates: Map<String, PlayerState>) {
+        Log.d(TAG, "resetAllPlayerStatesFirebase called for game $currentGameId. initialStates=$initialStates")
         if (playersRef == null) {
             Log.e(TAG, "Cannot reset player states, playersRef is null for $currentGameId")
             onDatabaseError?.invoke("Cannot reset players (no reference)")
@@ -917,5 +1051,10 @@ class MultiplayerManager {
                 Log.w(TAG, "Failed to clear paint actions for $currentGameId", task.exception)
             }
         }
+    }
+
+    /** Returns the current user's Firebase UID, or null if not authenticated. */
+    fun getCurrentUserUid(): String? {
+        return auth.currentUser?.uid
     }
 } 

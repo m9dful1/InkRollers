@@ -3,6 +3,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.util.Log
+import android.graphics.Typeface
 
 class Player(
     private val surface: PaintSurface,
@@ -10,7 +11,8 @@ class Player(
     startY: Float,
     playerColor: Int,
     private val multiplayerManager: MultiplayerManager? = null,
-    private val level: Level? = null
+    private val level: Level? = null,
+    var playerName: String = ""
 ) {
   companion object {
     const val MAX_INK = 100f
@@ -27,7 +29,7 @@ class Player(
   var mode=0 //0 paint,1 fill
   fun toggleMode(){ mode=1-mode }
   fun move(dirX: Float, dirY: Float, magnitude: Float, level: Level? = null, deltaTime: Float) {
-    Log.d("Player", "move: Input: dirX=$dirX, dirY=$dirY, mag=$magnitude, deltaTime=$deltaTime")
+    // Log.d("Player", "move: Input: dirX=$dirX, dirY=$dirY, mag=$magnitude, deltaTime=$deltaTime")
     if (magnitude == 0f) return
 
     val moveAmount = MOVE_SPEED * magnitude * deltaTime
@@ -47,13 +49,13 @@ class Player(
       if (!currentLevel.checkCollision(nextXOnly, y)) {
         nextX = nextXOnly
         nextY = y
-        Log.d("Player", "move: Sliding X")
+        // Log.d("Player", "move: Sliding X")
       } else if (!currentLevel.checkCollision(x, nextYOnly)) {
         nextX = x
         nextY = nextYOnly
-        Log.d("Player", "move: Sliding Y")
+        // Log.d("Player", "move: Sliding Y")
       } else {
-        Log.d("Player", "move: Blocked by collision")
+        // Log.d("Player", "move: Blocked by collision")
         return
       }
     }
@@ -106,17 +108,46 @@ class Player(
             }
         }
     }
-    Log.d("Player", "move: Final position: ($x, $y)")
+    // Log.d("Player", "move: Final position: ($x, $y)")
   }
   fun getInkPercent(): Float = ink / MAX_INK
   fun getModeText(): String = if (mode == 0) "PAINT" else "FILL"
   fun getColor(): Int = paint.color
   fun update(){}
   fun draw(c:Canvas){
-    Log.d(TAG, "Player.draw() for player at ($x, $y) with color ${paint.color} and radius $PLAYER_RADIUS")
-    // Scale player radius based on the level's scale factor if available
+    // Draw main player circle
     var radius = PLAYER_RADIUS
     c.drawCircle(x, y, radius, paint)
-    Log.d(TAG, "Player.draw() - Finished drawing player at ($x, $y)")
+
+    // Draw highlight (top-left)
+    val highlightPaint = Paint().apply {
+        color = Color.WHITE
+        alpha = 150 // More opaque for visibility on all colors
+        isAntiAlias = true
+    }
+    val highlightRadius = radius * 0.45f
+    c.drawCircle(x - radius * 0.3f, y - radius * 0.3f, highlightRadius, highlightPaint)
+
+    // Draw shadow (bottom-right, optional)
+    val shadowPaint = Paint().apply {
+        color = Color.BLACK
+        alpha = 50 // very transparent
+        isAntiAlias = true
+    }
+    val shadowRadius = radius * 0.9f
+    c.drawCircle(x + radius * 0.2f, y + radius * 0.2f, shadowRadius, shadowPaint)
+
+    // Draw player name
+    if (playerName.isNotEmpty()) {
+        val textPaint = Paint().apply {
+            color = Color.BLACK // Or a contrasting color
+            textSize = PLAYER_RADIUS * 0.7f // Adjust text size based on player radius
+            textAlign = Paint.Align.CENTER
+            isAntiAlias = true
+            typeface = Typeface.DEFAULT_BOLD // Make name bold
+        }
+        // Draw name centered above the player circle
+        c.drawText(playerName, x, y - PLAYER_RADIUS - 10f, textPaint)
+    }
   }
 }

@@ -1,0 +1,41 @@
+
+classDiagram
+%% ─── Android framework roots ─────────────────────────────────────────────
+class AppCompatActivity
+class SurfaceView
+class View
+
+%% ─── Activities ──────────────────────────────────────────────────────────
+AppCompatActivity <|-- HomeActivity
+AppCompatActivity <|-- MainActivity
+
+%% ─── Core game view & loop ───────────────────────────────────────────────
+SurfaceView      <|-- GameView
+GameView "1" *-- GameThread          : owns (inner class)
+GameView "1" *-- PaintSurface        : renders to
+GameView "1" *-- Level               : currentLevel
+GameView "1" o-- VirtualJoystick     : local control
+GameView "1" *-- Player              : players map
+GameView  ..>  MultiplayerManager    : synchronises
+GameView  ..>  GameModeManager       : match timing
+GameView  ..>  CoverageCalculator    : coverage stats
+
+%% ─── Level abstraction ───────────────────────────────────────────────────
+
+class Level["Level\n<<interface>>"]
+Level <|.. MazeLevel
+
+%% ─── Player state sync ───────────────────────────────────────────────────
+Player --> PlayerState               : serialises/deserialises
+
+%% ─── HUD overlays ────────────────────────────────────────────────────────
+View <|-- InkHudView
+View <|-- CoverageHudView
+View <|-- TimerHudView
+
+%% ─── Utility & managers ──────────────────────────────────────────────────
+class MultiplayerManager
+class GameModeManager
+class CoverageCalculator
+class PaintSurface
+class VirtualJoystick

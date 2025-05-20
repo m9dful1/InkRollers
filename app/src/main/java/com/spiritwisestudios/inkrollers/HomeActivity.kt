@@ -2,6 +2,9 @@ package com.spiritwisestudios.inkrollers
 
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
@@ -9,6 +12,10 @@ import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import com.spiritwisestudios.inkrollers.ui.ProfileFragment
+import com.google.firebase.auth.ktx.auth
+import com.google.firebase.ktx.Firebase
+import com.spiritwisestudios.inkrollers.repository.ProfileRepository
 
 class HomeActivity : AppCompatActivity() {
 
@@ -43,8 +50,15 @@ class HomeActivity : AppCompatActivity() {
         gameIdEditText = findViewById(R.id.editText_game_id)
 
         playButton.setOnClickListener {
-            playButton.visibility = View.GONE // Hide Play button
-            subMenuLayout.visibility = View.VISIBLE // Show submenu
+            // Apply the press animation
+            val animation = android.view.animation.AnimationUtils.loadAnimation(this, R.anim.button_press)
+            playButton.startAnimation(animation)
+            
+            // Hide Play button and show submenu after a short delay
+            Handler(Looper.getMainLooper()).postDelayed({
+                playButton.visibility = View.GONE
+                subMenuLayout.visibility = View.VISIBLE
+            }, 100)
         }
 
         hostButton.setOnClickListener {
@@ -62,6 +76,55 @@ class HomeActivity : AppCompatActivity() {
                 Toast.makeText(this, "Please enter a valid 6-character Game ID or leave blank to join random game", Toast.LENGTH_SHORT).show()
             }
         }
+
+        findViewById<Button>(R.id.button_profile).setOnClickListener {
+            val currentUser = Firebase.auth.currentUser
+            if (currentUser != null) {
+                // User is signed in, proceed to profile
+                showProfileFragment(currentUser.uid)
+            } else {
+                // User is not signed in, attempt anonymous sign-in then show profile
+                signInAndShowProfile()
+            }
+        }
+    }
+
+    private fun showProfileFragment(uid: String) {
+        supportFragmentManager.beginTransaction()
+            .replace(android.R.id.content, ProfileFragment.newInstance(uid))
+            .addToBackStack(null)
+            .commit()
+    }
+
+    private fun signInAndShowProfile() {
+        Firebase.auth.signInAnonymously()
+            .addOnCompleteListener(this) { task ->
+                if (task.isSuccessful) {
+                    // Sign in success, get user and show profile
+                    val user = Firebase.auth.currentUser
+                    user?.uid?.let {
+                        Log.d("HomeActivity", "Anonymous sign-in successful for profile view. UID: $it")
+                        // It might be good to set online status here IF this is the main point of user interaction
+                        // ProfileRepository.setUserOnlineStatus(it) 
+                        showProfileFragment(it)
+                    } ?: run {
+                        Log.e("HomeActivity", "Anonymous sign-in task successful but user or UID is null.")
+                        Toast.makeText(baseContext, "Error: Could not retrieve user ID after sign-in.", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    // If sign in fails, display a message to the user.
+                    Log.w("HomeActivity", "Anonymous sign-in failed for profile view.", task.exception)
+                    Toast.makeText(baseContext, "Sign-in failed. Cannot view profile.", Toast.LENGTH_SHORT).show()
+                }
+            }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // REMOVE: Set user online when activity resumes
+        // Firebase.auth.currentUser?.uid?.let {
+        // ProfileRepository.setUserOnlineStatus(it)
+        // }
     }
 
     private fun showMatchSettingsDialog() {

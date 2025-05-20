@@ -1,0 +1,16 @@
+
+stateDiagram-v2
+    [*] --> HomeScreen : app launch
+    HomeScreen --> HostJoinSubmenu : "Play" tapped
+    HostJoinSubmenu --> WaitingHost : Host + settings chosen
+    HostJoinSubmenu --> WaitingJoin : Join (ID / random)
+
+    WaitingHost --> Countdown : 2nd player joins
+    WaitingJoin --> Countdown : Host starts match
+
+    Countdown --> GameplayInit : "3 2 1 GO"
+    GameplayInit --> GameplayLoop
+    GameplayLoop --> MatchEnd : timer expires
+
+    MatchEnd --> GameplayInit : all players rematch = YES
+    MatchEnd --> HomeScreen   : any NO / back press

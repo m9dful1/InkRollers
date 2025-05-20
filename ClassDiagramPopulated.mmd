@@ -1,0 +1,138 @@
+classDiagram
+%% Android framework roots
+class AppCompatActivity
+class SurfaceView
+class View
+
+%% Activities
+AppCompatActivity <|-- HomeActivity
+AppCompatActivity <|-- MainActivity
+
+%% Core game view & loop
+SurfaceView <|-- GameView
+GameView "1" *-- PaintSurface : rendersTo
+GameView "1" *-- Level : currentLevel
+GameView "1" o-- VirtualJoystick : local control
+GameView "1" *-- Player : players
+GameView ..> MultiplayerManager : sync
+GameView ..> GameModeManager : timing
+GameView ..> CoverageCalculator : stats
+
+%% Level abstraction
+class Level["Level\n<<interface>>"]
+Level <|.. MazeLevel
+
+%% Player state sync
+Player --> PlayerState : state
+
+%% HUD overlays
+View <|-- InkHudView
+View <|-- CoverageHudView
+View <|-- TimerHudView
+
+%% Utility & managers
+
+
+class TimerHudView {
+    -remainingMs: Long
+    -textPaint: Paint
+    +totalSec: Int
+    +minutes: Int
+    +seconds: Int
+    +timeText: String
+    +updateTime(Long): void
+}
+
+class HomeActivity {
+    +gameId: String
+    +timeOptions: Array
+    +timeValues: Array
+    +selectedTimeIndex: Int
+    +complexityOptions: Array
+    +complexityValues: Array
+    -showMatchSettingsDialog(): void
+    -startGameActivity(String, String? = null, Int? = null, String? = null): void
+}
+
+class GameView {
+    -players: List
+    -joysticks: List
+    -pendingPlayerStates: Map
+    -inkHudView: InkHudView?
+    -coverageHudView: CoverageHudView?
+    -gameModeManager: GameModeManager?
+    +stopThread(): void
+    +startGameLoop(): void
+    +update(Float): void
+    +setMultiplayerManager(MultiplayerManager): void
+    +setLocalPlayerId(String?): void
+    +getLocalPlayer(): Player?
+}
+
+class InkHudView {
+    -inkPercent: Float
+    -modeText: String
+    -barPaint: Paint
+    -barBackgroundPaint: Paint
+    -borderPaint: Paint
+    -textPaint: Paint
+    +updateHud(Float, String): void
+}
+
+class MainActivity {
+    -matchDurationMs: Long
+    -mazeComplexity: String
+    -localPlayerId: String?
+    -waitingDialog: AlertDialog?
+    -countdownDialog: AlertDialog?
+    -rematchInProgressHandled: Boolean
+    -signInAnonymouslyAndProceed(): void
+    -handleIntentExtras(): void
+    -showRematchDialog(Boolean): void
+    -restartMatchForRematch(): void
+    -showRematchCountdownAndStart(): void
+    -restartMatch(Boolean = false): void
+}
+
+class Level {
+    +update(): Boolean
+    +draw(Canvas)
+    +checkCollision(Float, Float): Boolean
+    +getPlayerStartPosition(Int): Pair<Float, Float>
+    +calculateCoverage(PaintSurface): Map<Int, Float>
+}
+
+class MazeLevel {
+    -calculatedCellDimensions: Pair<Int, Int>
+    +baseCellsX: Int
+    +baseCellsY: Int
+    +cX: Int
+    +cY: Int
+    -cellsX: Int
+    -calculateScaling(): void
+    -generateGrids(): void
+    -generateMaze(): void
+    +oppositeDir(Int): Int
+    +knockDownWall(Int, Int, Int): void
+    +markVisited(Int, Int): void
+}
+
+class GameModeManager {
+    -startTime: Long
+    -finished: Boolean
+    +elapsed: Long
+    +start(): void
+    +update(): void
+    +isFinished(): Boolean
+    +timeRemainingMs(): Long
+}
+
+class CoverageHudView {
+    -coverageData: Map<Int, Float>
+    -paint: Paint
+    -textPaint: Paint
+    +data: Map<Int, Float>
+    +density: Float
+    +baseGutter: Float
+    +updateCoverage(Map<Int, Float>): void
+}

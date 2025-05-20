@@ -5,7 +5,8 @@ package com.spiritwisestudios.inkrollers
  */
 class GameModeManager(
     val mode: GameMode,
-    private val durationMs: Long
+    private val durationMs: Long,
+    private val providedStartTime: Long? = null
 ) {
     private var startTime: Long = 0L
     private var finished: Boolean = false
@@ -14,7 +15,7 @@ class GameModeManager(
      * Call to begin the match timer.
      */
     fun start() {
-        startTime = System.currentTimeMillis()
+        startTime = providedStartTime ?: System.currentTimeMillis()
         finished = false
     }
 
