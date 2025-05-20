@@ -29,7 +29,8 @@
       android:layout_height="150dp"
       app:layout_constraintTop_toTopOf="parent"
       app:layout_constraintStart_toStartOf="parent"
-      android:layout_margin="16dp" />
+      android:layout_marginStart="16dp"
+      android:layout_marginTop="64dp" />
 
   <com.spiritwisestudios.inkrollers.CoverageHudView
       android:id="@+id/coverage_hud_view"
