@@ -213,7 +213,11 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
                     val allStats = (currentLevel as MazeLevel).calculateCoverage(surface)
                     val activeColors = players.values.map { it.getColor() }.toSet()
                     val activeStats = allStats.filterKeys { it in activeColors }
-                    coverageHudView?.updateCoverage(activeStats)
+
+                    val leftColor = players["player0"]?.getColor()
+                    val rightColor = players["player1"]?.getColor()
+
+                    coverageHudView?.updateCoverage(activeStats, leftColor, rightColor)
                 } catch (e: Exception) {
                     Log.e(TAG, "Error updating coverage HUD", e)
                 }
