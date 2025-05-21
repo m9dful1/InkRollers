@@ -6,8 +6,8 @@ import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import android.util.Log
 
-class PaintSurface(val w:Int,val h:Int){
-  private val bmp=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888)
+class PaintSurface(val w:Int,val h:Int, existingBitmap: Bitmap? = null){
+  private val bmp=existingBitmap ?: Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888)
   private val cvs=Canvas(bmp)
   private val paint=Paint().apply{isAntiAlias=true}
   private val clearPaint = Paint().apply{
@@ -23,4 +23,5 @@ class PaintSurface(val w:Int,val h:Int){
   }
   /** Clear the entire paint surface. */
   fun clear() { cvs.drawColor(0, android.graphics.PorterDuff.Mode.CLEAR) }
+  fun getBitmapCopy(): Bitmap = bmp.copy(bmp.config, true)
 }

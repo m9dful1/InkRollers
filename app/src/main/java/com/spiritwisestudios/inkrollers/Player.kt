@@ -6,7 +6,7 @@ import android.util.Log
 import android.graphics.Typeface
 
 class Player(
-    private val surface: PaintSurface,
+    var surface: PaintSurface,
     startX: Float,
     startY: Float,
     playerColor: Int,

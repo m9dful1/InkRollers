@@ -24,10 +24,26 @@ object CoverageCalculator {
         val counts = mutableMapOf<Int, Int>()
         var totalSamples = 0
 
+        // Get maze bounds from MazeLevel
+        val (viewportOffsetX, viewportOffsetY) = level.getViewportOffset()
+        val mazeWidthField = level.javaClass.getDeclaredField("mazeWidth")
+        mazeWidthField.isAccessible = true
+        val mazeWidth = mazeWidthField.get(level) as Float
+        val mazeHeightField = level.javaClass.getDeclaredField("mazeHeight")
+        mazeHeightField.isAccessible = true
+        val mazeHeight = mazeHeightField.get(level) as Float
+
+        val minX = viewportOffsetX
+        val minY = viewportOffsetY
+        val maxX = viewportOffsetX + mazeWidth
+        val maxY = viewportOffsetY + mazeHeight
+
         for (y in 0 until h step sampleStep) {
             for (x in 0 until w step sampleStep) {
                 val fx = x.toFloat()
                 val fy = y.toFloat()
+                // Only sample inside the maze bounds
+                if (fx < minX || fx >= maxX || fy < minY || fy >= maxY) continue
                 // skip wall regions
                 if (walls.any { it.contains(fx, fy) }) continue
                 val color = paintSurface.getPixelColor(x, y)

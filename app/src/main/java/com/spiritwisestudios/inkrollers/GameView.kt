@@ -58,6 +58,7 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
   
   companion object {
       private const val TAG = "GameView"
+      var savedPaintBitmap: android.graphics.Bitmap? = null // For paint persistence
   }
   
   init {
@@ -69,12 +70,25 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
   
   override fun surfaceCreated(h:SurfaceHolder){
     Log.i(TAG, "surfaceCreated called. SurfaceView size: ${width}x${height}")
-    // Only initialize the drawing surface here; actual maze init is deferred until after seed is set
-    surface = PaintSurface(width, height)
+    // Restore paint surface if available
+    surface = if (savedPaintBitmap != null) {
+        PaintSurface(width, height, savedPaintBitmap!!)
+    } else {
+        PaintSurface(width, height)
+    }
+    savedPaintBitmap = null
+    // Update all players to use the new surface
+    for (player in players.values) {
+        player.surface = surface
+    }
   }
   
   override fun surfaceDestroyed(h:SurfaceHolder){ 
     Log.i(TAG, "surfaceDestroyed called. Stopping game thread if running.")
+    // Save paint surface bitmap for persistence
+    if (::surface.isInitialized) {
+        savedPaintBitmap = surface.getBitmapCopy()
+    }
     stopThread() // Ensure thread is stopped cleanly when surface is destroyed
     Log.d(TAG, "Surface destroyed, game thread stopped.")
   }
