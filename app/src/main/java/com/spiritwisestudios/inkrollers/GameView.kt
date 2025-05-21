@@ -611,8 +611,14 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
     // Determine the seed from the multiplayer manager, fallback to current time
     val seed = multiplayerManager?.mazeSeed?.takeIf { it != 0L } ?: System.currentTimeMillis()
     Log.d(TAG, "Initializing maze with seed: $seed, complexity: $mazeComplexity")
-    // Create the level with the synchronized seed and complexity
-    val hudHeight = coverageHudView?.height ?: 0
+
+    // Determine the height of the coverage HUD to avoid drawing the maze beneath it
+    val hudHeight = coverageHudView?.height
+        ?: coverageHudView?.layoutParams?.height
+        ?: 0
+
+    // Create the level with the synchronized seed, complexity, and reserved top margin
+
     currentLevel = MazeLevel(width, height, 12, 20, 12f, seed, mazeComplexity, hudHeight)
     Log.d(TAG, "Created maze with viewport offset: ${(currentLevel as MazeLevel).getViewportOffset()}")
     
