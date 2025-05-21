@@ -22,7 +22,12 @@ class MazeLevel(
     private val _fixedCellsY_default: Int = 20, // Renamed to avoid confusion
     private val wallThickness: Float = 12f,
     private val seed: Long = System.currentTimeMillis(), // Use provided seed or current time as fallback
-    private val complexity: String = HomeActivity.COMPLEXITY_HIGH // Added complexity parameter
+    private val complexity: String = HomeActivity.COMPLEXITY_HIGH, // Added complexity parameter
+    /**
+     * Top margin (in pixels) reserved for overlay UI such as the coverage HUD.
+     * The maze will be scaled and positioned within the remaining space.
+     */
+    private val topMargin: Int = 0
 ) : Level {
 
     private val calculatedCellDimensions: Pair<Int, Int> = run {
@@ -81,8 +86,10 @@ class MazeLevel(
         // Calculate cell size based on screen dimensions and desired cell count
         // Apply a safety margin (0.9) to ensure the maze doesn't touch screen edges
         val safetyMargin = 0.9f
+        // Account for reserved top margin so the maze fits below overlay UI.
+        val availableHeight = (screenH - topMargin).toFloat()
         val cellW = (screenW.toFloat() * safetyMargin) / cellsX
-        val cellH = (screenH.toFloat() * safetyMargin) / cellsY
+        val cellH = (availableHeight * safetyMargin) / cellsY
         
         // Use the smaller dimension to ensure square cells and full visibility
         cellSize = minOf(cellW, cellH)
@@ -93,7 +100,7 @@ class MazeLevel(
         
         // Center the maze on screen
         viewportOffsetX = (screenW - mazeWidth) / 2
-        viewportOffsetY = (screenH - mazeHeight) / 2
+        viewportOffsetY = topMargin + (availableHeight - mazeHeight) / 2
         
         // Scale walls thickness proportionally but with a min/max bound
         scale = minOf(maxOf(cellSize / 64f, 0.5f), 2.0f) // Keep scale between 0.5 and 2.0
