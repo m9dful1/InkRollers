@@ -612,7 +612,8 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
     val seed = multiplayerManager?.mazeSeed?.takeIf { it != 0L } ?: System.currentTimeMillis()
     Log.d(TAG, "Initializing maze with seed: $seed, complexity: $mazeComplexity")
     // Create the level with the synchronized seed and complexity
-    currentLevel = MazeLevel(width, height, 12, 20, 12f, seed, mazeComplexity) // Pass complexity
+    val hudHeight = coverageHudView?.height ?: 0
+    currentLevel = MazeLevel(width, height, 12, 20, 12f, seed, mazeComplexity, hudHeight)
     Log.d(TAG, "Created maze with viewport offset: ${(currentLevel as MazeLevel).getViewportOffset()}")
     
     // Clear previous game objects for a fresh start (especially for rematches)
