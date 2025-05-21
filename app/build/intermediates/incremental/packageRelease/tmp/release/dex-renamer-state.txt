@@ -1,4 +1,0 @@
-#Mon May 05 17:41:50 MDT 2025
-base.0=/Users/cthul/AndroidStudioProjects/InkRollers/app/build/intermediates/dex/release/mergeDexRelease/classes.dex
-path.0=classes.dex
-renamed.0=classes.dex
