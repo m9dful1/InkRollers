@@ -21,6 +21,7 @@ import com.spiritwisestudios.inkrollers.TimerHudView
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.RectF
+import android.view.View
 
 class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
     SurfaceView(ctx,attrs),SurfaceHolder.Callback, MultiplayerManager.RemoteUpdateListener { // Implement listener
@@ -31,6 +32,7 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
   private val pendingPlayerStates = ConcurrentHashMap<String, PlayerState>() // Cache for early arrivals
   private var inkHudView: InkHudView? = null
   private var coverageHudView: CoverageHudView? = null
+  private var zoneHudView: ZoneHudView? = null
   private var gameModeManager: GameModeManager? = null
   private var timerHudView: TimerHudView? = null
   // Use var and lateinit for the thread to allow recreation
@@ -224,19 +226,61 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
               } // end !endNotified
             } else {
               // Match is ongoing, update coverage HUD if applicable
-              if (mgr.mode == GameMode.COVERAGE && currentLevel is MazeLevel) {
-                try {
-                    val allStats = (currentLevel as MazeLevel).calculateCoverage(surface)
-                    val activeColors = players.values.map { it.getColor() }.toSet()
-                    val activeStats = allStats.filterKeys { it in activeColors }
+              when (mgr.mode) {
+                  GameMode.COVERAGE -> {
+                      if (currentLevel is MazeLevel) {
+                          try {
+                              val allStats = (currentLevel as MazeLevel).calculateCoverage(surface)
+                              val activeColors = players.values.map { it.getColor() }.toSet()
+                              val activeStats = allStats.filterKeys { it in activeColors }
 
-                    val leftColor = players["player0"]?.getColor()
-                    val rightColor = players["player1"]?.getColor()
+                              val leftColor = players["player0"]?.getColor()
+                              val rightColor = players["player1"]?.getColor()
 
-                    coverageHudView?.updateCoverage(activeStats, leftColor, rightColor)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error updating coverage HUD", e)
-                }
+                              // Move UI updates to main thread to avoid threading exception
+                              Handler(Looper.getMainLooper()).post {
+                                  try {
+                                      coverageHudView?.updateCoverage(activeStats, leftColor, rightColor)
+                                      // Hide zone HUD in coverage mode
+                                      zoneHudView?.visibility = View.GONE
+                                      coverageHudView?.visibility = View.VISIBLE
+                                  } catch (e: Exception) {
+                                      Log.e(TAG, "Error updating coverage HUD on main thread", e)
+                                  }
+                              }
+                          } catch (e: Exception) {
+                              Log.e(TAG, "Error calculating coverage", e)
+                          }
+                      }
+                  }
+                  GameMode.ZONES -> {
+                      if (currentLevel is MazeLevel) {
+                          try {
+                              val zoneOwnership = ZoneOwnershipCalculator.calculateZoneOwnership(
+                                  currentLevel as MazeLevel, 
+                                  surface,
+                                  sampleStep = 10 // Changed from (coverageUpdateFrames / 8).coerceAtLeast(2)
+                              )
+
+                              val leftColor = players["player0"]?.getColor()
+                              val rightColor = players["player1"]?.getColor()
+
+                              // Move UI updates to main thread to avoid threading exception
+                              Handler(Looper.getMainLooper()).post {
+                                  try {
+                                      zoneHudView?.updateZones(zoneOwnership, leftColor, rightColor)
+                                      // Hide coverage HUD in zones mode
+                                      coverageHudView?.visibility = View.GONE
+                                      zoneHudView?.visibility = View.VISIBLE
+                                  } catch (e: Exception) {
+                                      Log.e(TAG, "Error updating zone HUD on main thread", e)
+                                  }
+                              }
+                          } catch (e: Exception) {
+                              Log.e(TAG, "Error calculating zone ownership", e)
+                          }
+                      }
+                  }
               }
             }
           } // end gameModeManager?.let
@@ -614,17 +658,21 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
    * Call this once the shared mazeSeed is available (after host/join completes).
    * It will create the maze, players, and a NEW GameThread instance.
    */
-  fun initGame(mazeComplexity: String) { // Added mazeComplexity parameter
-    Log.d(TAG, "initGame called with complexity: $mazeComplexity. Surface initialized: ${::surface.isInitialized}")
-    if (!::surface.isInitialized) {
-        Log.w(TAG, "initGame called but surface not ready")
-        return
-    }
+  fun initGame(mazeComplexity: String = HomeActivity.COMPLEXITY_HIGH) {
+    Log.d(TAG, "initGame called with mazeComplexity: $mazeComplexity")
+    // Stop any running thread before initializing
     stopThread()
-    Log.d(TAG, "initGame: After stopThread. Thread state: ${if (::thread.isInitialized) thread.state else "not initialized"}")
-    // Determine the seed from the multiplayer manager, fallback to current time
-    val seed = multiplayerManager?.mazeSeed?.takeIf { it != 0L } ?: System.currentTimeMillis()
-    Log.d(TAG, "Initializing maze with seed: $seed, complexity: $mazeComplexity")
+    
+    // Initialize surface if not already done
+    if (!::surface.isInitialized) {
+        Log.d(TAG, "Surface not initialized, creating new surface")
+        surface = PaintSurface(width, height)
+    }
+    
+    // Clear paint surface to ensure fresh start
+    clearPaintSurface()
+    
+    val seed = multiplayerManager?.mazeSeed ?: System.currentTimeMillis()
 
     // Determine the height of the coverage HUD to avoid drawing the maze beneath it
     val hudHeight = coverageHudView?.height
@@ -688,6 +736,13 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
   }
 
   /**
+   * Assign the zone HUD for showing zone ownership.
+   */
+  fun setZoneHudView(view: ZoneHudView) {
+    this.zoneHudView = view
+  }
+
+  /**
    * Start the given game mode for the specified duration (ms).
    */
   fun startGameMode(mode: GameMode, durationMs: Long, startTime: Long? = null) {
@@ -699,6 +754,33 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
     }
     gameModeManager?.start()
     isMatchReady = true
+
+    // Ensure correct HUD visibility and initial state when mode is set
+    Handler(Looper.getMainLooper()).post {
+        try {
+            when (mode) {
+                GameMode.COVERAGE -> {
+                    coverageHudView?.visibility = View.VISIBLE
+                    zoneHudView?.visibility = View.GONE
+                    // Initial update for coverage HUD with 0% for active players
+                    val initialStats = players.values.map { it.getColor() to 0f }.toMap()
+                    val leftColor = players["player0"]?.getColor()
+                    val rightColor = players["player1"]?.getColor()
+                    coverageHudView?.updateCoverage(initialStats, leftColor, rightColor)
+                }
+                GameMode.ZONES -> {
+                    zoneHudView?.visibility = View.VISIBLE
+                    coverageHudView?.visibility = View.GONE
+                    // Initial update for zone HUD (empty or neutral zones)
+                    val leftColor = players["player0"]?.getColor()
+                    val rightColor = players["player1"]?.getColor()
+                    zoneHudView?.updateZones(emptyMap(), leftColor, rightColor) // Assuming empty map means neutral
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting initial HUD state in startGameMode", e)
+        }
+    }
   }
 
   /** Clears the paint surface (removes all painted areas) */
@@ -725,6 +807,27 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
               val localFrac = if (localColor != null) activeStats[localColor] ?: 0f else 0f
               val maxOther = activeStats.filterKeys { it != localColor }.values.maxOrNull() ?: 0f
               didWin = localFrac >= maxOther // Win includes tie
+          } else if (gameModeManager?.mode == GameMode.ZONES && currentLevel is MazeLevel) {
+              val zoneOwnership = ZoneOwnershipCalculator.calculateZoneOwnership(
+                  currentLevel as MazeLevel,
+                  surface
+              )
+              val localColor = getLocalPlayer()?.getColor()
+              
+              // Count zones controlled by local player vs others
+              var localZones = 0
+              var otherZones = 0
+              
+              for (ownerColor in zoneOwnership.values) {
+                  when (ownerColor) {
+                      localColor -> localZones++
+                      null -> {} // Neutral zone, doesn't count for anyone
+                      else -> otherZones++
+                  }
+              }
+              
+              didWin = localZones >= otherZones // Win includes tie
+              Log.i(TAG, "finishMatch: Zones mode - Local zones: $localZones, Other zones: $otherZones")
           }
       } catch (e: Exception) {
           Log.e(TAG, "Error calculating winner in finishMatch", e)

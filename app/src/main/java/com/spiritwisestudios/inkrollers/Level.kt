@@ -40,4 +40,10 @@ interface Level {
      * @return Map of color (Int) to coverage percentage (0.0-1.0)
      */
     fun calculateCoverage(paintSurface: PaintSurface): Map<Int, Float>
+    
+    /**
+     * Get the zones defined for this level (for Zones game mode)
+     * @return List of zone rectangles in normalized coordinates (0.0-1.0)
+     */
+    fun getZones(): List<RectF>
 } 

@@ -454,4 +454,32 @@ class MazeLevel(
     fun getScale(): Float {
         return scale
     }
+    
+    /**
+     * Get the zones defined for this maze level (for Zones game mode).
+     * Returns 6 zones arranged in a 2x3 grid in normalized coordinates (0.0-1.0).
+     */
+    override fun getZones(): List<RectF> {
+        val zones = mutableListOf<RectF>()
+        
+        // Create a 2x3 grid of zones (2 rows, 3 columns)
+        val rows = 2
+        val cols = 3
+        val zoneWidth = 1.0f / cols
+        val zoneHeight = 1.0f / rows
+        
+        for (row in 0 until rows) {
+            for (col in 0 until cols) {
+                val left = col * zoneWidth
+                val top = row * zoneHeight
+                val right = left + zoneWidth
+                val bottom = top + zoneHeight
+                
+                zones.add(RectF(left, top, right, bottom))
+            }
+        }
+        
+        Log.d(TAG, "Generated ${zones.size} zones for maze level")
+        return zones
+    }
 }

@@ -1,127 +1,411 @@
 # Ink  Rollers – Design Document
 
-*(version 0.9 – May 07, 2025)*
+*(version 1.0 – May 22, 2025)*
+*(Revised based on detailed design document principles and codebase review)*
 
 ---
 
-## 1. Overview
+## 0. Introduction
 
-Ink Rollers is a casual, real‑time multiplayer Android game in which players control paint rollers and attempt to cover as much of an arena floor as possible. Matches support several modes (Coverage, Zones), configurable time limits, and variable maze complexities. The game relies on simple, intuitive controls plus light resource strategy (finite ink with refill mechanics). It features a host/join lobby system using Firebase Realtime Database for state synchronization.
+### 0.1 Purpose and Scope
 
-This design document captures the current codebase (v11) and details how the pieces interact, then outlines the full implementation roadmap.
+**Purpose:** This document outlines the design for "Ink Rollers," a casual, real-time multiplayer Android game. It details the system architecture, component design, interfaces, and other considerations necessary for its development, maintenance, and future enhancements.
+
+**Scope:** The game involves players controlling paint rollers to cover an arena floor, competing in various modes like "Coverage" and "Zones." Key features include configurable match settings (time limits, maze complexity), multiplayer interaction via Firebase Realtime Database, and player profile management. This document covers the application from initial user interaction on the home screen through gameplay, match conclusion, and rematch sequences.
+
+### 0.2 Definitions, Acronyms, and Abbreviations
+
+| Term         | Definition                                                                 |
+| :----------- | :------------------------------------------------------------------------- |
+| **RTDB**     | Realtime Database (specifically Firebase Realtime Database)                |
+| **MVP**      | Minimum Viable Product                                                     |
+| **HUD**      | Heads-Up Display                                                           |
+| **UI**       | User Interface                                                             |
+| **UX**       | User Experience                                                            |
+| **SDK**      | Software Development Kit                                                   |
+| **API**      | Application Programming Interface                                          |
+| **AGP**      | Android Gradle Plugin                                                      |
+| **BoM**      | Bill of Materials (used for Firebase dependencies)                         |
+| **SFX**      | Sound Effects                                                              |
+| **UML**      | Unified Modeling Language                                                  |
+| **DFD**      | Data Flow Diagram                                                          |
+| **ER Diagram** | Entity Relationship Diagram                                                |
+| **IDE**      | Integrated Development Environment                                         |
+| **FPS**      | Frames Per Second                                                          |
+| **TTL**      | Time To Live (used in game cleanup logic)                                  |
+| **BaaS**     | Backend as a Service                                                       |
+
+### 0.3 Document Overview
+
+This document is structured as follows:
+*   **Section 0: Introduction** - Purpose, scope, definitions, and this overview.
+*   **Section 1: System Overview** - High-level architecture and subsystem responsibilities.
+*   **Section 2: Design Considerations** - Key design decisions, constraints, and dependencies.
+*   **Section 3: System Architecture** - Backend architecture, components, modules, database design, and architectural patterns.
+*   **Section 4: Interface Design** - User interfaces and API definitions.
+*   **Section 5: Component Design** - Detailed design of components using conceptual UML models.
+*   **Section 6: System Behavior** - Use cases, user stories, and task flows.
+*   **Section 7: Current Code Architecture (v12 Snapshot)** - A detailed look at the existing codebase structure and components as of version 12.
+*   **Section 8: Quality Requirements** - Non-functional requirements like performance, security, etc.
+*   **Section 9: Test Plan** - Strategy for testing the application.
+*   **Section 10: Implementation Plan & Considerations** - Technology stack, development roadmap, and deployment.
+*   **Section 11: Potential Codebase Improvements** - Suggestions for enhancing the codebase.
+*   **Section 12: Risks & Mitigations** - Identified risks and their mitigation strategies.
+*   **Section 13: Appendices** - References, Glossary (combined with Definitions), and Revision History.
 
 ---
 
-## 2. Current Code Architecture (v11)
+## 1. System Overview
 
-### 2.1 Package & Build
+### 1.1 High-Level Architecture
 
+Ink Rollers is an Android mobile game application with a client-server architecture, where the Firebase Realtime Database acts as the Backend as a Service (BaaS). Clients (Android devices running the game) interact with Firebase for game state synchronization, matchmaking, and player data persistence.
+
+*(Placeholder for a High-Level Context Diagram showing User -> Android App -> Firebase RTDB interactions)*
+
+**Key Architectural Components:**
+*   **Game Client (Android App):** Handles user interface, game logic, rendering, local input, and communication with Firebase.
+*   **Firebase Realtime Database:** Stores and synchronizes shared game state (player positions, paint data, match status, game settings), player profiles, and facilitates matchmaking.
+*   **Firebase Authentication:** Used for anonymous user sign-in to uniquely identify users for profile and game association.
+*   **Firebase App Check:** Provides an additional layer of security by verifying that requests to Firebase services originate from authentic app instances.
+
+### 1.2 Subsystems and Responsibilities
+
+*   **Game Logic Subsystem:**
+    *   Manages core gameplay mechanics: player movement, painting, ink management, collision detection.
+    *   Handles different game modes (Coverage, Zones) and their specific rules.
+    *   Controls the game loop and updates game state.
+    *   *Key Classes:* `GameView`, `Player`, `Level` (and implementations like `MazeLevel`), `GameModeManager`, `PaintSurface`.
+*   **Rendering Subsystem:**
+    *   Draws the game world, players, paint, maze, and HUD elements on the screen.
+    *   *Key Classes:* `GameView`, `PaintSurface`, `MazeLevel`, various HUD `View` classes.
+*   **Input Subsystem:**
+    *   Processes user touch input for controlling the player via the virtual joystick and interacting with UI buttons.
+    *   *Key Classes:* `GameView` (for joystick), `HomeActivity`, `MainActivity` (for buttons).
+*   **Multiplayer & Networking Subsystem:**
+    *   Manages all communication with Firebase RTDB.
+    *   Handles game hosting, joining, player state synchronization, paint action broadcasting, and rematch logic.
+    *   *Key Classes:* `MultiplayerManager`, `PlayerState`.
+*   **UI & HUD Subsystem:**
+    *   Displays game information (ink levels, mode, timer, coverage, zone ownership) and game controls.
+    *   Manages navigation between screens (Home, Game).
+    *   *Key Classes:* `HomeActivity`, `MainActivity`, `InkHudView`, `CoverageHudView`, `TimerHudView`, `ZoneHudView`, `ProfileFragment`.
+*   **Player Profile & Persistence Subsystem:**
+    *   Manages player profile data (name, colors, stats, friends).
+    *   Handles saving and loading profiles to/from Firebase.
+    *   *Key Classes:* `ProfileFragment`, `ProfileRepository`, `PlayerProfile`.
+
+---
+
+## 2. Design Considerations
+
+### 2.1 Key Design Decisions and Rationale
+
+*   **Backend Technology (Firebase Realtime Database):**
+    *   **Decision:** Use Firebase RTDB for backend services.
+    *   **Rationale:** Rapid development, real-time data synchronization suitable for multiplayer games, easy scalability for a casual game, built-in authentication, and generous free tier. Reduces the need for custom backend server development.
+*   **Multiplayer Synchronization Strategy (Normalized Coordinates):**
+    *   **Decision:** Synchronize player positions and paint actions using normalized maze coordinates (0.0-1.0 range).
+    *   **Rationale:** Ensures consistent representation across different screen sizes and aspect ratios, simplifying cross-device gameplay logic.
+*   **Game State Management (Client-Authoritative with Firebase Sync):**
+    *   **Decision:** Local player actions (movement, painting) are processed immediately on the client for responsiveness. State is then synced to Firebase for other players. Firebase acts as the source of truth for shared state.
+    *   **Rationale:** Balances responsiveness with consistency. Purely server-authoritative might introduce unacceptable latency for a painting game.
+*   **Maze Generation (Depth-First Search with Rotational Symmetry):**
+    *   **Decision:** Use a DFS-based algorithm with 180-degree rotational symmetry for maze generation, with additional path braiding.
+    *   **Rationale:** Creates "perfect" mazes (initially) ensuring connectivity, while symmetry adds an element of fairness and predictability. Braiding adds complexity and replayability.
+*   **Game Loop Implementation (`GameThread`):**
+    *   **Decision:** A dedicated `GameThread` manages the update and draw cycle.
+    *   **Rationale:** Standard practice for Android games to separate game logic and rendering from the main UI thread, preventing ANR (Application Not Responding) errors.
+*   **Paint System (`PaintSurface`):**
+    *   **Decision:** Use an off-screen `Bitmap` to store painted areas.
+    *   **Rationale:** Efficient for drawing and querying pixel colors (for refill and coverage/zone calculations).
+*   **Anonymous Authentication:**
+    *   **Decision:** Use Firebase Anonymous Authentication.
+    *   **Rationale:** Lowers barrier to entry for users (no need to create accounts immediately) while still providing unique UIDs for profile and game management.
+
+### 2.2 Constraints
+
+*   **Platform Constraint:** Android mobile devices.
+*   **Technical Constraints:**
+    *   Reliance on Firebase services availability and performance.
+    *   Limited processing power and memory on mobile devices, especially for rendering and complex calculations (e.g., coverage).
+    *   Network latency affecting real-time synchronization.
+*   **User Constraints:**
+    *   Targeted at casual gamers, implying simple controls and intuitive gameplay.
+    *   Short match durations suitable for mobile play sessions.
+*   **Business Constraints (Assumed):**
+    *   Rapid development for quick market entry (supported by Firebase).
+    *   Scalability to handle a growing user base.
+
+### 2.3 External Dependencies
+
+*   **Firebase Realtime Database:** Core for multiplayer, game state, and profile persistence.
+*   **Firebase Authentication:** For user identification.
+*   **Firebase App Check (Play Integrity):** For enhancing backend security.
+*   **Android SDK:** The fundamental platform.
+*   **AndroidX Libraries:** Standard support libraries (AppCompat, Core KTX, etc.).
+*   **Kotlin Standard Library:** Primary programming language.
+
+---
+
+## 3. System Architecture (Backend & Core Logic)
+
+### 3.1 Architectural Styles and Patterns
+
+*   **Client-Server Architecture:** The Android app (client) communicates with Firebase (server/BaaS) for data storage and synchronization.
+*   **Event-Driven Architecture:** Firebase RTDB updates trigger events that client listeners respond to (e.g., player state changes, new paint actions). This is particularly evident in `MultiplayerManager`.
+*   **Layered Architecture (Conceptual):**
+    *   **Presentation Layer:** UI (`Activities`, `Fragments`, `Views`).
+    *   **Game Logic Layer:** Core game mechanics (`GameView`, `Player`, `Level`).
+    *   **Data/Networking Layer:** Firebase interaction (`MultiplayerManager`, `ProfileRepository`).
+*   **Observer Pattern:** Used extensively with Firebase listeners (`ValueEventListener`, `ChildEventListener`) where components (e.g., `GameView` via `MultiplayerManager`) observe changes in the database.
+*   **Model-View-Controller (MVC) / Model-View-Presenter (MVP) - Loose Adaptation:**
+    *   **Model:** `PlayerState`, `PlayerProfile`, game data in Firebase, `PaintSurface` bitmap.
+    *   **View:** Android `Activities`, `XML layouts`, custom `View` classes (`GameView`, HUDs).
+    *   **Controller/Presenter:** `MainActivity`, `HomeActivity`, parts of `GameView`, and `MultiplayerManager` mediate between UI, game logic, and data.
+
+### 3.2 Data Flow Diagrams (Conceptual)
+
+*(Placeholder for DFDs. These would visually represent data movement, e.g.:)*
+*   *DFD for Player Joining a Game*
+*   *DFD for Player Movement and Painting Action*
+*   *DFD for Rematch Process*
+
+### 3.3 Database Design (Firebase RTDB)
+
+The Firebase RTDB has a JSON-like structure. Key nodes include:
+
+*   **`/games/{gameId}`:** Root for each game instance.
+    *   `createdAt`: Timestamp (ServerValue.TIMESTAMP)
+    *   `lastActivityAt`: Timestamp (ServerValue.TIMESTAMP)
+    *   `isPrivate`: Boolean
+    *   `mazeSeed`: Long
+    *   `matchDurationMs`: Long
+    *   `mazeComplexity`: String ("LOW", "MEDIUM", "HIGH")
+    *   `gameMode`: String ("COVERAGE", "ZONES")
+    *   `started`: Boolean (indicates if match countdown has begun/completed)
+    *   `startTime`: Long (synchronized server timestamp for match start)
+    *   `playerCount`: Long (number of players at match start, used for rematch coordination)
+    *   `rematchInProgress`: Boolean (flag to coordinate rematch state reset)
+    *   `players/{playerId}`: Node for each player in the game.
+        *   `active`: Boolean
+        *   `color`: Int
+        *   `ink`: Float
+        *   `mazeSeed`: Long (should match game's mazeSeed)
+        *   `mode`: Int (0 for PAINT, 1 for FILL)
+        *   `normX`: Float (normalized X position)
+        *   `normY`: Float (normalized Y position)
+        *   `playerName`: String
+        *   `uid`: String (Firebase Auth UID)
+    *   `paint/{pushId}`: List of paint actions.
+        *   `color`: Int
+        *   `normalizedX`: Float
+        *   `normalizedY`: Float
+        *   `player`: String (playerId who painted)
+        *   `timestamp`: Timestamp (ServerValue.TIMESTAMP)
+    *   `rematchRequests/{playerId}`: Boolean (true if player wants rematch, false otherwise)
+*   **`/profiles/{userId}`:** Root for each user's profile.
+    *   `uid`: String (Firebase Auth UID)
+    *   `playerName`: String
+    *   `favoriteColors`: List<Int>
+    *   `catchPhrase`: String
+    *   `friendCode`: String (unique 6-char code)
+    *   `friends`: List<String> (list of friend UIDs)
+    *   `winCount`: Int
+    *   `lossCount`: Int
+    *   `isOnline`: Boolean
+
+---
+
+## 4. Interface Design
+
+### 4.1 User Interface (UI) Design
+
+*(Placeholder for Wireframes and Mockups. Textual descriptions are in Section 7.7)*
+
+The UI aims for simplicity and intuitiveness, suitable for a casual game.
+*   **Home Screen:** Clean, with a prominent "Play" button leading to game options. Profile access is also available.
+*   **Game Screen:** Dominated by the `GameView` for action. HUD elements are overlaid non-intrusively to provide essential game information. Controls include a virtual joystick and a mode toggle button.
+*   **Dialogs:** Standard Android `AlertDialogs` are used for matchmaking progress (waiting, countdown) and post-match interactions (rematch).
+*   **Profile Screen:** Allows users to customize their name, preferred colors, and catchphrase, and manage a friends list.
+
+### 4.2 API Design (Firebase Interaction)
+
+While not a traditional REST API, interactions with Firebase RTDB constitute the application's backend API. These are primarily managed by `MultiplayerManager` and `ProfileRepository`.
+
+**Key Firebase "Endpoints" (Paths) and Operations:**
+
+*   **Game Creation (Host):**
+    *   Path: `/games/{newGameId}`
+    *   Operation: `setValue()` with initial game data (settings, host player state).
+*   **Game Joining (Joiner):**
+    *   Path: `/games/{gameId}/players/{newPlayerId}`
+    *   Operation: `setValue()` with joiner's initial player state.
+    *   Path: `/games/{gameId}`
+    *   Operation: `addListenerForSingleValueEvent()` to read game settings.
+*   **Player State Update:**
+    *   Path: `/games/{gameId}/players/{localPlayerId}`
+    *   Operation: `setValue()` or `updateChildren()` with `PlayerState` object or partial updates.
+*   **Paint Action:**
+    *   Path: `/games/{gameId}/paint/`
+    *   Operation: `push().setValue()` with paint data (normalized coords, color, timestamp).
+*   **Rematch Answer:**
+    *   Path: `/games/{gameId}/rematchRequests/{localPlayerId}`
+    *   Operation: `setValue()` with boolean.
+*   **Profile Save/Load:**
+    *   Path: `/profiles/{userId}`
+    *   Operations: `setValue()` to save, `get()` to load.
+*   **Friend Code Lookup:**
+    *   Path: `/profiles/`
+    *   Operation: `orderByChild("friendCode").equalTo(code).get()`
+
+Data Payloads are primarily Kotlin data classes like `PlayerState` and `PlayerProfile`, which Firebase serializes to/from JSON.
+
+---
+
+## 5. Component Design
+
+*(Placeholder for detailed UML Diagrams: Class Diagrams, Entity Relationship Diagrams, Activity Diagrams, Sequence Diagrams, State Diagrams)*
+
+**Conceptual Overview (examples of what diagrams would show):**
+
+*   **Class Diagram:** Would show key classes like `GameView`, `Player`, `MultiplayerManager`, `MazeLevel`, `PlayerState`, `PlayerProfile`, their attributes, methods, and relationships (inheritance, aggregation, composition, dependency). For instance, `GameView` *has a* `MultiplayerManager`, *contains multiple* `Player` objects, and *uses a* `Level`.
+*   **Entity Relationship Diagram (for Firebase Data):** Would visually model the structure of data in Firebase, showing entities like "Game", "PlayerInGame", "PaintAction", "UserProfile", "Friendship" and their relationships.
+*   **Activity Diagram (e.g., "Joining a Game"):** Would show the flow of activities from a user tapping "Join Game" to successfully entering a match, including UI interactions, Firebase calls, and state changes.
+*   **Sequence Diagram (e.g., "Player Paints"):** Would illustrate the time-ordered sequence of interactions: `Player` -> `GameView` -> `MultiplayerManager` -> Firebase RTDB, and then Firebase RTDB -> other clients' `MultiplayerManager` -> `GameView` -> `PaintSurface`.
+*   **State Diagram (e.g., "Game State"):** Could model the states of `MainActivity` or the overall game flow: `Initializing` -> `WaitingForPlayers` -> `Countdown` -> `GameplayActive` -> `MatchEnded` -> `RematchPending`.
+
+---
+
+## 6. System Behavior
+
+### 6.1 Use Cases (Examples)
+
+*   **UC-001: Host a New Game**
+    *   **Actor:** User (Player 1)
+    *   **Description:** User initiates and configures a new game session that another player can join.
+    *   **Preconditions:** User is on the Home Screen.
+    *   **Flow:**
+        1.  User taps "Play" button.
+        2.  User taps "Host New Game" button.
+        3.  System presents dialog for Time Limit selection. User selects.
+        4.  System presents dialog for Maze Complexity selection. User selects.
+        5.  System presents dialog for Game Mode selection. User selects.
+        6.  System presents dialog for Match Type (Public/Private). User selects.
+        7.  User confirms.
+        8.  System launches `MainActivity`, authenticates user anonymously.
+        9.  `MultiplayerManager` creates a new game node in Firebase with a unique Game ID, selected settings, and host player data.
+        10. System displays "Waiting for other players..." dialog.
+    *   **Postconditions:** Game is created in Firebase. Host is waiting for another player.
+*   **UC-002: Join an Existing Game (with ID)**
+    *   **Actor:** User (Player 2)
+    *   **Description:** User joins a game session hosted by another player using a known Game ID.
+    *   **Preconditions:** User is on the Home Screen. Game with the specified ID exists and has space.
+    *   **Flow:**
+        1.  User taps "Play" button.
+        2.  User enters a 6-character Game ID.
+        3.  User taps "Join Game" button.
+        4.  System launches `MainActivity`, authenticates user anonymously.
+        5.  `MultiplayerManager` attempts to join the game in Firebase.
+        6.  If successful, `MultiplayerManager` adds joiner's player data to the game node and retrieves game settings.
+        7.  System displays "Waiting for host to start..." dialog.
+    *   **Postconditions:** Joiner is added to the game in Firebase and waiting for the host to start.
+*   **UC-003: Play a Match (Coverage Mode)**
+    *   (Details flow of painting, ink management, timer countdown, HUD updates, and end-of-match coverage calculation)
+*   **UC-004: Request a Rematch**
+    *   (Details flow of match end, rematch dialog, sending answer to Firebase, and handling responses)
+*   **UC-005: Manage Player Profile**
+    *   (Details flow of accessing profile, editing name/colors, adding/removing friends)
+
+### 6.2 User Stories (Examples)
+
+*   **As a player, I want to host a new game with customizable settings (time, complexity, mode, privacy) so I can play the game variant I prefer.**
+*   **As a player, I want to easily join a game hosted by my friend using a Game ID so we can play together.**
+*   **As a player, I want to be able to join a random public game quickly so I can play even if I don't have a specific game to join.**
+*   **As a player, I want to see my ink level and current mode (paint/fill) clearly so I can manage my resources effectively.**
+*   **As a player, I want to see the remaining match time so I know how long I have left.**
+*   **As a player in Coverage mode, I want to see the current paint coverage percentages for myself and my opponent so I know who is winning.**
+*   **As a player in Zones mode, I want to see which zones are controlled by whom so I can strategize.**
+*   **As a player, I want the option to play again with the same opponent immediately after a match finishes so we can have a rematch easily.**
+*   **As a player, I want to customize my player name and preferred roller colors so I can personalize my appearance.**
+
+### 6.3 Step-by-Step Task Descriptions
+
+*(This is largely covered by "Section 7.5 System States & Runtime Flow" which provides a narrative walkthrough. More specific tasks could be detailed here if needed.)*
+
+---
+
+## 7. Current Code Architecture (v12 Snapshot)
+
+*(This section retains the original detailed breakdown from the provided document, as it's a good snapshot of the codebase. Minor adjustments for clarity or consistency with other sections might be made.)*
+
+### 7.1 Package & Build
 *   **Namespace:** `com.spiritwisestudios.inkrollers` (Gradle `namespace` in *app/build.gradle*).
 *   **AndroidX Enabled:** via `gradle.properties` (`android.useAndroidX=true`, `android.enableJetifier=true`).
 *   **SDK Versions:** Minimum SDK 26, compile/target SDK 34.
-*   **Build Tools:** Kotlin 1.9.0, Android Gradle Plugin (AGP) 8.9.2.
-*   **Firebase:** Dependencies via BoM (Platform `33.1.2`), using `firebase-database-ktx`. Google Services plugin `4.4.2` applied.
-*   **Screen Orientation:** Primarily locked to landscape via `AndroidManifest.xml`.
+*   **Build Tools:** Kotlin 1.9.0, Android Gradle Plugin (AGP) 8.9.2. (Note: `app/build.gradle` shows AGP `com.android.application` but version is not explicitly there, usually tied to Android Studio version. Kotlin version is explicit.)
+*   **Firebase:** Dependencies via BoM (Platform `33.1.2`), using `firebase-database-ktx`, `firebase-auth-ktx`, `firebase-appcheck-playintegrity`. Google Services plugin `4.4.2` applied.
+*   **Screen Orientation:** Primarily landscape (`AndroidManifest.xml`).
 
-### 2.2 Class-Level Components
+### 7.2 Class-Level Components
 
 | File                      | Responsibility                                                                                                                                                              | Key Methods / Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | :------------------------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`HomeActivity.kt`**     | App entry point (Launcher). Provides simple UI (Title, Play button -> Host/Join submenu). When hosting, presents a Match Settings dialog (Time Limit: 3/5/7 min; Maze Complexity: Low/Medium/High). Collects Game ID if joining (if left blank, triggers a search for a random available game). Passes mode (`HOST`/`JOIN`), Game ID (if joining, or null for random), Time Limit, and Maze Complexity (if hosting) to `MainActivity` via `Intent` extras. | `onCreate()` sets up UI listeners. `showMatchSettingsDialog()` presents sequential AlertDialogs for time and complexity. `startGameActivity()` launches `MainActivity` with `EXTRA_TIME_LIMIT_MINUTES` and `EXTRA_MAZE_COMPLEXITY` for hosts. Defines complexity constants (`COMPLEXITY_LOW`, `COMPLEXITY_MEDIUM`, `COMPLEXITY_HIGH`). Handles blank Game ID for random join. |
-| **`MainActivity.kt`**     | Manages the main game screen lifecycle. Handles player profile loading for name and color, ensures game initialization (`initGame`, `setLocalPlayerId`) at every match start, not just rematch. Now reads a synchronized `startTime` from Firebase before starting each match, ensuring all clients' timers are aligned. | `onCreate()`, `signInAnonymouslyAndProceed()` (which then calls `handleIntentExtras()`). `handleIntentExtras()` retrieves host settings, stores them. `multiplayerManager.joinGame` callback now provides `GameSettings`. `actuallyStartMatch()` now always calls `gameView.initGame()` and `setLocalPlayerId()` with profile data, and passes the synchronized `startTime` to `gameView.startGameMode()`. Handles fallback to defaults if profile or favorite color is missing. `restartMatch()` passes stored `mazeComplexity` to `gameView.initGame()`. Call to `handleIntentExtras` in `onCreate` was removed to prevent duplicate game creation. |
-| **`GameView.kt`**         | Custom `SurfaceView` owning the game loop (`GameThread`) and rendering. Manages game objects (`Player`, `Level`, `VirtualJoystick`), multi-touch input, and multiplayer display synchronization. Implements `MultiplayerManager.RemoteUpdateListener`. Manages `GameThread` lifecycle. Coordinates with `GameModeManager`. Invokes `onMatchEnd` callback. Manages player objects keyed by Firebase ID. Now supports setting player name and color from profile at match start. | • `initGame(mazeComplexity: String)`: Now accepts `mazeComplexity`. Creates `MazeLevel` with synchronized seed and `mazeComplexity`. Other logic (clearing state, processing pending, creating `GameThread`) remains. <br>• `startGameMode(mode: GameMode, durationMs: Long)`: Uses duration set by `MainActivity`. Other methods largely unchanged. <br>• `setLocalPlayerId(id, color, name)` sets up the local player with the correct name and color from the profile. Handles fallback logic for duplicate or missing colors. |
-| **`GameThread`** (inner)  | Simple `Thread` subclass. Runs `GameView.update(deltaTime)` + `GameView.draw()` in a `while(running)` loop. Calculates `deltaTime`. Locks/unlocks `SurfaceHolder` canvas. **A new instance is created for each match.** | `run()`. Calculates `deltaTime` and passes it to `GameView.update()`.                                                                                                                                                                                                                                                                                                                                                                                          |
-| **`Player.kt`**           | Represents a paint roller avatar. Tracks position (screen coords `x`,`y`), mode, ink level, color. Moves based on joystick input via `move()`, using `deltaTime` for frame-rate independent speed. Checks collision with `Level`. Paints onto `PaintSurface` or refills ink. Sends paint actions to `MultiplayerManager` with **normalized maze coordinates**. | `move(..., deltaTime: Float)`: `moveAmount` now `MOVE_SPEED * magnitude * deltaTime`. `MOVE_SPEED` constant set to `200f` to represent units per second. Other methods unchanged. |
-| **`PlayerState.kt`**      | Data class for player state synced via Firebase. Uses **normalized maze coordinates** (`normX`, `normY`) for resolution independence. Includes `color`, `mode`, `ink`, `active` flag, `mazeSeed`, `playerName`, and `uid`. Has no-arg constructor for Firebase. | No direct changes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| **`PaintSurface.kt`**     | Off-screen `Bitmap` and `Canvas` storing painted pixels. Provides method to clear the surface.                                                                                     | No changes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| **`Level.kt`**            | **Abstract interface** defining the contract for game levels (mazes, rooms, etc.).                                                                                               | No changes to interface.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| **`MazeLevel.kt`**        | **Implements `Level`**. Constructor now accepts `complexity: String`. Adjusts internal cell count (`cellsX`, `cellsY`) based on complexity: LOW (e.g., 8x12), MEDIUM (e.g., 10x16), HIGH (e.g., 12x20), then adapts to device orientation. Generates a perfect maze using a **180° rotationally symmetric** Recursive Backtracker algorithm seeded for synchronization. Each wall removal at (x,y) is mirrored at its rotated counterpart (cellsX-1-x, cellsY-1-y), and cells are jointly marked visited to prevent asymmetry. No entrance or exit openings are carved until explicitly desired; by default the maze is fully enclosed. Handles scaling/offsetting. Provides coordinate conversion methods. Collision uses internal `wallRects` list. |
-| **`VirtualJoystick.kt`**  | Manages state and rendering of an on-screen virtual joystick. Calculates normalized direction and magnitude based on touch input relative to its base position.                  | No changes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| **`InkHudView.kt`**       | Custom `View` displaying the local player's ink level (as a bar) and current mode text ("PAINT" / "FILL").                                                                         | No changes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| **`CoverageHudView.kt`**  | Custom `View` displaying coverage percentage bars for each active player color.                                                                                                  | No changes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| **`TimerHudView.kt`**     | Custom `View` displaying the remaining match time in MM:SS format. The text alignment changed from Center to Right to ensure it stays in the top-right corner.                   | `updateTime(ms: Long)`, `onDraw()` (text paint align set to `Paint.Align.RIGHT`, x-coord `width.toFloat()`). Positioned via `activity_main.xml`.                                                                                                                                                                                                                                                                                                                                                                                                       |
-| **`MultiplayerManager.kt`** | Handles Firebase RTDB interactions. `hostGame()` now accepts `durationMs`, `complexity` and stores them in Firebase at `/games/{gameId}/matchDurationMs` and `/games/{gameId}/mazeComplexity`. `joinGame(gameId: String?, initialState, callback)` retrieves these settings and provides them in its callback (e.g., via a `GameSettings` data class); if `gameId` is null, it invokes `findRandomAvailableGame()`. Other functionalities remain. | `hostGame(initialState, durationMs, complexity, callback)` and `joinGame(gameId: String?, initialState, callback)` signatures updated. Includes `findRandomAvailableGame()` to locate an open game session. Connection test logic (`testFirebaseConnection`) refined to avoid premature error reporting on initial `false` connection state. Added `GameSettings` data class (or similar mechanism) for `joinGame` callback. |
-| **`CoverageCalculator.kt`** | Static utility object to sample the `PaintSurface` bitmap, excluding maze wall areas, and calculate coverage fraction per color.                                           | No changes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| **`GameModeManager.kt`**  | Encapsulates match timing logic. Constructor now takes `durationMs` (which can vary based on host settings). Tracks start time and duration, determines if the match `isFinished()`. Supports different modes (`GameMode` enum: `COVERAGE`, `ZONES`). | Constructor `(mode, durationMs)`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| **`ProfileFragment.kt`**  | Manages player profile UI. Disables save button until profile is loaded. Handles friend code generation and uniqueness. | Save button is only enabled after profile is loaded. Friend code generation is robust and logged. |
+| **`HomeActivity.kt`**     | App entry point (Launcher). UI for Play -> Host/Join. Host presents Match Settings dialog (Time, Complexity, Game Mode, Privacy). Passes settings to `MainActivity`.           | `onCreate()`, `showMatchSettingsDialog()`, `showComplexityDialog()`, `showGameModeDialog()`, `showMatchTypeDialog()`, `startGameActivity()`. Defines mode/complexity/game mode constants. Initializes Firebase App Check. Handles Profile button. |
+| **`MainActivity.kt`**     | Manages game screen. Handles profile loading, Firebase auth, game initialization based on Intent extras (mode, settings). Sets up `GameView` and `MultiplayerManager`. Coordinates pre-match (waiting, countdown) and post-match (rematch) flows. | `onCreate()`, `signInAnonymouslyAndProceed()`, `handleIntentExtras()`. `actuallyStartMatch()` calls `gameView.startGameMode()`. Handles `onMatchEnd`, `onRematchDecision`, `onRematchStartSignal`. `restartMatch()` for rematches. |
+| **`GameView.kt`**         | Custom `SurfaceView` for game loop and rendering. Manages game objects (`Player`, `Level`), input (`VirtualJoystick`), multiplayer display. Implements `MultiplayerManager.RemoteUpdateListener`. Coordinates with `GameModeManager`. Handles mode-specific logic (Coverage/Zones), HUD updates. | `initGame()`, `startGameMode()`, `update(deltaTime)`, `draw()`, `finishMatch()`. `onPlayerStateChanged()`, `onPaintAction()`. Posts UI updates for HUDs to main thread. `PaintSurface` management. |
+| **`GameThread`** (inner in `GameView.kt`)  | `Thread` subclass. Runs `GameView.update(deltaTime)` + `GameView.draw()` loop. Calculates `deltaTime`. New instance per match.                                    | `run()`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| **`Player.kt`**           | Represents paint roller avatar. Tracks position, mode (paint/fill), ink, color, name. Moves via `move()`, checks `Level` collision, paints onto `PaintSurface`. Sends paint actions with normalized maze coordinates. | `move()`, `toggleMode()`, `getInkPercent()`, `draw()`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| **`PlayerState.kt`**      | Data class for player state synced via Firebase (normalized position, color, mode, ink, active, mazeSeed, playerName, uid). Has no-arg constructor for Firebase.               | Defines player data structure for network sync.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| **`PaintSurface.kt`**     | Off-screen `Bitmap` and `Canvas` for painted pixels. Provides `getBitmap()` for direct access and `getBitmapCopy()` for persistence. Method `clear()` erases paint.          | `paintAt()`, `getPixelColor()`, `drawTo()`, `clear()`, `getBitmap()`, `getBitmapCopy()`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| **`Level.kt`**            | Interface for game levels. Defines `update()`, `draw()`, `checkCollision()`, `getPlayerStartPosition()`, `calculateCoverage()`, `getZones()`.                                | Abstract contract for level implementations.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| **`MazeLevel.kt`**        | Implements `Level`. Generates mazes (DFS with symmetry, braiding) with varying complexity. Implements `getZones()` (2x3 grid). Handles scaling/offsetting, coordinate conversion (screen to maze, maze to screen). | `generateMaze()`, `buildWallRects()`, `checkCollision()`, `getPlayerStartPosition()`, `screenToMazeCoord()`, `mazeToScreenCoord()`, `getZones()`. Calculates cell dimensions based on complexity and screen orientation. |
+| **`VirtualJoystick.kt`**  | Manages on-screen virtual joystick logic and rendering. Provides normalized direction and magnitude.                                                                             | `onDown()`, `onMove()`, `onUp()`, `draw()`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| **`InkHudView.kt`**       | Custom `View` for local player's ink level and mode display.                                                                                                                      | `updateHud()`, `onDraw()`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| **`CoverageHudView.kt`**  | Custom `View` for coverage percentage bars in Coverage mode. Visibility managed by `GameView`.                                                                                    | `updateCoverage()`, `onDraw()`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| **`TimerHudView.kt`**     | Custom `View` for remaining match time display (MM:SS).                                                                                                                           | `updateTime()`, `onDraw()`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| **`ZoneHudView.kt`**      | Custom `View` to display zone ownership as a mini-map grid in Zones mode. Visibility managed by `GameView`.                                                                       | `updateZones()`, `onDraw()`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| **`MultiplayerManager.kt`** | Handles all Firebase RTDB interactions: host/join game, player state sync, paint sync, rematch logic, match start signal, game settings sync, stale game cleanup. Implements `RemoteUpdateListener` callbacks for `GameView`. | `hostGame()`, `joinGame()`, `findRandomAvailableGame()`, `updateLocalPlayerState()`, `sendPaintAction()`, `setupFirebaseListeners()`, `leaveGame()`, `sendMatchStart()`, `sendRematchAnswer()`, `setupRematchListener()`, `resetAllPlayerStatesFirebase()`, `performStaleGameCleanup()`. |
+| **`CoverageCalculator.kt`** | Static utility object to calculate coverage fraction per color on a `PaintSurface` within a `MazeLevel`.                                                                      | `calculate(level, paintSurface, sampleStep)`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| **`GameModeManager.kt`**  | Encapsulates match timing and current game mode logic. Tracks `startTime`, `durationMs`, and if the match is `finished`.                                                        | `start()`, `update()`, `isFinished()`, `timeRemainingMs()`. `GameMode` enum (`COVERAGE`, `ZONES`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| **`ZoneOwnershipCalculator.kt`** | Static utility object to determine zone ownership by sampling pixels within predefined zones on the `PaintSurface`, skipping walls, and identifying the majority owner. | `calculateZoneOwnership(level, paintSurface, sampleStep)`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| **`PlayerProfile.kt`**    | Data class for player profile (UID, name, colors, phrase, friend code, friends, stats, online status). Includes `PlayerColorPalette`.                                           | Defines user profile structure for Firebase.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| **`ProfileRepository.kt`**| Object for saving/loading `PlayerProfile` data to/from Firebase. Handles friend code uniqueness checks and finding profiles. Manages user online status.                         | `savePlayerProfile()`, `loadPlayerProfile()`, `findProfileByFriendCode()`, `isFriendCodeUnique()`, `setUserOnlineStatus()`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| **`ProfileFragment.kt`**  | `Fragment` for displaying and editing player profile. Interacts with `ProfileRepository`. Manages friend list UI with `FriendAdapter`.                                            | `onViewCreated()`, `populateProfile()`, `saveProfile()`, `addFriendByCode()`, `generateUniqueFriendCodeAndCreateProfile()`, `setupColorPickers()`.                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| **`FriendAdapter.kt`**    | `RecyclerView.Adapter` for displaying the list of friends in `ProfileFragment`.                                                                                                   | `onCreateViewHolder()`, `onBindViewHolder()`. `FriendDisplay` data class.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 
-### 2.3 Abstract Interfaces & Inheritance
-
-*   **`Level` Interface:** Defines the core contract for any playable area.
-    *   **`MazeLevel` Class:** Implements `Level` to provide a specific maze generation and interaction logic.
+### 7.3 Abstract Interfaces & Inheritance
+*   **`Level` Interface:** Defines core contract (`update`, `draw`, `checkCollision`, `getPlayerStartPosition`, `calculateCoverage`, `getZones`).
+    *   **`MazeLevel` Class:** Implements `Level`.
 *   **Android View System:**
-    *   `GameView` extends `SurfaceView`, implements `SurfaceHolder.Callback`.
-    *   `InkHudView`, `CoverageHudView`, `TimerHudView` extend `View`.
+    *   `GameView` extends `SurfaceView`.
+    *   `InkHudView`, `CoverageHudView`, `TimerHudView`, `ZoneHudView` extend `View`.
 *   **Listener Interfaces:**
     *   `GameView` implements `MultiplayerManager.RemoteUpdateListener`.
-*   **Android Activity Lifecycle:**
-    *   `HomeActivity` and `MainActivity` extend `AppCompatActivity`.
+    *   Various Firebase listeners (`ValueEventListener`, `ChildEventListener`) used in `MultiplayerManager`.
+*   **Android Activity/Fragment Lifecycle:**
+    *   `HomeActivity`, `MainActivity` extend `AppCompatActivity`.
+    *   `ProfileFragment` extends `Fragment`.
 
-### 2.4 Key Data Structures
+### 7.4 Key Data Structures
+*   **`ConcurrentHashMap<String, Player>`:** In `GameView` for active players.
+*   **`ConcurrentHashMap<String, PlayerState>`:** In `GameView` (`pendingPlayerStates`) for caching early player updates.
+*   **`ConcurrentHashMap<String, VirtualJoystick>`:** In `GameView` for joysticks (currently only local player).
+*   **`PlayerState` (Data Class):** For Firebase sync.
+*   **`GameSettings` (Data Class):** In `MultiplayerManager` for game config (duration, complexity, gameMode).
+*   **`PlayerProfile` (Data Class):** For user profile data.
+*   **`Map<Int, Float>`:** For coverage results.
+*   **`Map<Int, Int?>`:** For zone ownership results (Zone Index -> Owner Color or null).
+*   **`List<RectF>`:** In `MazeLevel` for wall bounding boxes; in `Level` interface for zones.
+*   **`Bitmap` / `Canvas`:** In `PaintSurface`.
 
-*   **`ConcurrentHashMap<String, Player>`:** Used in `GameView` to store player objects, keyed by Firebase Player ID (e.g., "player0"). Thread-safe for handling updates from Firebase listeners.
-*   **`ConcurrentHashMap<String, PlayerState>`:** Used in `GameView` (`pendingPlayerStates`) to temporarily store player states received from Firebase *before* the `currentLevel` is initialized.
-*   **`ConcurrentHashMap<String, VirtualJoystick>`:** Used in `GameView` to store joystick instances, keyed by Player ID (currently only the local player has one).
-*   **`PlayerState` (Data Class):** Serializable object defining the structure of player data synced via Firebase (normalized position, color, mode, ink, active status, maze seed, playerName, uid).
-*   **`GameSettings` (Data Class):** (If implemented in `MultiplayerManager`) Holds `durationMs` and `complexity` for a game, read by clients when joining.
-*   **`Map<Int, Float>`:** Standard Kotlin map used for returning coverage statistics (Color Int -> Fraction Float) by `CoverageCalculator` and consumed by `CoverageHudView` and `GameView`.
-*   **`List<RectF>`:** Used in `MazeLevel` to store the calculated bounding boxes for maze walls for collision detection and rendering.
-*   **`Bitmap` / `Canvas`:** Core Android graphics objects used by `PaintSurface` to store and draw the painted layer.
+### 7.5 System States & Runtime Flow
 
-### 2.5 System States & Runtime Flow
+(This largely matches the detailed flow provided in the original "System States & Runtime Flow" section of the document. It accurately describes the transitions from Home Screen -> Host/Join -> Waiting -> Countdown -> Gameplay -> Match End/Rematch, including how game settings and modes are handled.)
 
-The application transitions through several distinct states:
+### 7.6 System Inputs & Outputs
 
-1.  **Home Screen (`HomeActivity`):**
-    *   Initial state after launch.
-    *   Displays title and "Play" button.
-    *   *Transition:* User taps "Play".
-2.  **Host/Join Submenu (`HomeActivity`):**
-    *   "Play" button is hidden, Host/Join options appear.
-    *   If "Host New Game" is tapped:
-        *   A **Match Settings dialog** appears (sequential choices for Time Limit and Maze Complexity).
-        *   *Transition (Host):* User confirms settings -> Launches `MainActivity` in HOST mode with selected Time Limit and Maze Complexity as Intent extras.
-    *   If "Join Game" is tapped:
-        *   User enters a Game ID (or leaves it blank).
-        *   *Transition (Join):* User enters valid ID (or leaves blank for random search), taps "Join Game" -> Launches `MainActivity` in JOIN mode with Game ID (or null).
-3.  **Waiting (Host - `MainActivity`):**
-    *   `MainActivity` is active. `signInAnonymouslyAndProceed()` completes, then `handleIntentExtras()` is called.
-    *   A "Waiting for other players..." dialog is shown.
-    *   `MultiplayerManager` listens for player count changes.
-    *   *Transition:* Second player joins -> `onPlayerCountChanged` triggers countdown.
-4.  **Waiting (Join - `MainActivity`):**
-    *   `MainActivity` is active. `MultiplayerManager` reads `matchDurationMs` and `mazeComplexity` from Firebase and returns them via callback. `MainActivity` stores these settings.
-    *   A "Waiting for host to start..." dialog is shown.
-    *   `MultiplayerManager` listens for the start signal.
-    *   *Transition:* Host sends start signal -> `onMatchStartRequested` triggers countdown.
-5.  **Pre-Match Countdown (`MainActivity`):**
-    *   "Waiting..." dialog dismissed.
-    *   "3... 2... 1... GO" dialog/overlay shown, synchronized across clients.
-    *   *Transition:* Countdown finishes -> **All clients read the synchronized `startTime` from Firebase, then call `actuallyStartMatch`.**
-6.  **Gameplay Initialization (`MainActivity.actuallyStartMatch`)**
-    *   Calls `gameView.initGame(mazeComplexity)`: Always creates `MazeLevel` and new `GameThread` at match start.
-    *   Calls `gameView.setLocalPlayerId()`: Always sets up the local player with name and color from the profile, with fallback logic for duplicates or missing data.
-    *   Calls `gameView.startGameMode(GameMode.COVERAGE, matchDurationMs, startTime)`: Creates `GameModeManager` using selected/received duration and the synchronized `startTime` from Firebase. Sets `isMatchReady=true`.
-    *   Calls `gameView.startGameLoop()`: Sets `thread.running=true`, starts the `GameThread`.
-    *   *Transition:* `GameThread` loop starts running, and all clients' timers are now aligned to the same reference.
-7. **Gameplay Loop (`GameView` + `GameThread`):**
-    *   `GameThread` runs `update(deltaTime)`/`draw` loop. `Player.move` uses `deltaTime`.
-    *   Players control rollers via `VirtualJoystick`, paint the `PaintSurface`.
-    *   Player state and paint actions are synced via `MultiplayerManager` and Firebase. Remote player positions correct themselves as new `PlayerState` updates arrive and are processed by `onPlayerStateChanged` (which now has a valid `currentLevel`).
-    *   HUDs (`InkHudView`, `CoverageHudView`, `TimerHudView`) display game info.
-    *   `GameModeManager` tracks time.
-    *   *Transition:* `GameModeManager.isFinished()` returns true -> Match End state.
-8.  **Match End / Rematch (`MainActivity` + `GameView`):**
-    *   `GameThread` loop stops (`thread.running = false`).
-    *   Winner/Loser determined based on coverage.
-    *   `onMatchEnd` callback fires.
-    *   "You Won/Lost! Play Again?" dialog shown.
-    *   Player selects "Yes" or "No". Answer sent via `MultiplayerManager.sendRematchAnswer`.
-    *   `MultiplayerManager` waits for all answers via `setupRematchListener`.
-    *   *Transition (Both Yes):* `onRematchDecision(true)` fires -> `MainActivity.restartMatch` runs -> Returns to **Gameplay Initialization** state after reset and delay.
-    *   *Transition (Any No / Back Button):* `onRematchDecision(false)` fires -> `MainActivity.finish()` called -> Returns to **Home Screen**. OR `onDestroy` called -> `MultiplayerManager.leaveGame()` cleans up Firebase.
-
-### 2.6 System Inputs & Outputs
+(This largely matches the detailed inputs/outputs provided in the original "System Inputs & Outputs" section, covering user touch, Firebase events as inputs, and screen display, Firebase writes as outputs. The handling of normalized coordinates and game settings is correctly noted.)
 
 *   **Inputs:**
     *   **User Touch:**
@@ -137,10 +421,11 @@ The application transitions through several distinct states:
         *   Player count changes (`onDataChange` on `/players/`).
         *   Match start signal (`onDataChange` on `/started`).
         *   Synchronized match start time (`startTime`) written by host to `/games/{id}/startTime` and read by all clients before starting the match timer.
+        *   Game settings including `matchDurationMs`, `mazeComplexity`, **and `gameMode`** read by joining clients.
 *   **Outputs:**
     *   **Screen Display:**
         *   Rendered game state via `GameView` (maze, paint, players, joystick).
-        *   HUD overlays via `InkHudView`, `CoverageHudView`, `TimerHudView`.
+        *   HUD overlays via `InkHudView`, `CoverageHudView`, `TimerHudView`, **`ZoneHudView`**.
         *   UI elements in `HomeActivity` and `MainActivity` (buttons, text, dialogs).
     *   **Firebase Realtime Database Writes:**
         *   Local player's full state (`PlayerState`) updates during gameplay to `/games/{id}/players/{pid}`.
@@ -148,104 +433,113 @@ The application transitions through several distinct states:
         *   Paint actions (including normalized coordinates) pushed to `/games/{id}/paint/`.
         *   Rematch answers written to `/games/{id}/rematchRequests/{pid}`.
         *   Match start signal (`started=true`) written by host to `/games/{id}/started`.
-        *   **Match Settings by Host:** `matchDurationMs` and `mazeComplexity` written to `/games/{id}/`.
+        *   **Match Settings by Host:** `matchDurationMs`, `mazeComplexity`, **and `gameMode`** written to `/games/{id}/`.
         *   Game node removal via `leaveGame()`.
 
-### 2.7 User Interface Description
+(This largely matches the UI descriptions from the original document for `activity_home.xml` and `activity_main.xml`, including the dialogs and HUD elements. The recent changes for Zones mode HUD and Timer HUD sizing are correctly noted.)
 
-*   **`activity_home.xml` (`HomeActivity`):**
-    *   Displays the game title "InkRollers".
-    *   Features a central "Play" button.
-    *   Tapping "Play" reveals a submenu containing:
-        *   "Host New Game" button: **Tapping this now opens a Match Settings dialog sequence (Time Limit choice, then Maze Complexity choice) before proceeding.**
-        *   An `EditText` field to enter a 6-character Game ID (leaving this field blank and tapping 'Join Game' will attempt to find a random available game).
-        *   "Join Game" button.
-*   **`activity_main.xml` (`MainActivity`):**
-    *   Dominated by the `GameView` which takes up most of the screen space for rendering the game world.
-    *   Overlays HUD elements:
-        *   `TimerHudView` (Top Right): Displays remaining match time (MM:SS).
-        *   `InkHudView` (Top Left): Shows the local player's ink level bar and current mode text.
-        *   `CoverageHudView` (Below Ink HUD): Displays coverage percentage bars for active players.
-    *   A "P1 Toggle" button (Bottom Right) allows the local player to switch between PAINT and FILL modes. (P2 button is present but hidden/unused).
-    *   Standard `AlertDialog`s are used for "Waiting...", "Countdown", and "Rematch" prompts.
+### 7.8 Data Flow & Interaction Diagram (Conceptual)
 
-### 2.8 Data Flow & Interaction Diagram
-
-```
-// Conceptual Diagram - Simplified
-
-// ---- Pre-Match Flow ----
-HomeActivity --(Tap "Host New Game")--> HomeActivity: showMatchSettingsDialog()
-  |                                         | User selects Time Limit & Maze Complexity
-  |                                         |
-HomeActivity --(Intent w/ Mode=HOST, Time, Complexity)--> MainActivity
-  |                                      | onCreate() -> new MultiplayerManager()
-  |                                      | signInAnonymouslyAndProceed() -> handleIntentExtras() -> Stores Time, Complexity
-  |                                      |   -> MultiplayerManager.hostGame(initialState, durationMs, complexity) 
-  |                                      |     -> Firebase write (players/player0, mazeSeed, matchDurationMs, mazeComplexity)
-  |                                      |   -> showWaitingForPlayersDialog()
-  |
-HomeActivity --(Intent w/ Mode=JOIN, ID)--> MainActivity
-                                             | onCreate() -> new MultiplayerManager()
-                                             | signInAnonymouslyAndProceed() -> handleIntentExtras()
-                                             |   -> MultiplayerManager.joinGame(ID, initialState) 
-                                             |     -> Firebase read (seed, matchDurationMs, mazeComplexity) -> Returns GameSettings
-                                             |     -> MainActivity stores received Time, Complexity
-                                             |     -> Firebase write (players/playerN)
-                                             |   -> showWaitingForHostDialog()
-
-HomeActivity --(Intent w/ Mode=JOIN, ID=null)--> MainActivity
-                                                       | signInAnonymouslyAndProceed() -> handleIntentExtras()
-                                                       |   -> MultiplayerManager.joinGame(null, initialState)
-                                                       |     -> MultiplayerManager.findRandomAvailableGame()
-                                                       |       -> (if game found, proceeds like specific join with found ID)
-                                                       |   -> showWaitingForHostDialog() (or "no games found" if applicable)
-
-Firebase --(Player Added)--> MultiplayerManager --> onPlayerCountChanged --> MainActivity (Host)
-  |                                      | (Flow to countdown largely the same)
-  |
-Firebase --(started=true, startTime=...)--> MultiplayerManager --> onMatchStartRequested --> MainActivity (Join)
-                                               | (Flow to countdown largely the same)
-
-actuallyStartMatch() [Both Host & Join]
-  -> gameView.initGame(mazeComplexity) // Creates new Level (with chosen complexity), new Thread
-  -> gameView.setLocalPlayerId()
-  -> gameView.startGameMode(GameMode.COVERAGE, matchDurationMs, startTime) // Uses chosen duration and synchronized start time
-  -> gameView.startGameLoop()
-
-
-// ---- Gameplay Loop ----
-User Touch -> GameView.onTouchEvent() -> VirtualJoystick.onMove()
-  |
-  -> GameView.update(deltaTime) // deltaTime passed from GameThread
-     | -> Player.move(..., deltaTime) // Movement uses deltaTime
-     |    | (Collision, Paint/Refill logic as before)
-     | -> (Multiplayer state/paint sync as before)
-     | -> IF isMatchReady: GameModeManager.update() // Tracks time based on initial duration
-     |      -> (Coverage, HUD updates as before)
-     -> GameView.draw()
-
-// ---- Match End / Rematch Flow ----
-GameView.update() --(GameModeManager.isFinished() == true)-->
-  | (Rematch dialog flow as before)
-  |
-Firebase --(All Answers In)--> MultiplayerManager --> onRematchDecision(allYes)
-                                       --> MainActivity
-                                           | -> IF allYes: restartMatch()
-                                           |      | (Clear Firebase state, local GameView surface)
-                                           |      | -> gameView.initGame(mazeComplexity) // Re-init with same complexity
-                                           |      | -> (Setup local player, rematch listener)
-                                           |      | -> Handler.postDelayed -> gameView.startGameMode(GameMode.COVERAGE, matchDurationMs) -> gameView.startGameLoop()
-                                           |
-                                           | -> IF !allYes: finish() OR onDestroy()
-
-```
+(The original textual diagram provides a good high-level conceptual flow. Formal DFDs would be more detailed but this serves as a starting point.)
 
 ---
 
-## 3. Implementation Plan
 
-### 3.1 Milestone Tracker
+## 8. Quality Requirements
+
+### 8.1 Performance
+*   **Target Frame Rate:** Aim for a consistent 30-60 FPS during gameplay on mid-range target devices.
+*   **Response Time:** User input (joystick, button taps) should feel instantaneous (e.g., <100ms UI response).
+*   **Network Latency:** While variable, the game should gracefully handle typical mobile network latencies. Local actions are immediate. Remote player updates should appear smoothly.
+*   **Scalability (Firebase):** Firebase RTDB is designed for scalability. The data structure should be optimized to support a reasonable number of concurrent games and players without excessive costs or performance degradation. Stale game cleanup is implemented.
+*   **Coverage/Zone Calculation:** These calculations should not cause noticeable frame drops. `sampleStep` parameters are used for tuning.
+
+### 8.2 Security
+*   **Firebase App Check:** Implemented in `HomeActivity` using Play Integrity to help ensure requests to Firebase originate from authentic app instances.
+*   **Firebase Database Rules:**
+    *   *(To be defined/verified)* Rules should be configured to:
+        *   Allow players to write only to their own data within a game (`/games/{gameId}/players/{playerId}`).
+        *   Allow hosts to write to game-level settings.
+        *   Validate data types and structures where possible.
+        *   Secure profile data (`/profiles/{userId}` should only be writable by the owner).
+*   **Input Validation:** Basic client-side validation for inputs like Game ID length. Further server-side validation via Firebase Rules is recommended.
+*   **Data Privacy:** Player UIDs are used. No other PII is explicitly collected beyond user-chosen player names and catchphrases. A privacy policy will be required for store release.
+
+### 8.3 Usability
+*   **Learnability:** Game controls and objectives should be easy to understand for new players.
+*   **Efficiency:** Players should be able to perform common actions (join game, toggle mode) quickly.
+*   **User Feedback:** Clear visual feedback for actions (painting, mode changes, button presses, errors).
+*   **Accessibility:** *(Consideration for future)* Basic accessibility features (e.g., adjustable text sizes, color contrast options if complex palettes are introduced).
+
+### 8.4 Reliability
+*   **Stability:** The application should not crash frequently. Robust error handling for network issues and unexpected data from Firebase.
+*   **Recoverability:**
+    *   If disconnected from Firebase, attempt to reconnect. State might be lost or stale if reconnection is slow.
+    *   `PaintSurface` bitmap is saved/restored across `SurfaceView` destruction/recreation (e.g., app backgrounding).
+*   **Data Integrity:** Firebase provides data consistency. Client-side logic should correctly interpret and apply synchronized state.
+
+### 8.5 Maintainability
+*   **Modularity:** Code is organized into classes with specific responsibilities. Large classes like `GameView` and `MultiplayerManager` could be candidates for further refactoring if complexity increases significantly.
+*   **Readability:** Code should be well-formatted with clear naming conventions. Kotlin's conciseness helps. Comments for non-trivial logic.
+*   **Testability:** Design components to be testable. `ProfileRepository` is an object, which is simple. `MultiplayerManager` might be harder to unit test without mocking Firebase.
+*   **Configurability:** Game settings (duration, complexity, mode) are configurable.
+
+---
+
+## 9. Test Plan
+
+### 9.1 Testing Strategy
+A multi-layered testing approach will be used:
+*   **Unit Tests:** For individual classes and methods, especially utility classes (`CoverageCalculator`, `ZoneOwnershipCalculator`), data models (`PlayerState`, `PlayerProfile`), and pure logic components.
+*   **Integration Tests:** For interactions between components, e.g., `GameView` with `Player` and `Level`, or `MainActivity` with `MultiplayerManager` (mocking Firebase interactions).
+*   **UI Tests (Espresso):** For testing user flows, UI element interactions, and visual output on `Activities` and `Fragments`.
+*   **Manual Testing:** For end-to-end gameplay scenarios, multiplayer interactions across devices, and exploratory testing.
+
+### 9.2 Test Environment
+*   Local JVM for unit tests.
+*   Android Emulators and physical devices (various API levels and screen sizes) for integration and UI tests.
+*   Firebase Test Lab could be considered for testing on a wider range of virtual devices.
+
+### 9.3 Key Scenarios to Test
+
+*   **UC-001: Host a New Game (All setting combinations)**
+    *   **Pass Criteria:** Game created in Firebase with correct ID and settings. Host player appears correctly. "Waiting" dialog shown.
+*   **UC-002: Join an Existing Game (Specific ID, Random Public)**
+    *   **Pass Criteria:** Joiner successfully added to game. Game settings correctly received. "Waiting" dialog shown. Error handling for full/invalid/private games.
+*   **Gameplay (Coverage & Zones Mode):**
+    *   Player movement, painting, ink refill.
+    *   Collision detection.
+    *   Correct HUD updates (ink, timer, coverage/zones).
+    *   Real-time synchronization of player movement and paint between clients.
+    *   Correct win condition evaluation for each mode.
+*   **Rematch Flow:**
+    *   Both players select "Yes" -> Rematch starts correctly, state is reset.
+    *   One player selects "No" -> Game ends, users return to appropriate screen.
+*   **Profile Management:**
+    *   Create, load, save profile.
+    *   Add/remove friends.
+    *   Color selection validation.
+*   **Network Interruption Handling:**
+    *   Temporary disconnection and reconnection.
+    *   App backgrounding and returning.
+*   **Stale Game Cleanup:**
+    *   Verify that inactive/old games are eventually removed from Firebase.
+
+### 9.4 Existing Tests
+*   `PlayerProfileTest.kt`: Unit tests for `PlayerProfile.isValidColorSelection()`.
+
+---
+
+## 10. Implementation Plan & Considerations
+
+### 10.1 Technology Stack
+*   **Language:** Kotlin
+*   **Platform:** Android (Min SDK 26, Target SDK 34)
+*   **Backend:** Firebase (Realtime Database, Authentication, App Check)
+*   **Build System:** Gradle
+*   **IDE:** Android Studio
+
+### 10.2 Implementation Roadmap (Milestone Tracker)
 
 | Phase                 | Status       | Deliverables                                                                                                                                                              | Notes                                                                          |
 | :-------------------- | :----------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :----------------------------------------------------------------------------- |
@@ -263,56 +557,87 @@ Firebase --(All Answers In)--> MultiplayerManager --> onRematchDecision(allYes)
 | **M‑11 PreMatch/Rematch** | ✅ Done | Added Waiting/Countdown flow. Fixed rematch loop and state reset issues. Added Firebase game cleanup. Added `TimerHudView`. Resolved initialization/rendering bugs. Ensured frame-rate independent player movement (delta timing). Corrected `TimerHudView` position. Solidified maze wall corners for collision. | Ensures smooth multiplayer start/restart/rendering and consistent gameplay. Includes fix for duplicate game creation on host and implementation of joining random available games. Refined Firebase connection check logic. |
 | **M‑11.5 Match Customization** | ✅ Done | Added Match Settings dialog (Time Limit, Maze Complexity) for hosts. Maze complexity adjusts cell density. Settings synced via Firebase for joining players.        | Provides more replayability and control.                                       |
 | **M‑11.6 Profile Integration & Init Fixes** | ✅ Done | Player names and colors now loaded from profile and used in matches. Game initialization fixed to always set up level and player at match start. Save button logic and friend code generation improved. | Includes bug fixes for game loop/thread initialization and profile save button. |
-| **M‑12 Zones Mode**   | ☐ **Next** | Define zones, calculate per-zone control, zone HUD, integrate into `GameModeManager`.                                                                                   | **Next major feature.**                                                        |
+| **M‑12 Zones Mode**   | ✅ **Done** | Defined zones in `Level`/`MazeLevel`. Implemented `ZoneOwnershipCalculator`. Created `ZoneHudView`. Integrated into `GameModeManager`, `GameView`, `MainActivity`, `HomeActivity`. Added game mode selection to host settings and Firebase sync. Addressed performance issues and paint persistence. HUD positioning refined. | New game mode fully integrated. |
 | **M‑13 Audio / FX**   | ☐          | SoundPool SFX, basic particle splats.                                                                                                                                     |                                                                                |
 | **M‑14 Polish/Release**| ☐          | Icons, onboarding, Google Play bundle, privacy policy.                                                                                                                    |                                                                                |
 
-### 3.2 Detailed Upcoming Tasks
+### 10.3 Detailed Upcoming Tasks (Post M-12)
+1.  **Performance & Memory Optimization:**
+    *   Implement frame rate capping in `GameThread` (e.g., target 60 FPS).
+    *   Further review and optimize `ZoneOwnershipCalculator` sampling if performance issues arise on target devices.
+    *   Monitor `PaintSurface` bitmap memory usage, especially during active gameplay and on lower-end devices.
+2.  **Audio / FX Integration (M-13):**
+    *   Integrate `SoundPool` for sound effects (painting, mode toggle, UI clicks, match start/end).
+    *   Add simple particle effects for paint splats (optional, if performance allows).
+3.  **Polish & Release Preparations (M-14):**
+    *   Create app icons and promotional graphics.
+    *   Develop a simple onboarding experience for new users (e.g., brief tutorial pop-ups).
+    *   Thorough QA testing on various devices and Android versions.
+    *   Write and include a Privacy Policy.
+    *   Prepare and test Android App Bundle for Google Play Store submission.
+    *   Address any outstanding bugs or minor UI/UX issues.
+4.  **(Deferred) `RoomSequenceLevel` / `LevelManager`:**
+    *   If pursued, implement a new `Level` type for sequenced rooms.
+    *   Create a `LevelManager` to control the sequence of levels loaded during a match.
 
-1.  **(Next) Zones Mode**
-    *   Define zone regions in `Level` (extend interface with `getZones(): List<RectF>` in normalized maze coords). Add implementation in `MazeLevel`.
-    *   Implement `ZoneOwnershipCalculator`:
-        *   Sample pixels within each zone RectF, skip walls, tally color counts.
-        *   Determine majority owner for each zone.
-        *   Provide unit tests.
-    *   Create `ZoneHudView`:
-        *   Display showing each zone's current owner color (mini-map or list).
-        *   API: `updateZones(Map<Int, Int>)` mapping zone index → color.
-    *   Extend `GameModeManager` to support `ZONES` mode.
-    *   Integrate into `GameView.update()`: If mode==ZONES, run `ZoneOwnershipCalculator`, push to `ZoneHudView`.
-    *   Display final zone control overlay at match end.
-    *   Update `MainActivity` / `HomeActivity` to allow selecting `ZONES` mode.
-
-2.  **Performance & Memory**
-    *   Cap frame rate in `GameThread` (e.g., `Thread.sleep(16)` for ~60 FPS).
-    *   Optimize sampling resolution in `CoverageCalculator`.
-    *   Analyze bitmap memory usage (`PaintSurface`).
-
-3.  **(Deferred) RoomSequenceLevel / LevelManager**
-    *   Implement a `RoomSequenceLevel` type.
-    *   Create `LevelManager` to sequence levels.
-
-4.  **QA & Release**
-    *   Test on target devices API 26–34.
-    *   Add tests (Robolectric, Espresso).
-    *   Iterate on UX, graphics, audio, onboarding.
-    *   Prepare Play Store artifacts.
+### 10.4 Packaging, Distribution, and Deployment
+*   **Packaging:** Android App Bundle (`.aab`) will be generated for distribution.
+*   **Distribution:** Primarily through the Google Play Store.
+*   **Deployment:**
+    *   Firebase backend (RTDB, Auth, App Check) is already deployed and managed by Google.
+    *   Updates to the Android app will be rolled out via the Google Play Store.
+    *   Database rules for Firebase will be deployed via the Firebase console or CLI.
 
 ---
 
-## 4. Risks & Mitigations
+## 11. Potential Codebase Improvements
+
+This section outlines potential areas for future refactoring, optimization, or enhancement beyond the immediate roadmap.
+
+*   **Enhanced Error Handling & User Feedback:**
+    *   Implement more user-friendly error messages for Firebase connectivity issues or matchmaking failures (e.g., "Could not connect to server, please check your internet connection").
+    *   Consider retry mechanisms for failed Firebase operations where appropriate.
+*   **Code Modularity:**
+    *   `GameView.kt` is substantial. Consider breaking down its responsibilities further, e.g., separating rendering logic for different HUD elements or player drawing into helper classes or methods.
+    *   `MultiplayerManager.kt` is also very large. It could potentially be refactored into smaller, more focused services (e.g., `MatchmakingService`, `GameStateSyncService`, `RematchService`).
+*   **Centralized Constants:**
+    *   While many constants are in companion objects, conduct a pass to ensure all hardcoded strings (especially Firebase node names, event names, or UI text that isn't for direct display) are defined as constants in appropriate locations.
+*   **Advanced Game Loop:**
+    *   The current `GameThread` uses `Thread.sleep()` for basic frame pacing. A more advanced game loop could use `System.nanoTime()` for precise frame timing and potentially variable timesteps or fixed timesteps with interpolation for smoother rendering under varying loads.
+*   **Testing Strategy Expansion:**
+    *   Increase unit test coverage for game logic classes (`Player`, `MazeLevel`, `GameModeManager`).
+    *   Develop integration tests for `MultiplayerManager` interactions (this would require mocking Firebase, which can be complex but valuable).
+    *   Create more Espresso UI tests for common user flows in `HomeActivity` and `MainActivity`.
+*   **Configuration Management:**
+    *   Values like `sampleStep = 10` in `GameView.update` for `ZoneOwnershipCalculator`, or joystick sensitivity parameters, could be made configurable (e.g., through constants, or even remote config for A/B testing if desired in the future).
+*   **State Management in Activities/Fragments:**
+    *   Review state saving and restoration during Activity/Fragment lifecycle events, especially for `MainActivity` during a match if the app is backgrounded. `PaintSurface` persistence is a good step.
+*   **Input Validation:**
+    *   Strengthen client-side input validation (e.g., for player name, catchphrase in `ProfileFragment`).
+    *   Rely on Firebase Rules for server-side validation of data written to the database.
+*   **Dependency Injection:**
+    *   For larger-scale maintainability and testability, consider introducing a simple dependency injection framework or manual DI for managing dependencies like `MultiplayerManager`, `ProfileRepository`.
+*   **Code Comments & Documentation:**
+    *   Ensure complex algorithms or non-obvious logic sections are well-commented.
+    *   Keep KDoc updated for public APIs of classes and methods.
+
+---
+
+## 12. Risks & Mitigations
 
 | Risk                             | Impact   | Mitigation                                                                                                        |
 | :------------------------------- | :------- | :---------------------------------------------------------------------------------------------------------------- |
-| Real-time sync drift             | Low      | Fixed with normalized coords & state sync. Latency inherent.                                                      |
-| Coverage sampling performance    | Moderate | Adjust `sampleStep`, run less frequently, or use worker thread if needed.                                           |
-| Memory growth from `PaintSurface`| High     | Monitor usage. Consider tiling or optimized bitmap handling if it becomes an issue on lower-end devices.          |
-| Firebase cost                    | Medium   | Minimize write frequency; batch updates (already using `updateChildren` for state reset). Automatic cleanup helps. |
-| Zone calculation performance     | Medium   | Optimize sampling in `ZoneOwnershipCalculator`, similar to coverage.                                              |
+| Real-time sync drift             | Low      | Addressed with normalized coordinates & server-timestamped events. Latency inherent in mobile networks.            |
+| Coverage/Zone sampling performance | Moderate | `sampleStep` is tunable. If issues arise, further optimization (e.g., less frequent updates, worker thread) may be needed. |
+| Memory growth from `PaintSurface`| Moderate | `PaintSurface` bitmap is reused. Monitor on various devices. For very large mazes or long sessions, this could be a concern. |
+| Firebase cost                    | Medium   | Structure data for shallow queries. Minimize write frequency. Stale game cleanup implemented. Monitor usage.      |
+| Security of Firebase Rules       | Medium   | Regularly review and test Firebase Database Rules to ensure data integrity and prevent unauthorized access.         |
+| Player Churn / Engagement        | High     | Introduce new features (modes, levels, customization) progressively. Gather user feedback.                      |
+| Scalability of `findRandomAvailableGame` | Moderate | Current implementation scans limited recent games. For very high volume, a more sophisticated matchmaking queue might be needed. |
 
 ---
 
-## 5. Appendix – File Map
+## 13. Appendix – File Map
 
 ```text
 app/
@@ -334,7 +659,8 @@ app/
     │   ├─ CoverageHudView.kt
     │   ├─ GameModeManager.kt
     │   ├─ TimerHudView.kt
-    │   └─ (future) ZoneOwnershipCalculator.kt, ZoneHudView.kt
+    │   ├─ ZoneOwnershipCalculator.kt
+    │   └─ ZoneHudView.kt
     └─ res/
         ├─ layout/
         │   ├─ activity_main.xml
@@ -349,10 +675,14 @@ settings.gradle
 AndroidManifest.xml
 ```
 
-*End of document.*
+### 13.1 References
+*   *(Placeholder for links to relevant documentation, e.g., Firebase docs, Kotlin style guides, Android developer guides)*
 
-### Change Log
+### 13.2 Glossary
+*(Combined with Section 0.2 Definitions, Acronyms, and Abbreviations)*
 
+
+### 13.3 Change Log
 **2025-05-19**
 - Integrated player profile data (name, favorite color) into match setup and display.
 - Added fallback logic for duplicate or missing favorite colors.
@@ -364,3 +694,31 @@ AndroidManifest.xml
 
 **2025-05-20**
 - Implemented host-authoritative timer sync: host writes a synchronized `startTime` to Firebase, all clients read this value before starting the match timer. Ensures all players' timers are aligned to the same reference.
+
+**2025-05-21**
+- Painted surfaces are now persisted across app backgrounding and SurfaceView recreation. All Player objects are updated to reference the new PaintSurface after recreation, ensuring painting works after resume.
+- CoverageCalculator now only samples within the maze bounds, resulting in accurate coverage percentages.
+- GameView now more robustly determines the height of the coverage HUD to avoid drawing the maze beneath it.
+- Player class surface property is now mutable (var) to allow updating after surface recreation.
+
+**2025-05-22**
+- **Implemented Zones Game Mode:**
+    - Added `getZones()` to `Level` interface and `MazeLevel` (defines 6 zones).
+    - Created `ZoneOwnershipCalculator` to determine zone control by sampling `PaintSurface`.
+    - Created `ZoneHudView` to display zone ownership as a mini-map grid.
+    - Updated `HomeActivity` to include "Zones" in game mode selection for hosts.
+    - Updated `MainActivity` to pass game mode to `GameView` and manage HUD visibility.
+    - Updated `GameView` to handle Zones mode logic:
+        - Calls `ZoneOwnershipCalculator` and updates `ZoneHudView`.
+        - Hides `CoverageHudView` in Zones mode and vice-versa.
+        - Determines win condition based on zone control in `finishMatch`.
+        - UI updates for HUDs moved to main thread handler.
+    - Updated `MultiplayerManager`:
+        - `GameSettings` data class now includes `gameMode`.
+        - `hostGame` and `joinGame` now sync `gameMode` via Firebase.
+    - Added `getBitmap()` to `PaintSurface` for direct (non-copy) bitmap access by `ZoneOwnershipCalculator`.
+    - Ensured `PaintSurface` is cleared in `GameView.initGame()` to prevent paint from persisting between matches.
+    - Optimized `sampleStep` for `ZoneOwnershipCalculator` in `GameView.update()` to improve performance.
+- **UI Adjustments in `activity_main.xml`:**
+    - `TimerHudView`: Adjusted `layout_width`, `layout_height`, and `layout_marginTop`.
+    - `ZoneHudView`: Positioned below `TimerHudView` in the top-right corner. Adjusted `layout_width` and `layout_height`.

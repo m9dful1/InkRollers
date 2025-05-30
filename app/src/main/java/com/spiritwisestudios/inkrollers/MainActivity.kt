@@ -22,9 +22,12 @@ class MainActivity:AppCompatActivity(){
   private lateinit var gameView:GameView
   private lateinit var inkHudView: InkHudView
   private lateinit var coverageHudView: CoverageHudView
+  private lateinit var zoneHudView: ZoneHudView
   private lateinit var timerHudView: TimerHudView
   private var matchDurationMs: Long = 180000L // 3 minute match
   private var mazeComplexity: String = HomeActivity.COMPLEXITY_HIGH // Default High
+  private var gameMode: String = HomeActivity.GAME_MODE_COVERAGE // Default Coverage
+  private var isPrivateMatch: Boolean = false // Default to public
   
   private lateinit var multiplayerManager: MultiplayerManager
   private var localPlayerId: String? = null
@@ -57,6 +60,7 @@ class MainActivity:AppCompatActivity(){
     gameView=findViewById(R.id.game_view)
     inkHudView = findViewById(R.id.ink_hud_view)
     coverageHudView = findViewById(R.id.coverage_hud_view)
+    zoneHudView = findViewById(R.id.zone_hud_view)
     timerHudView = findViewById(R.id.timer_hud_view)
 
     multiplayerManager = MultiplayerManager()
@@ -131,6 +135,7 @@ class MainActivity:AppCompatActivity(){
 
     gameView.setHudView(inkHudView)
     gameView.setCoverageHudView(coverageHudView)
+    gameView.setZoneHudView(zoneHudView)
     gameView.setTimerHudView(timerHudView)
     gameView.setMultiplayerManager(multiplayerManager)
     // Handle match end: show rematch dialog
@@ -169,9 +174,11 @@ class MainActivity:AppCompatActivity(){
       if (mode == HomeActivity.MODE_HOST) {
           matchDurationMs = intent.getIntExtra(HomeActivity.EXTRA_TIME_LIMIT_MINUTES, 3) * 60000L
           mazeComplexity = intent.getStringExtra(HomeActivity.EXTRA_MAZE_COMPLEXITY) ?: HomeActivity.COMPLEXITY_HIGH
-          Log.d(TAG, "Host selected settings: Duration=${matchDurationMs}ms, Complexity=$mazeComplexity")
+          gameMode = intent.getStringExtra(HomeActivity.EXTRA_GAME_MODE) ?: HomeActivity.GAME_MODE_COVERAGE
+          isPrivateMatch = intent.getBooleanExtra(HomeActivity.EXTRA_IS_PRIVATE_MATCH, false) // Retrieve isPrivate
+          Log.d(TAG, "Host selected settings: Duration=${matchDurationMs}ms, Complexity=$mazeComplexity, GameMode=$gameMode, Private=$isPrivateMatch")
       }
-      // For JOIN mode, duration and complexity will be fetched from Firebase by MultiplayerManager
+      // For JOIN mode, duration, complexity, and game mode will be fetched from Firebase by MultiplayerManager
 
       // Load player profile to get favorite color and name before starting game flow
       val uid = Firebase.auth.currentUser?.uid
@@ -196,10 +203,10 @@ class MainActivity:AppCompatActivity(){
 
       when (mode) {
           HomeActivity.MODE_HOST -> {
-              multiplayerManager.hostGame(initialState, matchDurationMs, mazeComplexity) { success, gameId, gameSettings ->
+              multiplayerManager.hostGame(initialState, matchDurationMs, mazeComplexity, gameMode, isPrivateMatch) { success, gameId, gameSettings ->
                   if (success && gameId != null) {
                       this.localPlayerId = multiplayerManager.localPlayerId
-                      Log.d(TAG, "Host game successful. Game ID: $gameId. Settings: Duration=${gameSettings?.durationMs}, Complexity=${gameSettings?.complexity}")
+                      Log.d(TAG, "Host game successful. Game ID: $gameId. Settings: Duration=${gameSettings?.durationMs}, Complexity=${gameSettings?.complexity}, GameMode=${gameSettings?.gameMode}")
                               
                               // Set local player ID with the determined color and name
                               gameView.setLocalPlayerId("player0", playerColor, playerName)
@@ -260,7 +267,8 @@ class MainActivity:AppCompatActivity(){
                            gameSettings?.let {
                                matchDurationMs = it.durationMs
                                mazeComplexity = it.complexity
-                               Log.d(TAG, "Joined game with settings: Duration=${matchDurationMs}ms, Complexity=$mazeComplexity")
+                               gameMode = it.gameMode
+                               Log.d(TAG, "Joined game with settings: Duration=${matchDurationMs}ms, Complexity=$mazeComplexity, GameMode=$gameMode")
                            }
                            // Show waiting dialog until host starts
                            runOnUiThread {
@@ -299,7 +307,8 @@ class MainActivity:AppCompatActivity(){
                            gameSettings?.let {
                                matchDurationMs = it.durationMs
                                mazeComplexity = it.complexity
-                               Log.d(TAG, "Joined random game with settings: Duration=${matchDurationMs}ms, Complexity=$mazeComplexity")
+                               gameMode = it.gameMode
+                               Log.d(TAG, "Joined random game with settings: Duration=${matchDurationMs}ms, Complexity=$mazeComplexity, GameMode=$gameMode")
                            }
                            // Show the game ID that was joined
                            val joinedGameId = multiplayerManager.currentGameId
@@ -778,9 +787,14 @@ class MainActivity:AppCompatActivity(){
           }
           // Use the synchronized matchStartTime if available
           val startTime = matchStartTime ?: System.currentTimeMillis()
-          gameView.startGameMode(GameMode.COVERAGE, matchDurationMs, startTime)
+          val selectedGameMode = when (gameMode) {
+              HomeActivity.GAME_MODE_ZONES -> GameMode.ZONES
+              HomeActivity.GAME_MODE_COVERAGE -> GameMode.COVERAGE // Ensure this case is explicitly handled
+              else -> GameMode.COVERAGE // Default to Coverage if string is unexpected
+          }
+          gameView.startGameMode(selectedGameMode, matchDurationMs, startTime)
           gameView.startGameLoop()
-          Log.d(TAG, "Match started successfully")
+          Log.d(TAG, "Match started successfully with game mode: $selectedGameMode")
       } catch (e: Exception) {
           Log.e(TAG, "Error starting match", e)
           Toast.makeText(this, "Error starting game. Please try again.", Toast.LENGTH_LONG).show()

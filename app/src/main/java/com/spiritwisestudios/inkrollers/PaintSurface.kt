@@ -24,4 +24,5 @@ class PaintSurface(val w:Int,val h:Int, existingBitmap: Bitmap? = null){
   /** Clear the entire paint surface. */
   fun clear() { cvs.drawColor(0, android.graphics.PorterDuff.Mode.CLEAR) }
   fun getBitmapCopy(): Bitmap = bmp.copy(bmp.config, true)
+  fun getBitmap(): Bitmap = bmp
 }

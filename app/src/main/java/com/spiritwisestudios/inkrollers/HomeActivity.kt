@@ -6,9 +6,6 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.View
-import android.widget.Button
-import android.widget.EditText
-import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -16,20 +13,22 @@ import com.spiritwisestudios.inkrollers.ui.ProfileFragment
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.ktx.Firebase
 import com.spiritwisestudios.inkrollers.repository.ProfileRepository
+import com.google.firebase.FirebaseApp
+import com.google.firebase.appcheck.FirebaseAppCheck
+import com.google.firebase.appcheck.playintegrity.PlayIntegrityAppCheckProviderFactory
+import com.spiritwisestudios.inkrollers.databinding.ActivityHomeBinding
 
 class HomeActivity : AppCompatActivity() {
 
-    private lateinit var playButton: Button
-    private lateinit var subMenuLayout: LinearLayout
-    private lateinit var hostButton: Button
-    private lateinit var joinButton: Button
-    private lateinit var gameIdEditText: EditText
+    private lateinit var binding: ActivityHomeBinding
 
     companion object {
         const val EXTRA_MODE = "com.spiritwisestudios.inkrollers.MODE"
         const val EXTRA_GAME_ID = "com.spiritwisestudios.inkrollers.GAME_ID"
         const val EXTRA_TIME_LIMIT_MINUTES = "com.spiritwisestudios.inkrollers.TIME_LIMIT_MINUTES"
         const val EXTRA_MAZE_COMPLEXITY = "com.spiritwisestudios.inkrollers.MAZE_COMPLEXITY"
+        const val EXTRA_GAME_MODE = "com.spiritwisestudios.inkrollers.GAME_MODE"
+        const val EXTRA_IS_PRIVATE_MATCH = "com.spiritwisestudios.inkrollers.EXTRA_IS_PRIVATE_MATCH"
         const val MODE_HOST = "HOST"
         const val MODE_JOIN = "JOIN"
 
@@ -37,36 +36,41 @@ class HomeActivity : AppCompatActivity() {
         const val COMPLEXITY_LOW = "LOW"
         const val COMPLEXITY_MEDIUM = "MEDIUM"
         const val COMPLEXITY_HIGH = "HIGH"
+        
+        // Game Modes
+        const val GAME_MODE_COVERAGE = "COVERAGE"
+        const val GAME_MODE_ZONES = "ZONES"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_home)
+        binding = ActivityHomeBinding.inflate(layoutInflater)
+        setContentView(binding.root)
 
-        playButton = findViewById(R.id.button_play)
-        subMenuLayout = findViewById(R.id.layout_submenu)
-        hostButton = findViewById(R.id.button_host_game)
-        joinButton = findViewById(R.id.button_join_game)
-        gameIdEditText = findViewById(R.id.editText_game_id)
+        // Initialize Firebase App Check
+        FirebaseApp.initializeApp(this)
+        val firebaseAppCheck = FirebaseAppCheck.getInstance()
+        firebaseAppCheck.installAppCheckProviderFactory(
+            PlayIntegrityAppCheckProviderFactory.getInstance()
+        )
 
-        playButton.setOnClickListener {
+        binding.buttonPlay.setOnClickListener {
             // Apply the press animation
             val animation = android.view.animation.AnimationUtils.loadAnimation(this, R.anim.button_press)
-            playButton.startAnimation(animation)
+            binding.buttonPlay.startAnimation(animation)
             
             // Hide Play button and show submenu after a short delay
             Handler(Looper.getMainLooper()).postDelayed({
-                playButton.visibility = View.GONE
-                subMenuLayout.visibility = View.VISIBLE
+                binding.layoutSubmenu.visibility = View.VISIBLE
             }, 100)
         }
 
-        hostButton.setOnClickListener {
+        binding.buttonHostGame.setOnClickListener {
             showMatchSettingsDialog()
         }
 
-        joinButton.setOnClickListener {
-            val gameId = gameIdEditText.text.toString().trim().uppercase()
+        binding.buttonJoinGame.setOnClickListener {
+            val gameId = binding.editTextGameId.text.toString().trim()
             if (gameId.isEmpty()) {
                 // Join a random available game
                 startGameActivity(MODE_JOIN, null)
@@ -77,7 +81,7 @@ class HomeActivity : AppCompatActivity() {
             }
         }
 
-        findViewById<Button>(R.id.button_profile).setOnClickListener {
+        binding.buttonProfile.setOnClickListener {
             val currentUser = Firebase.auth.currentUser
             if (currentUser != null) {
                 // User is signed in, proceed to profile
@@ -128,79 +132,89 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun showMatchSettingsDialog() {
-        val timeOptions = arrayOf("3 Minutes", "5 Minutes", "7 Minutes")
+        val timeOptions = arrayOf("3 minutes", "5 minutes", "7 minutes")
         val timeValues = intArrayOf(3, 5, 7)
-        var selectedTimeIndex = 0 // Default to 3 minutes
+        var selectedTimeLimit = timeValues[0] // Default to 3 minutes
 
-        val complexityOptions = arrayOf("Low", "Medium", "High")
-        val complexityValues = arrayOf(COMPLEXITY_LOW, COMPLEXITY_MEDIUM, COMPLEXITY_HIGH)
-        var selectedComplexityIndex = 2 // Default to High
-
-        val builder = AlertDialog.Builder(this)
-        builder.setTitle("Match Settings")
-
-        // Layout for dialog
-        val dialogLayout = LinearLayout(this)
-        dialogLayout.orientation = LinearLayout.VERTICAL
-        dialogLayout.setPadding(50, 50, 50, 50)
-
-        // Time Limit Picker
-        builder.setSingleChoiceItems(timeOptions, selectedTimeIndex) { _, which ->
-            selectedTimeIndex = which
-        }
-
-        // Separator or some spacing might be good here if using multiple pickers directly in builder.
-        // For simplicity, we'll just have two pickers.
-        // If more complex layout is needed, we'd inflate an XML.
-
-        // Maze Complexity Picker
-        // AlertDialog.Builder doesn't easily support multiple setSingleChoiceItems.
-        // We'll show complexity in a subsequent dialog or use a custom layout.
-        // For now, let's simplify and do it sequentially or use a custom view.
-        // For this step, we'll just pick time and then complexity in a chained manner.
-
-        val timeDialogBuilder = AlertDialog.Builder(this)
-        timeDialogBuilder.setTitle("Select Time Limit")
-        timeDialogBuilder.setSingleChoiceItems(timeOptions, selectedTimeIndex) { _, which ->
-            selectedTimeIndex = which
-        }
-        timeDialogBuilder.setPositiveButton("Next") { timeDialog, _ ->
-            timeDialog.dismiss()
-            val selectedTime = timeValues[selectedTimeIndex]
-
-            val complexityDialogBuilder = AlertDialog.Builder(this)
-            complexityDialogBuilder.setTitle("Select Maze Complexity")
-            complexityDialogBuilder.setSingleChoiceItems(complexityOptions, selectedComplexityIndex) { _, which ->
-                selectedComplexityIndex = which
+        AlertDialog.Builder(this)
+            .setTitle("Set Time Limit")
+            .setItems(timeOptions) { _, which ->
+                selectedTimeLimit = timeValues[which]
+                showComplexityDialog(selectedTimeLimit)
             }
-            complexityDialogBuilder.setPositiveButton("Host Game") { complexityDialog, _ ->
-                complexityDialog.dismiss()
-                val selectedComplexity = complexityValues[selectedComplexityIndex]
-                startGameActivity(MODE_HOST, null, selectedTime, selectedComplexity)
-            }
-            complexityDialogBuilder.setNegativeButton("Cancel") { complexityDialog, _ ->
-                complexityDialog.dismiss()
-            }
-            complexityDialogBuilder.show()
-        }
-        timeDialogBuilder.setNegativeButton("Cancel") { timeDialog, _ ->
-            timeDialog.dismiss()
-        }
-        timeDialogBuilder.show()
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
-    private fun startGameActivity(mode: String, gameId: String? = null, timeLimit: Int? = null, mazeComplexity: String? = null) {
-        android.util.Log.d("HomeActivity", "Starting MainActivity with mode: $mode, gameId: $gameId, timeLimit: $timeLimit, mazeComplexity: $mazeComplexity")
+    private fun showComplexityDialog(timeLimit: Int) {
+        val complexityOptions = arrayOf("Low", "Medium", "High")
+        val complexityValues = arrayOf(COMPLEXITY_LOW, COMPLEXITY_MEDIUM, COMPLEXITY_HIGH)
+        var selectedComplexity = complexityValues[2] // Default to High
+
+        AlertDialog.Builder(this)
+            .setTitle("Set Maze Complexity")
+            .setItems(complexityOptions) { _, which ->
+                selectedComplexity = complexityValues[which]
+                showGameModeDialog(timeLimit, selectedComplexity)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showGameModeDialog(timeLimit: Int, complexity: String) {
+        val gameModeOptions = arrayOf("Coverage", "Zones")
+        val gameModeValues = arrayOf(GAME_MODE_COVERAGE, GAME_MODE_ZONES)
+        var selectedGameMode = gameModeValues[0] // Default to Coverage
+
+        AlertDialog.Builder(this)
+            .setTitle("Select Game Mode")
+            .setItems(gameModeOptions) { _, which ->
+                selectedGameMode = gameModeValues[which]
+                showMatchTypeDialog(timeLimit, complexity, selectedGameMode) // Proceed to match type
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+    
+    private fun showMatchTypeDialog(timeLimit: Int, complexity: String, gameMode: String) {
+        val matchTypeOptions = arrayOf("Public (Joinable by random)", "Private (Requires Game ID)")
+        var isPrivate = false // Default to public
+
+        AlertDialog.Builder(this)
+            .setTitle("Select Match Type")
+            .setSingleChoiceItems(matchTypeOptions, 0) { _, which -> // Default to Public (index 0)
+                isPrivate = (which == 1) // Private is index 1
+            }
+            .setPositiveButton("Host Game") { _, _ ->
+                startGameActivity(MODE_HOST, null, timeLimit, complexity, gameMode, isPrivate)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun startGameActivity(mode: String, gameId: String? = null, timeLimit: Int = 3, complexity: String = COMPLEXITY_HIGH, gameMode: String = GAME_MODE_COVERAGE, isPrivate: Boolean = false) {
+        android.util.Log.d("HomeActivity", "Starting MainActivity with mode: $mode, gameId: $gameId, timeLimit: $timeLimit, mazeComplexity: $complexity, gameMode: $gameMode, isPrivate: $isPrivate")
         val intent = Intent(this, MainActivity::class.java).apply {
             putExtra(EXTRA_MODE, mode)
             if (mode == MODE_JOIN && gameId != null) {
                 putExtra(EXTRA_GAME_ID, gameId)
             }
             if (mode == MODE_HOST) {
-                putExtra(EXTRA_TIME_LIMIT_MINUTES, timeLimit ?: 3) // Default 3 min
-                putExtra(EXTRA_MAZE_COMPLEXITY, mazeComplexity ?: COMPLEXITY_HIGH) // Default High
+                putExtra(EXTRA_TIME_LIMIT_MINUTES, timeLimit)
+                putExtra(EXTRA_MAZE_COMPLEXITY, complexity)
+                putExtra(EXTRA_GAME_MODE, gameMode)
+                putExtra(EXTRA_IS_PRIVATE_MATCH, isPrivate)
             }
         }
         startActivity(intent)
+    }
+
+    override fun onBackPressed() {
+        if (binding.layoutSubmenu.visibility == View.VISIBLE) {
+            binding.layoutSubmenu.visibility = View.GONE
+            binding.buttonPlay.visibility = View.VISIBLE
+        } else {
+            super.onBackPressed()
+        }
     }
 } 

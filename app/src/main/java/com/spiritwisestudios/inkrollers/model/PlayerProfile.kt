@@ -29,4 +29,15 @@ data class PlayerProfile(
             favoriteColors.all { it in PlayerColorPalette.COLORS } &&
             favoriteColors.toSet().size == 3
     }
+    
+    companion object {
+        /**
+         * Static method to validate color selection for testing purposes
+         */
+        fun isValidColorSelection(colors: List<Int>): Boolean {
+            return colors.size == 3 &&
+                colors.all { it in PlayerColorPalette.COLORS } &&
+                colors.toSet().size == 3
+        }
+    }
 } 
