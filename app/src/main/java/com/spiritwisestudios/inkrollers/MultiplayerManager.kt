@@ -35,6 +35,10 @@ class MultiplayerManager {
         private const val STALE_GAME_TTL_MS = 3 * 60 * 60 * 1000L // 3 hours
         private const val INACTIVE_GRACE_PERIOD_MS = 10 * 60 * 1000L // 10 minutes
         private const val MAX_GAMES_TO_SCAN_FOR_CLEANUP = 10
+
+        // Duration for the client-side "Get Ready! 3-2-1-Go!" visual countdown.
+        // The main game timer should start from its full duration AFTER this period.
+        const val CLIENT_SIDE_PRE_GAME_VISUAL_COUNTDOWN_MS = 4000L
     }
 
     // Callback for database error notifications
@@ -747,12 +751,11 @@ class MultiplayerManager {
                 Log.d(TAG, "sendMatchStart: Storing playerCount=$playerCount in game node for $currentGameId")
                 gameRef!!.child("playerCount").setValue(playerCount)
                     .addOnCompleteListener {
-                        // Write a synchronized startTime (4 seconds in the future to align with countdown end)
-                        val startTime = System.currentTimeMillis() + 4000L
                         val updates = mapOf(
-                            "started" to true,
-                            "startTime" to startTime,
-                            LAST_ACTIVITY_NODE to ServerValue.TIMESTAMP // Host started match
+                            "started" to true, // Signals clients to prepare for match start sequence
+                            "gameStartTimeBase" to ServerValue.TIMESTAMP, // Server time when this "start sequence" signal is set
+                            "gameStartOffsetMs" to CLIENT_SIDE_PRE_GAME_VISUAL_COUNTDOWN_MS,
+                            LAST_ACTIVITY_NODE to ServerValue.TIMESTAMP // Host initiated match start sequence
                         )
                         gameRef!!.updateChildren(updates)
                             .addOnFailureListener { e ->
@@ -763,17 +766,17 @@ class MultiplayerManager {
             }
             override fun onCancelled(error: DatabaseError) {
                 Log.w(TAG, "sendMatchStart: Failed to get player count", error.toException())
-                // Fallback: still try to start
-                val startTime = System.currentTimeMillis() + 4000L // Align with countdown end
+                // Fallback: still try to initiate start sequence
                 val updates = mapOf(
                     "started" to true,
-                    "startTime" to startTime,
-                    LAST_ACTIVITY_NODE to ServerValue.TIMESTAMP // Host started match (fallback)
+                    "gameStartTimeBase" to ServerValue.TIMESTAMP,
+                    "gameStartOffsetMs" to CLIENT_SIDE_PRE_GAME_VISUAL_COUNTDOWN_MS,
+                    LAST_ACTIVITY_NODE to ServerValue.TIMESTAMP
                 )
                 gameRef!!.updateChildren(updates)
                     .addOnFailureListener { e ->
-                        Log.w(TAG, "Failed to send match start for $currentGameId", e)
-                        onDatabaseError?.invoke("Failed to send start signal: "+e.message)
+                        Log.w(TAG, "Failed to send match start for $currentGameId (fallback)", e)
+                        onDatabaseError?.invoke("Failed to send start signal (fallback): "+e.message)
                     }
             }
         })
