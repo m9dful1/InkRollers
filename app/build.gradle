@@ -12,6 +12,7 @@ android {
       targetSdk 34 
       versionCode 1 
       versionName "1.0" 
+      testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
   }
   kotlinOptions { jvmTarget='1.8' }
   buildFeatures {
@@ -24,6 +25,7 @@ android {
   testOptions {
       unitTests {
           includeAndroidResources = true
+          returnDefaultValues = true
           all {
               jvmArgs '-Dnet.bytebuddy.experimental=true'
           }
@@ -59,6 +61,7 @@ dependencies {
     implementation 'androidx.compose.foundation:foundation'
     implementation 'androidx.compose.runtime:runtime'
     implementation 'androidx.activity:activity-compose:1.9.0'
+    implementation 'com.google.firebase:firebase-appcheck-debug:18.0.0'
 
     testImplementation 'junit:junit:4.13.2'
   testImplementation "org.jetbrains.kotlin:kotlin-test-junit:$kotlin_version"
