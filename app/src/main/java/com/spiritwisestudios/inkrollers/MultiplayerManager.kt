@@ -27,11 +27,11 @@ class MultiplayerManager {
     // Add companion object back
     companion object {
         private const val TAG = "MultiplayerManager"
-        private const val GAMES_NODE = "games"
+        internal const val GAMES_NODE = "games"
         private const val PAINT_NODE = "paint"
         private const val REMATCH_NODE = "rematchRequests"
-        private const val LAST_ACTIVITY_NODE = "lastActivityAt"
-        private const val CREATED_AT_NODE = "createdAt"
+        internal const val LAST_ACTIVITY_NODE = "lastActivityAt"
+        internal const val CREATED_AT_NODE = "createdAt"
         private const val STALE_GAME_TTL_MS = 3 * 60 * 60 * 1000L // 3 hours
         private const val INACTIVE_GRACE_PERIOD_MS = 10 * 60 * 1000L // 10 minutes
         private const val MAX_GAMES_TO_SCAN_FOR_CLEANUP = 10
