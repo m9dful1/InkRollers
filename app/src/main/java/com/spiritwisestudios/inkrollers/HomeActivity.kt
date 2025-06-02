@@ -9,6 +9,7 @@ import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import com.google.firebase.BuildConfig
 import com.spiritwisestudios.inkrollers.ui.ProfileFragment
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.ktx.Firebase
@@ -16,7 +17,9 @@ import com.spiritwisestudios.inkrollers.repository.ProfileRepository
 import com.google.firebase.FirebaseApp
 import com.google.firebase.appcheck.FirebaseAppCheck
 import com.google.firebase.appcheck.playintegrity.PlayIntegrityAppCheckProviderFactory
+import com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory
 import com.spiritwisestudios.inkrollers.databinding.ActivityHomeBinding
+//import com.spiritwisestudios.inkrollers.BuildConfig
 
 class HomeActivity : AppCompatActivity() {
 
@@ -50,9 +53,15 @@ class HomeActivity : AppCompatActivity() {
         // Initialize Firebase App Check
         FirebaseApp.initializeApp(this)
         val firebaseAppCheck = FirebaseAppCheck.getInstance()
-        firebaseAppCheck.installAppCheckProviderFactory(
-            PlayIntegrityAppCheckProviderFactory.getInstance()
-        )
+        if (BuildConfig.DEBUG) {
+            firebaseAppCheck.installAppCheckProviderFactory(
+                DebugAppCheckProviderFactory.getInstance()
+            )
+        } else {
+            firebaseAppCheck.installAppCheckProviderFactory(
+                PlayIntegrityAppCheckProviderFactory.getInstance()
+            )
+        }
 
         binding.buttonPlay.setOnClickListener {
             // Apply the press animation
