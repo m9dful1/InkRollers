@@ -527,16 +527,12 @@ A multi-layered testing approach will be used:
 
 ### 9.4 Existing Tests
 *   `PlayerProfileTest.kt`: Unit tests for `PlayerProfile.isValidColorSelection()`.
-<<<<<<< Updated upstream
-=======
 *   `GameFlowIntegrationTest.kt`: Espresso UI tests validating core game setup flows, including hosting a game, joining by ID, and attempting to join a random game. This suite has been specifically refactored for stability and reliability.
 *   `PlayerTest.kt`: Unit tests for the `Player` class, covering:
     *   Mode toggling (paint/fill).
     *   Ink management: decrease on paint, increase on fill (correct color vs. different color), min/max ink limits, and ink percentage calculation.
     *   Basic movement: position updates, coercion within surface boundaries, and no movement on zero magnitude/delta time.
     *   Collision-based movement: handling of no collision, full collision, and sliding scenarios (X-axis and Y-axis) based on mocked `Level` interactions.
->>>>>>> Stashed changes
-
 ---
 
 ## 10. Implementation Plan & Considerations
@@ -629,8 +625,6 @@ This section outlines potential areas for future refactoring, optimization, or e
 *   **Code Comments & Documentation:**
     *   Ensure complex algorithms or non-obvious logic sections are well-commented.
     *   Keep KDoc updated for public APIs of classes and methods.
-<<<<<<< Updated upstream
-=======
 *   **UI Adjustments in `activity_main.xml`:**
     *   `TimerHudView`: Adjusted `layout_width`, `layout_height`, and `layout_marginTop`.
     *   `ZoneHudView`: Positioned below `TimerHudView` in the top-right corner. Adjusted `layout_width` and `layout_height`.
@@ -647,7 +641,6 @@ This section outlines potential areas for future refactoring, optimization, or e
     - Covered core functionalities including mode switching, ink depletion/refill logic under various conditions (correct color, different color, boundary limits), ink percentage calculation, basic player movement mechanics (position updates, boundary coercion), and collision-based movement (no collision, full collision, sliding along X/Y axes).
     - Resolved issues related to mocking Android SDK dependencies (e.g., `android.graphics.Paint`) by configuring `testOptions { unitTests.returnDefaultValues = true }` in `build.gradle`.
     - Addressed and fixed a subtle bug in test logic where mock setups for `PaintSurface.getPixelColor` did not account for player position changes before the color check, ensuring accurate testing of ink refill conditions.
->>>>>>> Stashed changes
 
 ---
 
@@ -750,8 +743,6 @@ AndroidManifest.xml
 - **UI Adjustments in `activity_main.xml`:**
     - `TimerHudView`: Adjusted `layout_width`, `layout_height`, and `layout_marginTop`.
     - `ZoneHudView`: Positioned below `TimerHudView` in the top-right corner. Adjusted `layout_width` and `layout_height`.
-<<<<<<< Updated upstream
-=======
 
 **2025-06-02**
 - **Stabilized `GameFlowIntegrationTest.kt`:**
@@ -765,4 +756,3 @@ AndroidManifest.xml
     - Covered core functionalities including mode switching, ink depletion/refill logic under various conditions (correct color, different color, boundary limits), ink percentage calculation, basic player movement mechanics (position updates, boundary coercion), and collision-based movement (no collision, full collision, sliding along X/Y axes).
     - Resolved issues related to mocking Android SDK dependencies (e.g., `android.graphics.Paint`) by configuring `testOptions { unitTests.returnDefaultValues = true }` in `build.gradle`.
     - Addressed and fixed a subtle bug in test logic where mock setups for `PaintSurface.getPixelColor` did not account for player position changes before the color check, ensuring accurate testing of ink refill conditions.
->>>>>>> Stashed changes
