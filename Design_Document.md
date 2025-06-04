@@ -641,22 +641,20 @@ This section outlines potential areas for future refactoring, optimization, or e
     - Made the `joinRandomGameAndSeeSearchingMessage` test more robust by handling various outcomes gracefully and being less dependent on exact UI states or timings.
     - Removed `simpleAdditionTest` as it was a redundant placeholder.
     - Ensured tests reliably pass when run individually and as a suite, improving confidence in core game flow stability.
-*   **UI Adjustments in `activity_main.xml`:**
-    *   `TimerHudView`: Adjusted `layout_width`, `layout_height`, and `layout_marginTop`.
-    *   `ZoneHudView`: Positioned below `TimerHudView` in the top-right corner. Adjusted `layout_width` and `layout_height`.
-
-**2025-06-02**
-- **Stabilized `GameFlowIntegrationTest.kt`:**
-    - Addressed flakiness and `RootViewWithoutFocusException` errors in UI tests.
-    - Simplified Firebase setup and cleanup in test environment to prevent interference with activity lifecycle and UI thread.
-    - Made the `joinRandomGameAndSeeSearchingMessage` test more robust by handling various outcomes gracefully and being less dependent on exact UI states or timings.
-    - Removed `simpleAdditionTest` as it was a redundant placeholder.
-    - Ensured tests reliably pass when run individually and as a suite, improving confidence in core game flow stability.
 - **Implemented Unit Tests for `Player.kt` (`PlayerTest.kt`):**
     - Created comprehensive unit tests for the `Player` class using JUnit and Mockito.
     - Covered core functionalities including mode switching, ink depletion/refill logic under various conditions (correct color, different color, boundary limits), ink percentage calculation, basic player movement mechanics (position updates, boundary coercion), and collision-based movement (no collision, full collision, sliding along X/Y axes).
     - Resolved issues related to mocking Android SDK dependencies (e.g., `android.graphics.Paint`) by configuring `testOptions { unitTests.returnDefaultValues = true }` in `build.gradle`.
     - Addressed and fixed a subtle bug in test logic where mock setups for `PaintSurface.getPixelColor` did not account for player position changes before the color check, ensuring accurate testing of ink refill conditions.
+
+**2025-06-03**
+- **Fixed Player Name Alignment in Coverage Mode:**
+    - **UI Layout Adjustment:** Increased `TimerHudView` top margin from 60dp to 80dp in `activity_main.xml` to provide more space between coverage HUD and timer.
+    - **Positioning Logic Improvements in `GameView.drawCornerNames()`:**
+        - Reduced vertical margin below coverage HUD from 12dp to 8dp for tighter, more consistent spacing.
+        - Reduced minimum space requirement above timer from 0.5dp to 4dp to be less aggressive in collision detection.
+        - Simplified collision resolution logic to move Player 1's name to a safe position only when absolutely necessary, eliminating compromise positioning that caused misalignment.
+    - **Result:** Both player names now properly align at the same vertical level in Coverage mode, with Player 0 on the left and Player 1 on the right, positioned consistently below the coverage HUD without conflicting with the timer.
 
 ---
 
@@ -773,10 +771,11 @@ AndroidManifest.xml
     - Resolved issues related to mocking Android SDK dependencies (e.g., `android.graphics.Paint`) by configuring `testOptions { unitTests.returnDefaultValues = true }` in `build.gradle`.
     - Addressed and fixed a subtle bug in test logic where mock setups for `PaintSurface.getPixelColor` did not account for player position changes before the color check, ensuring accurate testing of ink refill conditions.
 
-**2025-06-02**
-- **Stabilized `GameFlowIntegrationTest.kt`:**
-    - Addressed flakiness and `RootViewWithoutFocusException` errors in UI tests.
-    - Simplified Firebase setup and cleanup in test environment to prevent interference with activity lifecycle and UI thread.
-    - Made the `joinRandomGameAndSeeSearchingMessage` test more robust by handling various outcomes gracefully and being less dependent on exact UI states or timings.
-    - Removed `simpleAdditionTest` as it was a redundant placeholder.
-    - Ensured tests reliably pass when run individually and as a suite, improving confidence in core game flow stability.
+**2025-06-03**
+- **Fixed Player Name Alignment in Coverage Mode:**
+    - **UI Layout Adjustment:** Increased `TimerHudView` top margin from 60dp to 80dp in `activity_main.xml` to provide more space between coverage HUD and timer.
+    - **Positioning Logic Improvements in `GameView.drawCornerNames()`:**
+        - Reduced vertical margin below coverage HUD from 12dp to 8dp for tighter, more consistent spacing.
+        - Reduced minimum space requirement above timer from 0.5dp to 4dp to be less aggressive in collision detection.
+        - Simplified collision resolution logic to move Player 1's name to a safe position only when absolutely necessary, eliminating compromise positioning that caused misalignment.
+    - **Result:** Both player names now properly align at the same vertical level in Coverage mode, with Player 0 on the left and Player 1 on the right, positioned consistently below the coverage HUD without conflicting with the timer.

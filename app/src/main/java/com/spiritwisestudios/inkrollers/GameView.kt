@@ -22,6 +22,8 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.RectF
 import android.view.View
+import kotlin.math.max
+import kotlin.math.min
 
 class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
     SurfaceView(ctx,attrs),SurfaceHolder.Callback, MultiplayerManager.RemoteUpdateListener { // Implement listener
@@ -337,20 +339,86 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
   /** Draw the names of the players in the screen corners. */
   private fun drawCornerNames(canvas: Canvas) {
       val textPaint = Paint().apply {
-          color = Color.BLACK
-          textSize = 40f
+          color = Color.BLACK // Changed to black for better visibility
+          textSize = 24f * resources.displayMetrics.density // Adjusted size, made it density-dependent
           isAntiAlias = true
-          typeface = Typeface.DEFAULT_BOLD
+          typeface = Typeface.create(Typeface.DEFAULT_BOLD, Typeface.BOLD) // Explicitly bold
+          setShadowLayer(4f, 1f, 1f, Color.argb(160, 255, 255, 255)) // Subtle white shadow for pop
       }
-      val margin = 16f
-      players["player0"]?.playerName?.takeIf { it.isNotEmpty() }?.let { name ->
-          textPaint.textAlign = Paint.Align.LEFT
-          canvas.drawText(name, margin, margin + textPaint.textSize, textPaint)
+      val horizontalMargin = 16f * resources.displayMetrics.density // Density-dependent margin
+      val verticalMarginFromHud = 8f * resources.displayMetrics.density // Reduced margin below HUD for tighter spacing
+      val topScreenMargin = 16f * resources.displayMetrics.density // Margin from top if HUD not visible
+
+      // Determine Y position based on coverageHudView visibility and position
+      val player0NameYBaseline: Float
+      val coverageHud = coverageHudView
+      // Use ascent for more precise top alignment (ascent is negative)
+      if (coverageHud != null && coverageHud.visibility == View.VISIBLE && coverageHud.isLaidOut) {
+          // Position top of text verticalMarginFromHud below the coverage HUD
+          val player0TextTop = coverageHud.bottom.toFloat() + verticalMarginFromHud
+          player0NameYBaseline = player0TextTop - textPaint.fontMetrics.ascent 
+      } else {
+          // Position top of text at topScreenMargin
+          player0NameYBaseline = topScreenMargin - textPaint.fontMetrics.ascent
       }
-      players["player1"]?.playerName?.takeIf { it.isNotEmpty() }?.let { name ->
-          textPaint.textAlign = Paint.Align.RIGHT
-          canvas.drawText(name, width - margin, height - margin, textPaint)
+
+      // Player 0 (Associated with top-left start)
+      val player0Name = players["player0"]?.playerName?.takeIf { it.isNotEmpty() } ?: "Player 1"
+      textPaint.textAlign = Paint.Align.LEFT
+      // Set color for Player 0
+      val player0Color = players["player0"]?.getColor() ?: Color.WHITE // Default to white if no player/color
+      textPaint.color = player0Color
+      // Adjust shadow color based on text color for better contrast
+      if (isColorDark(player0Color)) {
+          textPaint.setShadowLayer(4f, 1f, 1f, Color.argb(180, 255, 255, 255)) // Brighter shadow for dark text
+      } else {
+          textPaint.setShadowLayer(4f, 1f, 1f, Color.argb(180, 0, 0, 0)) // Darker shadow for light text
       }
+      canvas.drawText(player0Name, horizontalMargin, player0NameYBaseline, textPaint)
+
+      // Player 1 (Associated with bottom-right start, but name displayed top-right)
+      val player1Name = players["player1"]?.playerName?.takeIf { it.isNotEmpty() } ?: "Player 2"
+      textPaint.textAlign = Paint.Align.RIGHT
+      // Set color for Player 1
+      val player1Color = players["player1"]?.getColor() ?: Color.WHITE // Default to white
+      textPaint.color = player1Color
+      // Adjust shadow color
+      if (isColorDark(player1Color)) {
+          textPaint.setShadowLayer(4f, 1f, 1f, Color.argb(180, 255, 255, 255))
+      } else {
+          textPaint.setShadowLayer(4f, 1f, 1f, Color.argb(180, 0, 0, 0))
+      }
+
+      // Calculate Y position for Player 1's name
+      // Start by aiming to align Player 1 with Player 0
+      var player1NameYBaseline = player0NameYBaseline 
+
+      val timerHud = timerHudView
+      val minSpaceAboveTimer = 4f * resources.displayMetrics.density // Reduced minimum space needed above timer
+
+      if (timerHud != null && timerHud.visibility == View.VISIBLE && timerHud.isLaidOut) {
+          // Calculate where Player 1's text bottom would be if aligned with Player 0
+          val p1TextBottomAtP0Level = player0NameYBaseline + textPaint.fontMetrics.descent
+          
+          // Calculate the safe boundary (Player 1's text bottom must be above this line)
+          val maxSafeYForP1TextBottom = timerHud.top.toFloat() - minSpaceAboveTimer
+          
+          // Only move Player 1 up if it would actually overlap the timer with insufficient space
+          if (p1TextBottomAtP0Level > maxSafeYForP1TextBottom) {
+              // Calculate a safer baseline position that avoids the timer
+              val timerSafeBaseline = maxSafeYForP1TextBottom - textPaint.fontMetrics.descent
+              player1NameYBaseline = timerSafeBaseline
+          }
+          // If no conflict, Player 1 stays aligned with Player 0
+      }
+      
+      canvas.drawText(player1Name, width - horizontalMargin, player1NameYBaseline, textPaint)
+  }
+
+  // Helper function to determine if a color is dark (for shadow adjustment)
+  private fun isColorDark(color: Int): Boolean {
+    val darkness = 1 - (0.299 * Color.red(color) + 0.587 * Color.green(color) + 0.114 * Color.blue(color)) / 255
+    return darkness >= 0.5 // Threshold for considering a color dark
   }
   
   override fun onTouchEvent(e:MotionEvent):Boolean{
