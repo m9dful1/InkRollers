@@ -22,28 +22,28 @@ object ProfileRepository {
         }
     }
 
-    fun findProfileByFriendCode(friendCode: String, onResult: (PlayerProfile?) -> Unit) {
+    fun findProfileByFriendCode(friendCode: String, onResult: (PlayerProfile?, Exception?) -> Unit) {
         val ref = FirebaseDatabase.getInstance().getReference("profiles")
         ref.orderByChild("friendCode").equalTo(friendCode)
             .limitToFirst(1)
             .get()
             .addOnSuccessListener { snapshot ->
                 val profile = snapshot.children.firstOrNull()?.getValue(PlayerProfile::class.java)
-                onResult(profile)
+                onResult(profile, null)
             }
-            .addOnFailureListener { onResult(null) }
+            .addOnFailureListener { exception -> onResult(null, exception) }
     }
 
-    fun isFriendCodeUnique(friendCode: String, onResult: (Boolean) -> Unit) {
+    fun isFriendCodeUnique(friendCode: String, onResult: (Boolean, Exception?) -> Unit) {
         val ref = FirebaseDatabase.getInstance().getReference("profiles")
         ref.orderByChild("friendCode").equalTo(friendCode)
             .limitToFirst(1)
             .get()
             .addOnSuccessListener { snapshot ->
-                onResult(!snapshot.exists()) // True if no snapshot exists (code is unique)
+                onResult(!snapshot.exists(), null) // True if no snapshot exists (code is unique)
             }
-            .addOnFailureListener {
-                onResult(false) // Assume not unique on error to be safe, or handle error differently
+            .addOnFailureListener { exception ->
+                onResult(false, exception)
             }
     }
 

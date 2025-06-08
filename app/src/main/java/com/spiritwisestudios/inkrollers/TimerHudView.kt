@@ -8,7 +8,10 @@ import android.util.AttributeSet
 import android.view.View
 
 /**
- * HUD overlay that shows a countdown timer in mm:ss format.
+ * HUD component displaying match countdown timer in MM:SS format.
+ * 
+ * Positioned in the top-right corner and updated by GameModeManager
+ * to show remaining match time. Timer reaches 00:00 when match ends.
  */
 class TimerHudView @JvmOverloads constructor(
     context: Context,
@@ -24,9 +27,7 @@ class TimerHudView @JvmOverloads constructor(
         textAlign = Paint.Align.RIGHT
     }
 
-    /**
-     * Update the countdown (in milliseconds) and redraw.
-     */
+    /** Updates displayed time and triggers redraw. Called by GameView each frame. */
     fun updateTime(ms: Long) {
         remainingMs = ms
         postInvalidate()
@@ -34,12 +35,11 @@ class TimerHudView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        // Format mm:ss
         val totalSec = (remainingMs / 1000).coerceAtLeast(0L)
         val minutes = totalSec / 60
         val seconds = totalSec % 60
         val timeText = String.format("%02d:%02d", minutes, seconds)
-        // Draw text aligned to the right, near top
+        
         val x = width.toFloat()
         val y = textPaint.textSize + 8f * resources.displayMetrics.density
         canvas.drawText(timeText, x, y, textPaint)

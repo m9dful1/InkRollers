@@ -4,19 +4,23 @@ import android.graphics.RectF
 import android.util.Log
 
 /**
- * Utility class to calculate zone ownership in Zones game mode.
- * Samples pixels within each zone, skips walls, and determines the majority owner.
+ * Calculates zone control for Zones game mode by analyzing paint distribution.
+ * 
+ * Samples pixels within each zone boundary while excluding wall areas to determine
+ * which player has majority control. Used by GameView to update ZoneHudView and
+ * evaluate win conditions. Requires >50% painted area to control a zone.
  */
 object ZoneOwnershipCalculator {
     
     private const val TAG = "ZoneOwnershipCalculator"
     
     /**
-     * Calculate zone ownership for a maze level.
-     * @param level The maze level containing zones
-     * @param paintSurface The paint surface to sample
-     * @param sampleStep Sampling step size (higher = faster but less accurate)
-     * @return Map of zone index to owner color (null if uncontrolled)
+     * Determines ownership of all zones in the maze based on paint coverage.
+     * 
+     * @param level Maze level containing zone definitions and collision detection
+     * @param paintSurface Surface containing painted pixels to analyze
+     * @param sampleStep Pixel sampling frequency (higher values improve performance)
+     * @return Map of zone indices to controlling player colors (null if neutral)
      */
     fun calculateZoneOwnership(
         level: MazeLevel,
@@ -49,6 +53,7 @@ object ZoneOwnershipCalculator {
         return zoneOwnership
     }
     
+    /** Analyzes a single zone to determine its controlling player based on majority paint coverage. */
     private fun calculateSingleZoneOwnership(
         zoneIndex: Int,
         normalizedZone: RectF,
@@ -60,7 +65,6 @@ object ZoneOwnershipCalculator {
         val colorCounts = mutableMapOf<Int, Int>()
         var totalSamples = 0
         
-        // Convert normalized zone coordinates to screen coordinates
         val (offsetX, offsetY) = viewportOffset
         val mazeWidth = bitmap.width - 2 * offsetX
         val mazeHeight = bitmap.height - 2 * offsetY
@@ -70,14 +74,11 @@ object ZoneOwnershipCalculator {
         val screenRight = (offsetX + normalizedZone.right * mazeWidth).toInt()
         val screenBottom = (offsetY + normalizedZone.bottom * mazeHeight).toInt()
         
-        // Sample pixels within the zone
         for (y in screenTop..screenBottom step sampleStep) {
             for (x in screenLeft..screenRight step sampleStep) {
                 if (x >= 0 && x < bitmap.width && y >= 0 && y < bitmap.height) {
-                    // Skip wall pixels
                     if (!level.checkCollision(x.toFloat(), y.toFloat())) {
                         val pixel = bitmap.getPixel(x, y)
-                        // Skip transparent/background pixels
                         if (android.graphics.Color.alpha(pixel) > 0) {
                             colorCounts[pixel] = colorCounts.getOrDefault(pixel, 0) + 1
                             totalSamples++
@@ -87,7 +88,6 @@ object ZoneOwnershipCalculator {
             }
         }
         
-        // Determine majority owner (need >50% to control zone)
         val majorityThreshold = totalSamples * 0.5
         val majorityOwner = colorCounts.entries
             .filter { it.value > majorityThreshold }

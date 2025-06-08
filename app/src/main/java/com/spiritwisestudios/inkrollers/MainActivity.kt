@@ -18,6 +18,25 @@ import com.spiritwisestudios.inkrollers.repository.ProfileRepository
 import com.spiritwisestudios.inkrollers.model.PlayerProfile
 import kotlin.random.Random
 
+/**
+ * Main game activity managing the complete multiplayer match lifecycle.
+ * 
+ * Coordinates between Firebase authentication, multiplayer game hosting/joining,
+ * player profile management, HUD components, and match flow progression.
+ * Handles complex scenarios including:
+ * 
+ * - Anonymous Firebase authentication for multiplayer access
+ * - Game hosting with custom settings (duration, complexity, game mode, privacy)
+ * - Game joining with matchmaking (specific game ID or random available game)
+ * - Player profile loading for color preferences and display names
+ * - Pre-match countdown coordination between host and clients
+ * - Match timing synchronization using Firebase server timestamps
+ * - Post-match rematch voting and game state reset coordination
+ * - UI dialog management for various waiting and countdown states
+ * 
+ * Integrates with GameView for core gameplay and MultiplayerManager for
+ * Firebase communication and real-time state synchronization.
+ */
 class MainActivity:AppCompatActivity(){
   private lateinit var gameView:GameView
   private lateinit var inkHudView: InkHudView
@@ -38,6 +57,9 @@ class MainActivity:AppCompatActivity(){
   
   // Add Firebase Auth field
   private lateinit var auth: FirebaseAuth
+  
+  // Audio manager for game events
+  private lateinit var audioManager: com.spiritwisestudios.inkrollers.AudioManager
 
   // Add this field to the MainActivity class
   private var rematchInProgressHandled = false
@@ -54,8 +76,8 @@ class MainActivity:AppCompatActivity(){
     super.onCreate(savedInstanceState)
     setContentView(R.layout.activity_main)
 
-    // Initialize Firebase Auth
     auth = Firebase.auth
+    audioManager = com.spiritwisestudios.inkrollers.AudioManager.getInstance(this)
 
     gameView=findViewById(R.id.game_view)
     inkHudView = findViewById(R.id.ink_hud_view)
@@ -63,9 +85,8 @@ class MainActivity:AppCompatActivity(){
     zoneHudView = findViewById(R.id.zone_hud_view)
     timerHudView = findViewById(R.id.timer_hud_view)
 
-    multiplayerManager = MultiplayerManager()
+    multiplayerManager = MultiplayerManager(this)
     
-    // Listen for database permission/connectivity issues
     multiplayerManager.onDatabaseError = { errorMessage ->
         runOnUiThread {
             Toast.makeText(this, "Firebase error: $errorMessage", Toast.LENGTH_LONG).show()
@@ -73,11 +94,9 @@ class MainActivity:AppCompatActivity(){
         }
     }
     
-    // Listen for rematch decision
     multiplayerManager.onRematchDecision = { bothYes ->
       Handler(Looper.getMainLooper()).post {
         if (!bothYes) {
-          // Show dialog that the other player declined rematch, then finish
           runOnUiThread {
             if (isFinishing || isDestroyed) {
               finish()
@@ -95,11 +114,9 @@ class MainActivity:AppCompatActivity(){
               .show()
           }
         }
-        // If bothYes, do nothing here; wait for onRematchStartSignal
       }
     }
 
-    // Listen for rematch start signal (after both YES)
     multiplayerManager.onRematchStartSignal = {
       Handler(Looper.getMainLooper()).post {
         if (!rematchInProgressHandled) {
@@ -111,20 +128,15 @@ class MainActivity:AppCompatActivity(){
       }
     }
 
-    // Removed: handleIntentExtras() here to prevent duplicate game creation
-
     val toggleButton = findViewById<Button>(R.id.btn_toggle)
-    // Initialize button for Paint mode (shows action to switch to Fill)
     toggleButton.setTextColor(Color.WHITE)
-    toggleButton.setBackgroundColor(Color.parseColor("#2196F3")) // Blue for Paint
+    toggleButton.setBackgroundColor(Color.parseColor("#2196F3"))
     toggleButton.text = "FILL"
     toggleButton.setOnClickListener {
         gameView.getLocalPlayer()?.let { player ->
             player.toggleMode()
             val isPaintMode = player.mode == 0
-            // Button text shows the next action
             toggleButton.text = if (isPaintMode) "FILL" else "PAINT"
-            // Warm orange for Paint mode, cool blue for Fill mode
             val bgColor = if (isPaintMode) Color.parseColor("#2196F3") else Color.parseColor("#FF9800")
             toggleButton.setBackgroundColor(bgColor)
             toggleButton.setTextColor(Color.WHITE)
@@ -138,35 +150,40 @@ class MainActivity:AppCompatActivity(){
     gameView.setZoneHudView(zoneHudView)
     gameView.setTimerHudView(timerHudView)
     gameView.setMultiplayerManager(multiplayerManager)
-    // Handle match end: show rematch dialog
     gameView.onMatchEnd = { didWin ->
+      // Stop background music when match ends
+      audioManager.stopBackgroundMusic()
       Handler(Looper.getMainLooper()).post { showRematchDialog(didWin) }
     }
 
-    // Sign in anonymously, then proceed with game setup
     signInAnonymouslyAndProceed()
   }
 
+  /** Authenticates user anonymously with Firebase before proceeding with game setup. */
   private fun signInAnonymouslyAndProceed() {
       Log.d(TAG, "Attempting anonymous sign-in...")
       auth.signInAnonymously()
           .addOnCompleteListener(this) { task ->
               if (task.isSuccessful) {
-                  // Sign in success, proceed with game flow
                   Log.d(TAG, "Anonymous sign-in successful")
                   val user = auth.currentUser
                   Log.d(TAG, "Authenticated with UID: ${user?.uid}")
-                  handleIntentExtras() // Now proceed with hosting/joining
+                  handleIntentExtras()
               } else {
-                  // If sign in fails, display a message to the user.
                   Log.w(TAG, "Anonymous sign-in failed", task.exception)
                   Toast.makeText(baseContext, "Authentication failed: ${task.exception?.message}",
                       Toast.LENGTH_SHORT).show()
-                  finish() // Can't play without auth
+                  finish()
               }
           }
   }
 
+  /**
+   * Processes intent extras to determine game mode (HOST/JOIN) and settings.
+   * Loads player profile for color preferences, then initiates appropriate game flow.
+   * For HOST: Creates new game with specified settings and waits for players.
+   * For JOIN: Joins existing game by ID or searches for random available game.
+   */
   private fun handleIntentExtras() {
       val mode = intent.getStringExtra(HomeActivity.EXTRA_MODE)
       Log.d(TAG, "Received mode: $mode")
@@ -175,30 +192,25 @@ class MainActivity:AppCompatActivity(){
           matchDurationMs = intent.getIntExtra(HomeActivity.EXTRA_TIME_LIMIT_MINUTES, 3) * 60000L
           mazeComplexity = intent.getStringExtra(HomeActivity.EXTRA_MAZE_COMPLEXITY) ?: HomeActivity.COMPLEXITY_HIGH
           gameMode = intent.getStringExtra(HomeActivity.EXTRA_GAME_MODE) ?: HomeActivity.GAME_MODE_COVERAGE
-          isPrivateMatch = intent.getBooleanExtra(HomeActivity.EXTRA_IS_PRIVATE_MATCH, false) // Retrieve isPrivate
+          isPrivateMatch = intent.getBooleanExtra(HomeActivity.EXTRA_IS_PRIVATE_MATCH, false)
           Log.d(TAG, "Host selected settings: Duration=${matchDurationMs}ms, Complexity=$mazeComplexity, GameMode=$gameMode, Private=$isPrivateMatch")
       }
-      // For JOIN mode, duration, complexity, and game mode will be fetched from Firebase by MultiplayerManager
 
-      // Load player profile to get favorite color and name before starting game flow
       val uid = Firebase.auth.currentUser?.uid
       if (uid != null) {
           ProfileRepository.loadPlayerProfile(uid) { profile: PlayerProfile? ->
               val playerColor = if (profile?.favoriteColors?.isNotEmpty() == true) {
-                  // Use the player's first favorite color if available
                   profile.favoriteColors[0]
               } else {
-                  // Fallback to default colors based on mode if no profile or no favorite colors
                   if (mode == HomeActivity.MODE_HOST) NEON_GREEN else NEON_BLUE
               }
               
-              val playerName = profile?.playerName ?: "Player ${if (mode == HomeActivity.MODE_HOST) 1 else 2}" // Use profile name or default
+              val playerName = profile?.playerName ?: "Player ${if (mode == HomeActivity.MODE_HOST) 1 else 2}"
 
-              // Create initial state with player name and UID
               val initialState = PlayerState(
                   color = playerColor,
                   playerName = playerName,
-                  uid = uid // Include UID in the initial state
+                  uid = uid
               )
 
       when (mode) {
@@ -208,20 +220,16 @@ class MainActivity:AppCompatActivity(){
                       this.localPlayerId = multiplayerManager.localPlayerId
                       Log.d(TAG, "Host game successful. Game ID: $gameId. Settings: Duration=${gameSettings?.durationMs}, Complexity=${gameSettings?.complexity}, GameMode=${gameSettings?.gameMode}")
                               
-                              // Set local player ID with the determined color and name
-                              gameView.setLocalPlayerId("player0", playerColor, playerName)
+                      gameView.setLocalPlayerId("player0", playerColor, playerName)
                       
-                      // Set up player count listener *immediately* after confirmation
                       multiplayerManager.onPlayerCountChanged = { count ->
-                                  Log.d(TAG, "Host: onPlayerCountChanged received count: $count")
+                          Log.d(TAG, "Host: onPlayerCountChanged received count: $count")
                           if (count >= 2) {
-                              // Only trigger once
                               Log.d(TAG, "Host: Player count >= 2, triggering countdown.")
-                              // Now that all players are present, attach the rematch listener so expected count is accurate
                               multiplayerManager.setupRematchListener()
-                              multiplayerManager.onPlayerCountChanged = null // Nullify listener *before* UI action
+                              multiplayerManager.onPlayerCountChanged = null
                               runOnUiThread {
-                                          if (!isFinishing && !isDestroyed) {
+                                  if (!isFinishing && !isDestroyed) {
                                      waitingDialog?.dismiss()
                                      startPreMatchCountdown(isHost = true)
                                   } else {
@@ -232,11 +240,10 @@ class MainActivity:AppCompatActivity(){
                               Log.d(TAG, "Host: Player count is $count, waiting for more players.")
                           }
                       }
-                              Log.d(TAG, "Host: Player count listener attached.")
+                      Log.d(TAG, "Host: Player count listener attached.")
 
-                      // Show waiting dialog and toast *after* setting up listener
                       runOnUiThread {
-                                  if (!isFinishing && !isDestroyed) {
+                          if (!isFinishing && !isDestroyed) {
                              showWaitingForPlayersDialog()
                              Toast.makeText(this, "Hosting Game: $gameId", Toast.LENGTH_LONG).show()
                           } 
@@ -246,7 +253,7 @@ class MainActivity:AppCompatActivity(){
                   } else {
                       Log.e(TAG, "Failed to host game.")
                       runOnUiThread {
-                                   if (!isFinishing && !isDestroyed) {
+                          if (!isFinishing && !isDestroyed) {
                               Toast.makeText(this, "Failed to host game", Toast.LENGTH_SHORT).show()
                            } 
                       }
@@ -260,23 +267,19 @@ class MainActivity:AppCompatActivity(){
                   multiplayerManager.joinGame(gameId, initialState) { success, playerId, gameSettings ->
                        if (success && playerId != null) {
                            this.localPlayerId = playerId
-                                   // Set local player ID with the determined color and name
-                                   gameView.setLocalPlayerId(playerId, playerColor, playerName)
+                           gameView.setLocalPlayerId(playerId, playerColor, playerName)
 
-                           // Apply game settings received from Firebase
                            gameSettings?.let {
                                matchDurationMs = it.durationMs
                                mazeComplexity = it.complexity
                                gameMode = it.gameMode
                                Log.d(TAG, "Joined game with settings: Duration=${matchDurationMs}ms, Complexity=$mazeComplexity, GameMode=$gameMode")
                            }
-                           // Show waiting dialog until host starts
                            runOnUiThread {
                                showWaitingForHostDialog()
                                Toast.makeText(this, "Joined Game: $gameId as $playerId", Toast.LENGTH_LONG).show()
                            }
                            multiplayerManager.onMatchStartRequested = {
-                               // Only trigger once
                                multiplayerManager.onMatchStartRequested = null
                                runOnUiThread {
                                    waitingDialog?.dismiss()
@@ -293,32 +296,26 @@ class MainActivity:AppCompatActivity(){
                        }
                   }
               } else {
-                   // Attempt to join a random game instead
                    runOnUiThread {
                        Toast.makeText(this, "Searching for an available game...", Toast.LENGTH_SHORT).show()
                    }
                    multiplayerManager.joinGame(null, initialState) { success, playerId, gameSettings ->
                        if (success && playerId != null) {
                            this.localPlayerId = playerId
-                                   // Set local player ID with the determined color and name
-                                   gameView.setLocalPlayerId(playerId, playerColor, playerName)
+                           gameView.setLocalPlayerId(playerId, playerColor, playerName)
 
-                           // Apply game settings received from Firebase
                            gameSettings?.let {
                                matchDurationMs = it.durationMs
                                mazeComplexity = it.complexity
                                gameMode = it.gameMode
                                Log.d(TAG, "Joined random game with settings: Duration=${matchDurationMs}ms, Complexity=$mazeComplexity, GameMode=$gameMode")
                            }
-                           // Show the game ID that was joined
                            val joinedGameId = multiplayerManager.currentGameId
                            runOnUiThread {
                                Toast.makeText(this, "Joined Random Game: $joinedGameId as $playerId", Toast.LENGTH_LONG).show()
-                               // Show waiting dialog until host starts
                                showWaitingForHostDialog()
                            }
                            multiplayerManager.onMatchStartRequested = {
-                               // Only trigger once
                                multiplayerManager.onMatchStartRequested = null
                                runOnUiThread {
                                    waitingDialog?.dismiss()
@@ -341,7 +338,7 @@ class MainActivity:AppCompatActivity(){
                Toast.makeText(this, "Error: Invalid mode", Toast.LENGTH_SHORT).show()
                finish()
           }
-              }
+      }
           }
       } else {
           Log.e(TAG, "User not authenticated during game initiation.")
@@ -351,7 +348,6 @@ class MainActivity:AppCompatActivity(){
   }
   
   override fun onDestroy() {
-      // Dismiss dialogs to avoid leaks/crashes
       runOnUiThread {
         try { waitingDialog?.dismiss() } catch (_: Exception) {}
         waitingDialog = null
@@ -363,10 +359,18 @@ class MainActivity:AppCompatActivity(){
       multiplayerManager.leaveGame()
   }
 
-  override fun onPause(){ super.onPause(); gameView.pause() }
-  override fun onResume(){ super.onResume(); gameView.resume() }
+  override fun onPause(){
+    super.onPause()
+    gameView.pause()
+    audioManager.pauseAudio()
+  }
+  override fun onResume(){
+    super.onResume()
+    gameView.resume()
+    audioManager.resumeAudio()
+  }
 
-  /** Display rematch dialog and send answer */
+  /** Displays post-match rematch dialog and submits player's vote to Firebase. */
   private fun showRematchDialog(didWin: Boolean) {
     runOnUiThread {
       if (isFinishing || isDestroyed) {
@@ -378,15 +382,25 @@ class MainActivity:AppCompatActivity(){
       try { countdownDialog?.dismiss() } catch (_: Exception) {}
       countdownDialog = null
       Log.d(TAG, "showRematchDialog called. didWin=$didWin")
+      
+      // Play win/lose sound effect
+      if (didWin) {
+        audioManager.playSound(com.spiritwisestudios.inkrollers.AudioManager.SoundType.MATCH_END_WIN)
+      } else {
+        audioManager.playSound(com.spiritwisestudios.inkrollers.AudioManager.SoundType.MATCH_END_LOSE)
+      }
+      
       val message = if (didWin) "You Won!" else "You Lost"
       AlertDialog.Builder(this)
         .setTitle(message)
         .setMessage("Play Again?")
         .setPositiveButton("Yes") { _, _ -> 
+          audioManager.playSound(com.spiritwisestudios.inkrollers.AudioManager.SoundType.UI_CLICK)
           Log.d(TAG, "Rematch dialog: YES selected. Sending rematch answer true.")
           multiplayerManager.sendRematchAnswer(true) 
         }
         .setNegativeButton("No") { _, _ -> 
+          audioManager.playSound(com.spiritwisestudios.inkrollers.AudioManager.SoundType.UI_CLICK)
           Log.d(TAG, "Rematch dialog: NO selected. Sending rematch answer false.")
           multiplayerManager.sendRematchAnswer(false) 
         }
@@ -395,56 +409,50 @@ class MainActivity:AppCompatActivity(){
     }
   }
 
-  /** Reset state for rematch, then show countdown and start match */
+  /** Initiates rematch flow by resetting game state and showing countdown. */
   private fun restartMatchForRematch() {
     restartMatch(resetOnly = true)
     showRematchCountdownAndStart()
   }
 
-  /** Show countdown and start the rematch after reset */
+  /** Displays rematch countdown and starts the match after completion. */
   private fun showRematchCountdownAndStart() {
     startPreMatchCountdown(isHost = (localPlayerId == "player0")) {
-        // After the countdown, actually start the rematch!
         Log.d(TAG, "showRematchCountdownAndStart: Countdown finished, starting rematch match.")
         actuallyStartMatch()
     }
   }
 
-  // Update restartMatch to optionally only reset state (no countdown/start)
+  /**
+   * Resets game state for rematch coordination.
+   * Handles complex player profile loading, color assignment conflict resolution,
+   * Firebase state synchronization, and game reinitialization.
+   * 
+   * @param resetOnly If true, only resets state without starting match flow
+   */
   private fun restartMatch(resetOnly: Boolean = false) {
     Log.d(TAG, "restartMatch called. Beginning rematch reset flow.")
-    // 1. Stop the old game thread and wait for it
     gameView.stopThread()
-    // 2. Clear non-player Firebase state
     Log.d(TAG, "Clearing Firebase paint/rematch state...")
     multiplayerManager.clearPaintActions()
     multiplayerManager.clearRematchAnswers()
     
-    // Load player profile to get favorite color
     val uid = Firebase.auth.currentUser?.uid
     if (uid != null) {
-        // Load local player profile first to ensure we have their preferences
-        ProfileRepository.loadPlayerProfile(uid) { localProfile: PlayerProfile? ->
-    // --- 3. Calculate and Reset Player States in Firebase --- 
+        ProfileRepository.loadPlayerProfile(uid) { _: PlayerProfile? ->
     Log.d(TAG, "Calculating and resetting Firebase player states...")
-    val currentLevel = gameView.getCurrentLevel() // Get level for coordinate calc
-    val playerIds = gameView.getActivePlayerIds() // Get IDs before local state is cleared
+    val currentLevel = gameView.getCurrentLevel()
+    val playerIds = gameView.getActivePlayerIds()
     val initialStates = mutableMapOf<String, PlayerState>()
             
-            // Map to store each player's profile
             val playerProfiles = mutableMapOf<String, PlayerProfile?>()
-            // List to track UIDs we need to load profiles for
             val uidsToLoad = mutableSetOf<String>()
 
-            // Before proceeding, we need to fetch the PlayerState from Firebase for all active players
             multiplayerManager.getPlayersState { playerStatesMap ->
                 Log.d(TAG, "restartMatch: Fetched all player states from Firebase: ${playerStatesMap.keys}")
-                // Collect UIDs from fetched player states
                 playerStatesMap.forEach { (playerId, playerState) ->
                     if (playerState != null && playerState.uid.isNotEmpty()) {
                         uidsToLoad.add(playerState.uid)
-                        // Associate player ID with UID temporarily for profile loading context
-                        // (This isn't strictly needed if ProfileRepository loads by UID)
                     } else {
                          Log.w(TAG, "restartMatch: Player state for $playerId is null or has empty UID.")
                     }
@@ -452,23 +460,19 @@ class MainActivity:AppCompatActivity(){
 
                 if (uidsToLoad.isEmpty()) {
                     Log.w(TAG, "No valid player UIDs found from Firebase states for rematch setup.")
-                    // Fallback to default colors/names if no profiles can be loaded
                     assignDefaultColorsAndNames(playerIds, initialStates, currentLevel, multiplayerManager.mazeSeed)
                     gameView.clearPaintSurface()
                     gameView.initGame(mazeComplexity)
                     val localPlayerId = multiplayerManager.localPlayerId
-                    if (localPlayerId != null) { // Pass name as empty, will be updated by state
+                    if (localPlayerId != null) {
                        gameView.setLocalPlayerId(localPlayerId, initialStates[localPlayerId]?.color, initialStates[localPlayerId]?.playerName ?: "")
                     }
-                    // Game start logic is triggered by countdown flow
-                    return@getPlayersState // Exit this lambda
+                    return@getPlayersState
                 }
 
-                // Load all player profiles concurrently
                 var loadedProfileCount = 0
                 uidsToLoad.forEach { uidToLoad ->
                     ProfileRepository.loadPlayerProfile(uidToLoad) { profile ->
-                        // Find the player ID(s) associated with this UID
                         val playerIdsForUid = playerStatesMap.filter { it.value?.uid == uidToLoad }.keys
                         playerIdsForUid.forEach { playerId ->
                              playerProfiles[playerId] = profile
@@ -476,42 +480,31 @@ class MainActivity:AppCompatActivity(){
                        
                         loadedProfileCount++
                         if (loadedProfileCount == uidsToLoad.size) {
-                            // All profiles loaded, now assign colors and names
                             Log.d(TAG, "All profiles loaded for rematch. Assigning colors and names.")
                             assignColorsAndNamesForRematch(playerIds, playerProfiles, initialStates, currentLevel, multiplayerManager.mazeSeed)
                            
-                            // 4. Clear the paint surface
                             gameView.clearPaintSurface()
-                            
-                            // 5. Reinitialize the game
                             gameView.initGame(mazeComplexity)
                             
-                            // 6. Set local player ID with their determined color and name
                             val localPlayerId = multiplayerManager.localPlayerId
                             if (localPlayerId != null) {
-                                // Pass the determined color and name from initialStates
                                 gameView.setLocalPlayerId(localPlayerId, initialStates[localPlayerId]?.color, initialStates[localPlayerId]?.playerName ?: "")
                             }
-                            // The game start logic (startGameMode and startGameLoop) is now triggered
-                            // by the startPreMatchCountdown/actuallyStartMatch flow as before.
-                            if (!resetOnly) { // If not just resetting, start the countdown/match flow
-                                // No need to explicitly call showRematchCountdownAndStart here
-                                // The flow is initiated from showRematchDialog -> restartMatchForRematch -> restartMatch(resetOnly = false)
-                                // The game start will be triggered by the countdown callback
+                            
+                            if (!resetOnly) {
                             }
                         }
                     }
                 }
             }
-        } // End of local profile load
+        }
     } else {
         Log.e(TAG, "Cannot restart match: User not authenticated")
         Toast.makeText(this, "Error: User not authenticated", Toast.LENGTH_SHORT).show()
-        // Consider finishing the activity or showing an error to the user
     }
   }
 
-  // Helper function to assign default colors and names if profiles can't be loaded
+  /** Assigns default colors and names when player profiles cannot be loaded. */
   private fun assignDefaultColorsAndNames(playerIds: Set<String>, initialStates: MutableMap<String, PlayerState>, currentLevel: Level?, mazeSeed: Long) {
       Log.d(TAG, "Assigning default colors and names for rematch.")
       if (currentLevel !is MazeLevel) {
@@ -538,37 +531,34 @@ class MainActivity:AppCompatActivity(){
                 active = true,
                mazeSeed = mazeSeed,
                playerName = defaultName,
-               uid = multiplayerManager.getCurrentUserUid() ?: "" // Use getter for local UID as fallback
+               uid = multiplayerManager.getCurrentUserUid() ?: ""
             )
         }
        Log.d(TAG, "Default initial states created: $initialStates")
-       // Update Firebase with default states
         multiplayerManager.resetAllPlayerStatesFirebase(initialStates)
   }
 
-  // Helper function to assign colors and names based on profiles, handling duplicates
+  /**
+   * Assigns colors and names based on player profiles with conflict resolution.
+   * Handles duplicate color preferences by prioritizing first choice, then second choice,
+   * then falling back to defaults. Ensures consistent assignment across devices.
+   */
   private fun assignColorsAndNamesForRematch(playerIds: Set<String>, playerProfiles: Map<String, PlayerProfile?>, initialStates: MutableMap<String, PlayerState>, currentLevel: Level?, mazeSeed: Long) {
       Log.d(TAG, "Assigning colors and names based on profiles for rematch.")
       if (currentLevel !is MazeLevel) {
           Log.e(TAG, "Cannot assign states based on profiles: currentLevel is not MazeLevel or null")
-          // Fallback to defaults
           assignDefaultColorsAndNames(playerIds, initialStates, currentLevel, mazeSeed)
           return
       }
 
       val playerColors = mutableMapOf<String, Int>()
       val chosenColors = mutableSetOf<Int>()
-      val random = Random(System.currentTimeMillis()) // Use a random seed for tie-breaking
 
-      // Attempt to assign first favorite colors
-      playerIds.sorted().forEach { playerId -> // Sort to ensure consistent color assignment on both devices
+      playerIds.sorted().forEach { playerId ->
           val profile = playerProfiles[playerId]
           val favoriteColors = profile?.favoriteColors ?: emptyList()
-          val playerIndex = try { playerId.replace("player", "").toInt() } catch (e: Exception) { Log.e(TAG, "Failed to parse index for $playerId in assignColorsAndNamesForRematch, using 0", e); 0 }
-          val defaultColor = if (playerIndex == 0) NEON_GREEN else NEON_BLUE
 
           var assignedColor: Int? = null
-          // Try first favorite color
           if (favoriteColors.isNotEmpty() && favoriteColors[0] !in chosenColors) {
               assignedColor = favoriteColors[0]
           }
@@ -579,38 +569,31 @@ class MainActivity:AppCompatActivity(){
           }
       }
 
-      // Assign remaining colors, handling duplicates and using second preferences/defaults
       playerIds.sorted().forEach { playerId ->
-           // If color not already assigned (meaning first choice was a duplicate or not available)
            if (!playerColors.containsKey(playerId)) {
                val profile = playerProfiles[playerId]
                val favoriteColors = profile?.favoriteColors ?: emptyList()
                val playerIndex = try { playerId.replace("player", "").toInt() } catch (e: Exception) { Log.e(TAG, "Failed to parse index for $playerId in assignColorsAndNamesForRematch (fallback), using 0", e); 0 }
-               val defaultColor = if (playerIndex == 0) NEON_GREEN else NEON_BLUE
 
                var assignedColor: Int? = null
-               // Try second favorite color if available and not chosen
                if (favoriteColors.size > 1 && favoriteColors[1] !in chosenColors) {
                    assignedColor = favoriteColors[1]
                }
 
-               // If still no color assigned, find any available color from preferences or use default
                if (assignedColor == null) {
-                   assignedColor = favoriteColors.firstOrNull { it !in chosenColors } ?: defaultColor
+                   assignedColor = favoriteColors.firstOrNull { it !in chosenColors } ?: (if (playerIndex == 0) NEON_GREEN else NEON_BLUE)
                }
-               // Ensure the chosen color is marked as used
-               val finalAssignedColor = assignedColor // Use a local variable to avoid smart cast issue
+               val finalAssignedColor = assignedColor
                if (finalAssignedColor != null) {
                  playerColors[playerId] = finalAssignedColor
                  chosenColors.add(finalAssignedColor)
-               } else { // Fallback to default if somehow no color was assigned
-                  playerColors[playerId] = defaultColor
-                  chosenColors.add(defaultColor)
+               } else {
+                  playerColors[playerId] = (if (playerIndex == 0) NEON_GREEN else NEON_BLUE)
+                  chosenColors.add((if (playerIndex == 0) NEON_GREEN else NEON_BLUE))
                   Log.w(TAG, "assignColorsAndNamesForRematch: Failed to assign color for $playerId, using default.")
                }
            }
 
-           // Create initial state for this player
            val playerIndex = try { playerId.replace("player", "").toInt() } catch (e: Exception) { Log.e(TAG, "Failed to parse index for $playerId in assignColorsAndNamesForRematch (state creation), using 0", e); 0 }
            val startPosScreen = currentLevel.getPlayerStartPosition(playerIndex)
            val (normX, normY) = currentLevel.screenToMazeCoord(startPosScreen.first, startPosScreen.second)
@@ -620,7 +603,7 @@ class MainActivity:AppCompatActivity(){
            initialStates[playerId] = PlayerState(
                normX = normX,
                normY = normY,
-               color = playerColors[playerId] ?: (if (playerIndex == 0) NEON_GREEN else NEON_BLUE), // Use assigned color or default
+               color = playerColors[playerId] ?: (if (playerIndex == 0) NEON_GREEN else NEON_BLUE),
                mode = 0,
                ink = Player.MAX_INK,
                active = true,
@@ -630,11 +613,10 @@ class MainActivity:AppCompatActivity(){
            )
       }
        Log.d(TAG, "Final initial states for rematch: $initialStates")
-      // Update Firebase with the determined states
       multiplayerManager.resetAllPlayerStatesFirebase(initialStates)
   }
 
-  // Helper: show dialog for host waiting for other players
+  /** Displays waiting dialog for host until other players join. */
   private fun showWaitingForPlayersDialog() {
       runOnUiThread {
         if (isFinishing || isDestroyed) {
@@ -655,7 +637,7 @@ class MainActivity:AppCompatActivity(){
       }
   }
 
-  // Helper: show dialog for joiner waiting for host
+  /** Displays waiting dialog for joiner until host starts the match. */
   private fun showWaitingForHostDialog() {
       runOnUiThread {
         if (isFinishing || isDestroyed) {
@@ -676,7 +658,11 @@ class MainActivity:AppCompatActivity(){
       }
   }
 
-  // Helper: countdown 3-2-1-GO, host signals start when countdown begins
+  /**
+   * Displays synchronized 3-2-1-GO countdown for match start.
+   * Host signals match start to all clients when countdown begins.
+   * Coordinates timing to ensure simultaneous game start across devices.
+   */
   private fun startPreMatchCountdown(isHost: Boolean, onCountdownFinished: (() -> Unit)? = null) {
       if (isFinishing || isDestroyed) {
           Log.w(TAG, "Activity is finishing, cannot show countdown dialog.")
@@ -690,6 +676,7 @@ class MainActivity:AppCompatActivity(){
               .setCancelable(false)
               .setMessage("3")
               .show()
+          audioManager.playSound(com.spiritwisestudios.inkrollers.AudioManager.SoundType.COUNTDOWN_TICK)
           Log.d(TAG, "Countdown dialog shown with initial '3'")
           val messages = listOf("2", "1", "GO")
           val handler = Handler(Looper.getMainLooper())
@@ -699,13 +686,18 @@ class MainActivity:AppCompatActivity(){
                   try {
                       if (index < messages.size) {
                           countdownDialog?.setMessage(messages[index])
+                          // Play appropriate sound for countdown
+                          if (messages[index] == "GO") {
+                              audioManager.playSound(com.spiritwisestudios.inkrollers.AudioManager.SoundType.COUNTDOWN_GO)
+                          } else {
+                              audioManager.playSound(com.spiritwisestudios.inkrollers.AudioManager.SoundType.COUNTDOWN_TICK)
+                          }
                           Log.d(TAG, "Countdown updated to: "+messages[index])
                           index++
                           handler.postDelayed(this, 1000)
                       } else {
                           Log.d(TAG, "Countdown finished, starting match")
                           countdownDialog?.dismiss()
-                          // Read the synchronized startTime from Firebase before starting the match
                           readAndStartWithSynchronizedTime(onCountdownFinished)
                       }
                   } catch (e: Exception) {
@@ -726,8 +718,8 @@ class MainActivity:AppCompatActivity(){
       }
   }
 
+  /** Retrieves synchronized start time from Firebase for coordinated match timing. */
   private fun readAndStartWithSynchronizedTime(onCountdownFinished: (() -> Unit)?) {
-      // Read the startTime from Firebase and store it in matchStartTime
       val gameId = multiplayerManager.currentGameId
       if (gameId == null) {
           Log.e(TAG, "readAndStartWithSynchronizedTime: currentGameId is null!")
@@ -755,11 +747,20 @@ class MainActivity:AppCompatActivity(){
       })
   }
 
-  // Helper: finally start the actual game
+  /**
+   * Initializes and starts the actual match gameplay.
+   * Handles final player setup, game mode selection, and synchronized timing.
+   * Called after countdown completion with Firebase-synchronized start time.
+   */
   private fun actuallyStartMatch() {
       try {
-          rematchInProgressHandled = false // Reset the flag after match actually starts
+          rematchInProgressHandled = false
           Log.d(TAG, "Starting actual match with complexity: $mazeComplexity")
+          
+          // Play match start sound and begin background music
+          audioManager.playSound(com.spiritwisestudios.inkrollers.AudioManager.SoundType.MATCH_START)
+          audioManager.startBackgroundMusic()
+          
           gameView.initGame(mazeComplexity)
           val localPlayerId = multiplayerManager.localPlayerId
           if (localPlayerId != null) {
@@ -785,12 +786,11 @@ class MainActivity:AppCompatActivity(){
           } else {
               Log.e(TAG, "actuallyStartMatch: localPlayerId is null, cannot set local player.")
           }
-          // Use the synchronized matchStartTime if available
           val startTime = matchStartTime ?: System.currentTimeMillis()
           val selectedGameMode = when (gameMode) {
               HomeActivity.GAME_MODE_ZONES -> GameMode.ZONES
-              HomeActivity.GAME_MODE_COVERAGE -> GameMode.COVERAGE // Ensure this case is explicitly handled
-              else -> GameMode.COVERAGE // Default to Coverage if string is unexpected
+              HomeActivity.GAME_MODE_COVERAGE -> GameMode.COVERAGE
+              else -> GameMode.COVERAGE
           }
           gameView.startGameMode(selectedGameMode, matchDurationMs, startTime)
           gameView.startGameLoop()

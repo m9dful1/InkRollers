@@ -10,6 +10,14 @@ import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.sqrt
 
+/**
+ * On-screen virtual joystick for player movement control.
+ * 
+ * Provides normalized direction and magnitude values from touch input,
+ * which are used by Player objects for movement calculations. The joystick
+ * appears dynamically where the user first touches and constrains movement
+ * within a circular boundary.
+ */
 class VirtualJoystick {
     private val basePaint = Paint().apply { color = Color.argb(100, 128, 128, 128); style = Paint.Style.FILL }
     private val handlePaint = Paint().apply { color = Color.argb(150, 80, 80, 80); style = Paint.Style.FILL }
@@ -34,21 +42,23 @@ class VirtualJoystick {
     var magnitude = 0f // 0.0 to 1.0
         private set
 
-
+    /** Initializes joystick at touch position and activates it. */
     fun onDown(x: Float, y: Float) {
         baseX = x
         baseY = y
         handleX = x
         handleY = y
         isActive = true
-        updateDirection(x, y) // Reset direction on new touch
+        updateDirection(x, y)
     }
 
+    /** Updates joystick handle position and direction based on touch movement. */
     fun onMove(x: Float, y: Float) {
         if (!isActive) return
         updateDirection(x, y)
     }
 
+    /** Deactivates joystick and resets all direction values to zero. */
     fun onUp() {
         isActive = false
         directionX = 0f
@@ -56,6 +66,7 @@ class VirtualJoystick {
         magnitude = 0f
     }
 
+    /** Calculates normalized direction and magnitude from current touch position. */
     private fun updateDirection(touchX: Float, touchY: Float) {
         val dx = touchX - baseX
         val dy = touchY - baseY
@@ -75,37 +86,31 @@ class VirtualJoystick {
             val angle = atan2(dy, dx)
             handleX = baseX + cos(angle) * maxDisplacement
             handleY = baseY + sin(angle) * maxDisplacement
-            magnitude = 1.0f // Max magnitude when clamped
+            magnitude = 1.0f
         } else {
             handleX = touchX
             handleY = touchY
-            magnitude = distance / maxDisplacement // Scale magnitude
+            magnitude = distance / maxDisplacement
         }
 
-        // Update normalized direction vector based on actual displacement
+        // Calculate normalized direction vector
         val actualDx = handleX - baseX
         val actualDy = handleY - baseY
-        val actualDistance = sqrt(actualDx * actualDx + actualDy * actualDy) // Could be slightly different due to clamping
+        val actualDistance = sqrt(actualDx * actualDx + actualDy * actualDy)
 
         if (actualDistance > 0) {
-             directionX = actualDx / maxDisplacement // Normalize based on max possible displacement
-             directionY = actualDy / maxDisplacement // Normalize based on max possible displacement
+             directionX = actualDx / maxDisplacement
+             directionY = actualDy / maxDisplacement
         } else {
              directionX = 0f
              directionY = 0f
         }
-
-        // Added Log
-        Log.d("VirtualJoystick", "updateDirection: dirX=$directionX, dirY=$directionY, mag=$magnitude") 
-
     }
 
-
+    /** Renders the joystick base and handle when active. Called by GameView. */
     fun draw(canvas: Canvas) {
         if (!isActive) return
-        // Draw base circle
         canvas.drawCircle(baseX, baseY, baseRadius, basePaint)
-        // Draw handle circle
         canvas.drawCircle(handleX, handleY, handleRadius, handlePaint)
     }
 } 

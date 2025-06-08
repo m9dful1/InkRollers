@@ -256,7 +256,13 @@ class ProfileFragment : Fragment() {
             Toast.makeText(requireContext(), "That's your own code!", Toast.LENGTH_SHORT).show()
             return
         }
-        ProfileRepository.findProfileByFriendCode(code) { friendProfile ->
+        ProfileRepository.findProfileByFriendCode(code) { friendProfile, error ->
+            if (error != null) {
+                Log.e("ProfileFragment", "Error looking up friend code '$code'", error)
+                Toast.makeText(requireContext(), "Error finding friend. Please check your connection.", Toast.LENGTH_LONG).show()
+                return@findProfileByFriendCode
+            }
+
             if (friendProfile != null) {
                 val friends = currentProfile!!.friends.toMutableList()
                 if (friendProfile.uid in friends) {
@@ -288,18 +294,21 @@ class ProfileFragment : Fragment() {
         Log.d("ProfileFragment", "Attempting to generate unique friend code for UID: $uid")
         fun tryGenerate() {
             if (attempts >= maxAttempts) {
-                val fallbackCode = generateFriendCodeInternal(uid, attempts)
-                Log.e("ProfileFragment", "Max attempts ($maxAttempts) reached for unique code. Using fallback: '$fallbackCode' for $uid")
-                val newProfile = PlayerProfile(uid = uid, friendCode = fallbackCode, playerName = "New Player") // Add default name
-                currentProfile = newProfile
-                populateProfile(newProfile)
-                saveProfile() // Attempt to save the fallback profile immediately
+                Log.e("ProfileFragment", "Max attempts ($maxAttempts) reached for unique code. This is very unlikely.")
+                Toast.makeText(requireContext(), "Failed to generate a unique friend code. Please try again.", Toast.LENGTH_LONG).show()
                 return
             }
             attempts++
             val potentialCode = generateFriendCodeInternal(uid, attempts)
             Log.i("ProfileFragment", "generateUnique attempt $attempts: potentialCode: '$potentialCode' for $uid")
-            ProfileRepository.isFriendCodeUnique(potentialCode) { isUnique ->
+            ProfileRepository.isFriendCodeUnique(potentialCode) { isUnique, error ->
+                if (error != null) {
+                    Log.e("ProfileFragment", "Error checking for friend code uniqueness", error)
+                    Toast.makeText(requireContext(), "Error creating profile. Could not verify friend code.", Toast.LENGTH_LONG).show()
+                    // Don't retry on error, just fail. The user can try again.
+                    return@isFriendCodeUnique
+                }
+
                 if (isUnique) {
                     Log.i("ProfileFragment", "Unique code found: '$potentialCode' for $uid")
                     val newProfile = PlayerProfile(uid = uid, friendCode = potentialCode, playerName = "New Player") // Add default name
@@ -308,7 +317,7 @@ class ProfileFragment : Fragment() {
                     saveProfile() // Save the newly created profile with unique code
                 } else {
                     Log.w("ProfileFragment", "Code '$potentialCode' not unique. Retrying for $uid")
-                    tryGenerate() // Retry generation
+                    tryGenerate() // Retry generation because of collision
                 }
             }
         }

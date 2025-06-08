@@ -19,11 +19,21 @@ import com.google.firebase.appcheck.FirebaseAppCheck
 import com.google.firebase.appcheck.playintegrity.PlayIntegrityAppCheckProviderFactory
 import com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory
 import com.spiritwisestudios.inkrollers.databinding.ActivityHomeBinding
-//import com.spiritwisestudios.inkrollers.BuildConfig
+import android.widget.Button
+import android.widget.ImageButton
+import android.widget.LinearLayout
 
+/**
+ * Main entry point for the Ink Rollers game application.
+ * 
+ * Provides the home screen interface for hosting new games, joining existing games,
+ * and accessing player profiles. Handles game setup configuration including time limits,
+ * maze complexity, game modes, and match privacy settings.
+ */
 class HomeActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityHomeBinding
+    private lateinit var audioManager: com.spiritwisestudios.inkrollers.AudioManager
 
     companion object {
         const val EXTRA_MODE = "com.spiritwisestudios.inkrollers.MODE"
@@ -50,7 +60,15 @@ class HomeActivity : AppCompatActivity() {
         binding = ActivityHomeBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // Initialize Firebase App Check
+        audioManager = com.spiritwisestudios.inkrollers.AudioManager.getInstance(this)
+        audioManager.initialize()
+
+        initializeFirebaseAppCheck()
+        setupUIClickListeners()
+    }
+
+    /** Configures Firebase App Check for enhanced security based on build type. */
+    private fun initializeFirebaseAppCheck() {
         FirebaseApp.initializeApp(this)
         val firebaseAppCheck = FirebaseAppCheck.getInstance()
         if (BuildConfig.DEBUG) {
@@ -62,28 +80,31 @@ class HomeActivity : AppCompatActivity() {
                 PlayIntegrityAppCheckProviderFactory.getInstance()
             )
         }
+    }
 
+    /** Sets up click listeners for all UI buttons with appropriate animations and actions. */
+    private fun setupUIClickListeners() {
         binding.buttonPlay.setOnClickListener {
-            // Apply the press animation
+            audioManager.playSound(com.spiritwisestudios.inkrollers.AudioManager.SoundType.UI_CLICK)
             val animation = android.view.animation.AnimationUtils.loadAnimation(this, R.anim.button_press)
             binding.buttonPlay.startAnimation(animation)
             
-            // Hide Play button and show submenu after a short delay
             Handler(Looper.getMainLooper()).postDelayed({
                 binding.layoutSubmenu.visibility = View.VISIBLE
             }, 100)
         }
 
         binding.buttonHostGame.setOnClickListener {
+            audioManager.playSound(com.spiritwisestudios.inkrollers.AudioManager.SoundType.UI_CLICK)
             showMatchSettingsDialog()
         }
 
         binding.buttonJoinGame.setOnClickListener {
+            audioManager.playSound(com.spiritwisestudios.inkrollers.AudioManager.SoundType.UI_CLICK)
             val gameId = binding.editTextGameId.text.toString().trim()
             if (gameId.isEmpty()) {
-                // Join a random available game
                 startGameActivity(MODE_JOIN, null)
-            } else if (gameId.length == 6) { // Specific game ID entered
+            } else if (gameId.length == 6) {
                 startGameActivity(MODE_JOIN, gameId)
             } else {
                 Toast.makeText(this, "Please enter a valid 6-character Game ID or leave blank to join random game", Toast.LENGTH_SHORT).show()
@@ -91,17 +112,22 @@ class HomeActivity : AppCompatActivity() {
         }
 
         binding.buttonProfile.setOnClickListener {
+            audioManager.playSound(com.spiritwisestudios.inkrollers.AudioManager.SoundType.UI_CLICK)
             val currentUser = Firebase.auth.currentUser
             if (currentUser != null) {
-                // User is signed in, proceed to profile
                 showProfileFragment(currentUser.uid)
             } else {
-                // User is not signed in, attempt anonymous sign-in then show profile
                 signInAndShowProfile()
             }
         }
+
+        val settingsButton = findViewById<ImageButton>(R.id.button_settings)
+        settingsButton.setOnClickListener {
+            SettingsFragment().show(supportFragmentManager, "SettingsDialog")
+        }
     }
 
+    /** Displays the profile fragment for the specified user. */
     private fun showProfileFragment(uid: String) {
         supportFragmentManager.beginTransaction()
             .replace(android.R.id.content, ProfileFragment.newInstance(uid))
@@ -109,41 +135,31 @@ class HomeActivity : AppCompatActivity() {
             .commit()
     }
 
+    /** Performs anonymous sign-in and then displays the profile fragment. */
     private fun signInAndShowProfile() {
         Firebase.auth.signInAnonymously()
             .addOnCompleteListener(this) { task ->
                 if (task.isSuccessful) {
-                    // Sign in success, get user and show profile
                     val user = Firebase.auth.currentUser
                     user?.uid?.let {
                         Log.d("HomeActivity", "Anonymous sign-in successful for profile view. UID: $it")
-                        // It might be good to set online status here IF this is the main point of user interaction
-                        // ProfileRepository.setUserOnlineStatus(it) 
                         showProfileFragment(it)
                     } ?: run {
                         Log.e("HomeActivity", "Anonymous sign-in task successful but user or UID is null.")
                         Toast.makeText(baseContext, "Error: Could not retrieve user ID after sign-in.", Toast.LENGTH_SHORT).show()
                     }
                 } else {
-                    // If sign in fails, display a message to the user.
                     Log.w("HomeActivity", "Anonymous sign-in failed for profile view.", task.exception)
                     Toast.makeText(baseContext, "Sign-in failed. Cannot view profile.", Toast.LENGTH_SHORT).show()
                 }
             }
     }
 
-    override fun onResume() {
-        super.onResume()
-        // REMOVE: Set user online when activity resumes
-        // Firebase.auth.currentUser?.uid?.let {
-        // ProfileRepository.setUserOnlineStatus(it)
-        // }
-    }
-
+    /** Initiates the match settings configuration flow for hosting a new game. */
     private fun showMatchSettingsDialog() {
         val timeOptions = arrayOf("3 minutes", "5 minutes", "7 minutes")
         val timeValues = intArrayOf(3, 5, 7)
-        var selectedTimeLimit = timeValues[0] // Default to 3 minutes
+        var selectedTimeLimit = timeValues[0]
 
         AlertDialog.Builder(this)
             .setTitle("Set Time Limit")
@@ -155,10 +171,11 @@ class HomeActivity : AppCompatActivity() {
             .show()
     }
 
+    /** Displays maze complexity selection dialog. */
     private fun showComplexityDialog(timeLimit: Int) {
         val complexityOptions = arrayOf("Low", "Medium", "High")
         val complexityValues = arrayOf(COMPLEXITY_LOW, COMPLEXITY_MEDIUM, COMPLEXITY_HIGH)
-        var selectedComplexity = complexityValues[2] // Default to High
+        var selectedComplexity = complexityValues[2]
 
         AlertDialog.Builder(this)
             .setTitle("Set Maze Complexity")
@@ -170,29 +187,31 @@ class HomeActivity : AppCompatActivity() {
             .show()
     }
 
+    /** Displays game mode selection dialog (Coverage vs Zones). */
     private fun showGameModeDialog(timeLimit: Int, complexity: String) {
         val gameModeOptions = arrayOf("Coverage", "Zones")
         val gameModeValues = arrayOf(GAME_MODE_COVERAGE, GAME_MODE_ZONES)
-        var selectedGameMode = gameModeValues[0] // Default to Coverage
+        var selectedGameMode = gameModeValues[0]
 
         AlertDialog.Builder(this)
             .setTitle("Select Game Mode")
             .setItems(gameModeOptions) { _, which ->
                 selectedGameMode = gameModeValues[which]
-                showMatchTypeDialog(timeLimit, complexity, selectedGameMode) // Proceed to match type
+                showMatchTypeDialog(timeLimit, complexity, selectedGameMode)
             }
             .setNegativeButton("Cancel", null)
             .show()
     }
     
+    /** Displays match privacy selection dialog (Public vs Private). */
     private fun showMatchTypeDialog(timeLimit: Int, complexity: String, gameMode: String) {
         val matchTypeOptions = arrayOf("Public (Joinable by random)", "Private (Requires Game ID)")
-        var isPrivate = false // Default to public
+        var isPrivate = false
 
         AlertDialog.Builder(this)
             .setTitle("Select Match Type")
-            .setSingleChoiceItems(matchTypeOptions, 0) { _, which -> // Default to Public (index 0)
-                isPrivate = (which == 1) // Private is index 1
+            .setSingleChoiceItems(matchTypeOptions, 0) { _, which ->
+                isPrivate = (which == 1)
             }
             .setPositiveButton("Host Game") { _, _ ->
                 startGameActivity(MODE_HOST, null, timeLimit, complexity, gameMode, isPrivate)
@@ -201,6 +220,7 @@ class HomeActivity : AppCompatActivity() {
             .show()
     }
 
+    /** Launches MainActivity with the specified game configuration. */
     private fun startGameActivity(mode: String, gameId: String? = null, timeLimit: Int = 3, complexity: String = COMPLEXITY_HIGH, gameMode: String = GAME_MODE_COVERAGE, isPrivate: Boolean = false) {
         android.util.Log.d("HomeActivity", "Starting MainActivity with mode: $mode, gameId: $gameId, timeLimit: $timeLimit, mazeComplexity: $complexity, gameMode: $gameMode, isPrivate: $isPrivate")
         val intent = Intent(this, MainActivity::class.java).apply {
@@ -225,5 +245,19 @@ class HomeActivity : AppCompatActivity() {
         } else {
             super.onBackPressed()
         }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        audioManager.pauseAudio()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        audioManager.resumeAudio()
+        // REMOVE: Set user online when activity resumes
+        // Firebase.auth.currentUser?.uid?.let {
+        // ProfileRepository.setUserOnlineStatus(it)
+        // }
     }
 } 

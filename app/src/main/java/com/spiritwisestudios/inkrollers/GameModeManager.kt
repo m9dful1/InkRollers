@@ -1,7 +1,10 @@
 package com.spiritwisestudios.inkrollers
 
 /**
- * Manager for game modes: handles lifecycle (start, update) and end-of-match detection.
+ * Manages match timing and game mode state for Coverage and Zones gameplay modes.
+ * 
+ * Tracks match duration and provides end-of-match detection for GameView to trigger
+ * win condition evaluation. Supports synchronized start times across multiplayer clients.
  */
 class GameModeManager(
     val mode: GameMode,
@@ -11,38 +14,31 @@ class GameModeManager(
     private var startTime: Long = 0L
     private var finished: Boolean = false
 
-    /**
-     * Call to begin the match timer.
-     */
+    /** Begins the match timer using either synchronized or local start time. */
     fun start() {
         startTime = providedStartTime ?: System.currentTimeMillis()
         finished = false
     }
 
-    /**
-     * Call each frame to update timer and finish state.
-     */
+    /** Updates timer state. Called by GameView each frame to check for match completion. */
     fun update() {
         if (!finished && System.currentTimeMillis() - startTime >= durationMs) {
             finished = true
         }
     }
 
-    /**
-     * True once the match duration has elapsed.
-     */
+    /** Returns true when match duration has elapsed, triggering win condition evaluation. */
     fun isFinished(): Boolean = finished
 
-    /**
-     * How many milliseconds remain (clamped to zero).
-     */
+    /** Returns remaining match time in milliseconds for TimerHudView display. */
     fun timeRemainingMs(): Long {
         val elapsed = System.currentTimeMillis() - startTime
         return (durationMs - elapsed).coerceAtLeast(0L)
     }
 }
 
+/** Available game modes that determine win conditions and HUD displays. */
 enum class GameMode {
-    COVERAGE,
-    ZONES
+    COVERAGE, // Win by painting the most area
+    ZONES     // Win by controlling the most zones
 } 

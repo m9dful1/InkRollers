@@ -14,7 +14,31 @@ import java.util.Date
 // Data class to hold game settings read by clients
 data class GameSettings(val durationMs: Long, val complexity: String, val gameMode: String)
 
-class MultiplayerManager {
+// Data class for paint actions
+data class PaintAction(
+    val x: Int = 0,
+    val y: Int = 0,
+    val color: Int = 0,
+    val playerId: String = "",
+    val timestamp: Any = ServerValue.TIMESTAMP,
+    val mazeX: Int = -1,
+    val mazeY: Int = -1
+)
+
+/**
+ * Firebase Realtime Database manager for multiplayer game coordination.
+ * 
+ * Handles game hosting/joining, player state synchronization, real-time paint actions,
+ * matchmaking, and rematch coordination. Manages Firebase listeners for seamless
+ * multiplayer experience with automatic cleanup and stale game removal.
+ * 
+ * Coordinates between local game state and Firebase database structure:
+ * - /games/{gameId}/players/{playerId} - Player positions, colors, ink levels
+ * - /games/{gameId}/paint/{paintId} - Real-time paint actions with normalized coordinates  
+ * - /games/{gameId}/rematchRequests/{playerId} - Rematch voting system
+ * - /games/{gameId}/started - Match start signaling
+ */
+class MultiplayerManager(private val context: android.content.Context? = null) {
 
     private val database = Firebase.database("https://inkrollers-13595-default-rtdb.firebaseio.com/")
     private var gameRef: DatabaseReference? = null
@@ -24,10 +48,16 @@ class MultiplayerManager {
     private var paintRef: DatabaseReference? = null
     private var rematchRef: DatabaseReference? = null
 
+    // Audio manager for multiplayer events
+    private val audioManager: com.spiritwisestudios.inkrollers.AudioManager? by lazy {
+        context?.let { com.spiritwisestudios.inkrollers.AudioManager.getInstance(it) }
+    }
+
     // Add companion object back
     companion object {
         private const val TAG = "MultiplayerManager"
         internal const val GAMES_NODE = "games"
+        internal const val PLAYERS_NODE = "players"
         private const val PAINT_NODE = "paint"
         private const val REMATCH_NODE = "rematchRequests"
         internal const val LAST_ACTIVITY_NODE = "lastActivityAt"
@@ -47,6 +77,9 @@ class MultiplayerManager {
     // Number of players in this game (used for rematch decision)
     private var expectedRematchCount: Long = 0L
 
+    // Flag to track if initial snapshot has been processed
+    private var initialSnapshotProcessed = false
+
     // New callbacks for pre-match flow: player count and match start requests
     var onPlayerCountChanged: ((Int) -> Unit)? = null
     var onMatchStartRequested: (() -> Unit)? = null
@@ -62,10 +95,10 @@ class MultiplayerManager {
 
     // Add a connectivity check at initialization
     init {
-        // Test Firebase connectivity
         testFirebaseConnection()
     }
 
+    /** Tests Firebase connectivity and sets up connection monitoring. */
     private fun testFirebaseConnection() {
         Log.d(TAG, "Testing Firebase connectivity...")
         val connectedRef = database.getReference(".info/connected")
@@ -118,11 +151,15 @@ class MultiplayerManager {
     // Callback for when rematch should actually start (after both YES)
     var onRematchStartSignal: (() -> Unit)? = null
 
+    /**
+     * Creates a new multiplayer game and hosts it on Firebase.
+     * Generates game ID, maze seed, and sets up initial game structure with host as player0.
+     * Performs authentication check and stale game cleanup before hosting.
+     */
     fun hostGame(initialPlayerState: PlayerState, durationMs: Long, complexity: String, gameMode: String, isPrivate: Boolean, callback: (success: Boolean, gameId: String?, gameSettings: GameSettings?) -> Unit) {
-        clearListeners() // Clear any previous listeners
-        performStaleGameCleanup() // Call cleanup before hosting
+        clearListeners()
+        performStaleGameCleanup()
         
-        // Ensure user is authenticated before proceeding
         if (auth.currentUser == null) {
             Log.e(TAG, "Cannot host game: User not authenticated")
             onDatabaseError?.invoke("Authentication required to host game")
@@ -138,49 +175,45 @@ class MultiplayerManager {
 
         Log.d(TAG, "Hosting game with ID: $currentGameId")
 
-        // Set host as player0
         localPlayerId = "player0"
-        
-        // Generate a maze seed for this game
         mazeSeed = System.currentTimeMillis()
-        // Set the seed in the player state
         initialPlayerState.mazeSeed = mazeSeed
         Log.d(TAG, "Generated maze seed: $mazeSeed")
         
         createGameAfterConnectionTest(initialPlayerState, durationMs, complexity, gameMode, isPrivate, callback)
     }
     
+    /** 
+     * Creates the Firebase game structure and verifies successful write operation.
+     * Handles initial player data, game settings, and Firebase listener setup.
+     */
     private fun createGameAfterConnectionTest(initialPlayerState: PlayerState, durationMs: Long, complexity: String, gameMode: String, isPrivate: Boolean, callback: (success: Boolean, gameId: String?, gameSettings: GameSettings?) -> Unit) {
         try {
-            // Use a map to set the initial game structure with player0
-            val initialGameData = mapOf(
-                "players" to mapOf(
-                    localPlayerId!! to initialPlayerState
-                ),
-                "mazeSeed" to mazeSeed, // Store the seed at game level too
-                "matchDurationMs" to durationMs, // Store match duration
-                "mazeComplexity" to complexity,   // Store maze complexity
+            val gameUpdateMap = mapOf(
+                "mazeSeed" to mazeSeed,
+                "matchDurationMs" to durationMs,
+                "mazeComplexity" to complexity,
                 "gameMode" to gameMode,
-                "isPrivate" to isPrivate, // Store private match status
-                CREATED_AT_NODE to ServerValue.TIMESTAMP, // Use constant
-                LAST_ACTIVITY_NODE to ServerValue.TIMESTAMP, // Add last activity
-                "started" to false, // Explicitly set initial started state
-                "playerCount" to 1L // Set initial player count
+                "isPrivate" to isPrivate,
+                CREATED_AT_NODE to ServerValue.TIMESTAMP,
+                LAST_ACTIVITY_NODE to ServerValue.TIMESTAMP,
+                "started" to false,
+                "playerCount" to 1L,
+                "players/$localPlayerId" to initialPlayerState
             )
 
             Log.d(TAG, "Attempting to write game data to Firebase: $currentGameId")
-            Log.d(TAG, "Complete game data structure: $initialGameData")
+            Log.d(TAG, "Complete game data structure for update: $gameUpdateMap")
             
-            // Create game settings for the host too for consistency
             gameSettings = GameSettings(durationMs, complexity, gameMode)
             
-            // Write directly to the game node
-            val setValueTask = gameRef?.setValue(initialGameData)
+            // Use updateChildren to allow for more granular security rules.
+            // This will create the game node and all its children if it doesn't exist.
+            val updateTask = gameRef?.updateChildren(gameUpdateMap)
             
-            setValueTask?.addOnSuccessListener {
+            updateTask?.addOnSuccessListener {
                 Log.i(TAG, "Game $currentGameId write initiated successfully (listener pending verification).")
                 
-                // Verify the game exists in the database to confirm it was written
                 database.getReference("$GAMES_NODE/$currentGameId").addListenerForSingleValueEvent(object : ValueEventListener {
                     override fun onDataChange(snapshot: DataSnapshot) {
                         if (snapshot.exists()) {
@@ -188,11 +221,10 @@ class MultiplayerManager {
                             if (storedSeed == mazeSeed) {
                                 Log.d(TAG, "Verified game data was written correctly (mazeSeed matches)")
                                 updateLastActivityTimestamp()
-                                setupFirebaseListeners() // Start listening for other players
+                                setupFirebaseListeners()
                                 callback(true, currentGameId, gameSettings)
                             } else {
                                 Log.e(TAG, "Game data verification failed - mazeSeed doesn't match: stored=$storedSeed, local=$mazeSeed")
-                                // Don't call leaveGame here as the game might partially exist
                                 onDatabaseError?.invoke("Game data mismatch after write")
                                 callback(false, null, null)
                             }
@@ -200,7 +232,6 @@ class MultiplayerManager {
                             Log.e(TAG, "ERROR: Game node $currentGameId does NOT exist after successful write callback.")
                             Log.e(TAG, "This strongly indicates a database permission/rule issue or data inconsistency.")
                             onDatabaseError?.invoke("Game creation failed verification")
-                            // Don't call leaveGame here as the write might eventually appear
                             callback(false, null, null)
                         }
                     }
@@ -209,15 +240,13 @@ class MultiplayerManager {
                         Log.e(TAG, "Game data verification read failed", error.toException())
                         Log.e(TAG, "ERROR: Could not read back game data ($currentGameId). Database permissions issue?")
                         onDatabaseError?.invoke("Could not verify game creation: ${error.message}")
-                        // Don't call leaveGame here
                         callback(false, null, null)
                     }
                 })
             }?.addOnFailureListener { exception ->
-                Log.e(TAG, "Firebase setValue operation failed for game $currentGameId", exception)
+                Log.e(TAG, "Firebase updateChildren operation failed for game $currentGameId", exception)
                 Log.e(TAG, "ERROR: Could not create game. Likely a database permissions issue.")
                 onDatabaseError?.invoke("Could not create game: ${exception.message}")
-                // Don't call leaveGame here as we didn't successfully create it
                 callback(false, null, null)
             }
         } catch (e: Exception) {
@@ -228,7 +257,7 @@ class MultiplayerManager {
         }
     }
 
-    // Simple random game ID generator
+    /** Generates a random alphanumeric game ID for matchmaking. */
     private fun generateGameId(length: Int = 6): String {
         val allowedChars = ('A'..'Z') + ('0'..'9')
         return (1..length)
@@ -236,10 +265,14 @@ class MultiplayerManager {
             .joinToString("")
     }
 
+    /**
+     * Joins an existing multiplayer game by ID, or finds a random available game if ID is null.
+     * Validates game availability, retrieves game settings and maze seed from host,
+     * assigns next available player slot, and sets up Firebase listeners.
+     */
     fun joinGame(gameId: String?, initialPlayerState: PlayerState, callback: (success: Boolean, playerId: String?, gameSettings: GameSettings?) -> Unit) {
         clearListeners()
         
-        // Ensure user is authenticated before proceeding
         if (auth.currentUser == null) {
             Log.e(TAG, "Cannot join game: User not authenticated")
             onDatabaseError?.invoke("Authentication required to join game")
@@ -249,11 +282,9 @@ class MultiplayerManager {
         Log.d(TAG, "User authenticated with UID: ${auth.currentUser?.uid}, proceeding with joinGame")
 
         if (gameId == null) {
-            // Find a random available game
             findRandomAvailableGame { randomGameId ->
                 if (randomGameId != null) {
                     Log.i(TAG, "Found random game to join: $randomGameId")
-                    // Call joinGame again with the found ID
                     joinGame(randomGameId, initialPlayerState, callback)
                 } else {
                     Log.w(TAG, "No available games found to join")
@@ -266,12 +297,9 @@ class MultiplayerManager {
         
         Log.d(TAG, "joinGame(): requested specific gameId=$gameId")
 
-        // Rest of the existing method for joining a specific game
         val potentialGameRef = database.getReference(GAMES_NODE).child(gameId)
-        
         Log.d(TAG, "Attempting to join game: $gameId")
 
-        // First, check the game itself to get the maze seed and validate the game exists
         potentialGameRef.addListenerForSingleValueEvent(object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 if (!snapshot.exists()) {
@@ -281,26 +309,22 @@ class MultiplayerManager {
                     return
                 }
 
-                // Get the maze seed from the game
                 val gameMazeSeed = snapshot.child("mazeSeed").getValue(Long::class.java)
-                // Get game settings
-                val duration = snapshot.child("matchDurationMs").getValue(Long::class.java) ?: 180000L // Default 3 mins
+                val duration = snapshot.child("matchDurationMs").getValue(Long::class.java) ?: 180000L
                 val complexity = snapshot.child("mazeComplexity").getValue(String::class.java) ?: HomeActivity.COMPLEXITY_HIGH
-                val gameMode = snapshot.child("gameMode").getValue(String::class.java) ?: HomeActivity.GAME_MODE_COVERAGE // Default Coverage
+                val gameMode = snapshot.child("gameMode").getValue(String::class.java) ?: HomeActivity.GAME_MODE_COVERAGE
                 gameSettings = GameSettings(duration, complexity, gameMode)
 
                 if (gameMazeSeed != null) {
                     mazeSeed = gameMazeSeed
-                    initialPlayerState.mazeSeed = gameMazeSeed  // Use the host's seed
+                    initialPlayerState.mazeSeed = gameMazeSeed
                     Log.d(TAG, "Retrieved maze seed from host: $mazeSeed")
                 } else {
-                    // Fallback if no seed found
                     Log.w(TAG, "No maze seed found in game data for $gameId, using local time")
                     mazeSeed = System.currentTimeMillis()
                     initialPlayerState.mazeSeed = mazeSeed
                 }
                 
-                // Now check players to determine the next available ID
                 val playersNodeSnapshot = snapshot.child("players")
                 if (!playersNodeSnapshot.exists()) {
                     Log.w(TAG, "Game $gameId exists but has no players node")
@@ -318,7 +342,6 @@ class MultiplayerManager {
                     return
                 }
 
-                // pick next available slot
                 var nextIndex = 1
                 while (playersNodeSnapshot.hasChild("player$nextIndex")) {
                     nextIndex++
@@ -326,27 +349,24 @@ class MultiplayerManager {
                 val assignedId = "player$nextIndex"
                 Log.i(TAG, "Joining game $gameId as $assignedId")
 
-                // cache refs for this client
                 currentGameId = gameId
                 gameRef = potentialGameRef
                 playersRef = potentialGameRef.child("players")
                 paintRef = potentialGameRef.child(PAINT_NODE)
                 localPlayerId = assignedId
 
-                // add our state
                 playersRef!!.child(assignedId).setValue(initialPlayerState)
                     .addOnSuccessListener {
                         Log.i(TAG, "Added $assignedId to Firebase game $gameId.")
                         updateLastActivityTimestamp()
                         setupFirebaseListeners()
-                        // After both players (host and this joiner) are present, start listening for rematch decisions
                         setupRematchListener()
                         callback(true, assignedId, gameSettings)
                     }
                     .addOnFailureListener { e ->
                         Log.e(TAG, "Failed to add $assignedId to game $gameId", e)
                         onDatabaseError?.invoke("Failed to join game: ${e.message}")
-                        leaveGame() // Clean up if joining failed
+                        leaveGame()
                         callback(false, null, null)
                     }
             }
@@ -360,16 +380,16 @@ class MultiplayerManager {
     }
 
     /**
-     * Finds a random available game that has room for more players.
-     * @param callback Called with the game ID if found, or null if no games available
+     * Searches for public games with available player slots.
+     * Filters out private, started, full, and empty games before selection.
      */
     private fun findRandomAvailableGame(callback: (String?) -> Unit) {
         val gamesRef = database.getReference(GAMES_NODE)
         
         Log.d(TAG, "Searching for available games...")
-        performStaleGameCleanup() // Call cleanup before searching
+        performStaleGameCleanup()
         
-        gamesRef.orderByChild(CREATED_AT_NODE).limitToLast(MAX_GAMES_TO_SCAN_FOR_CLEANUP) // Use constant for limit
+        gamesRef.orderByChild(CREATED_AT_NODE).limitToLast(MAX_GAMES_TO_SCAN_FOR_CLEANUP)
               .addListenerForSingleValueEvent(object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 try {
@@ -382,14 +402,21 @@ class MultiplayerManager {
                     Log.d(TAG, "Found ${snapshot.childrenCount} recent games to check")
                     val availableGames = mutableListOf<String>()
                     var skippedCount = 0
+                    val currentTime = System.currentTimeMillis()
                     
-                    for (gameSnapshot in snapshot.children.reversed()) { // Check newest first
+                    for (gameSnapshot in snapshot.children.reversed()) {
                         val gameId = gameSnapshot.key ?: continue
                         
-                        // Log the raw game data for debugging
-                        Log.v(TAG, "Examining game: $gameId -> ${gameSnapshot.value}") // Use verbose logging
+                        Log.v(TAG, "Examining game: $gameId -> ${gameSnapshot.value}")
+
+                        val lastActivity = gameSnapshot.child(LAST_ACTIVITY_NODE).getValue(Long::class.java) ?: 0L
+                        // If a game hasn't had any activity for 2 minutes, consider it stale for matchmaking purposes.
+                        if (currentTime - lastActivity > 120_000L) {
+                             Log.v(TAG, "Game $gameId skipped: stale (no activity for 2 minutes)")
+                             skippedCount++
+                             continue
+                        }
                         
-                        // Check if game has players node and fewer than maxPlayers
                         val playersSnapshot = gameSnapshot.child("players")
                         if (!playersSnapshot.exists()) {
                             Log.v(TAG, "Game $gameId skipped: no players node")
@@ -400,13 +427,12 @@ class MultiplayerManager {
                         val playerCount = playersSnapshot.childrenCount
                         val maxPlayers = 4
                         
-                        if (playerCount == 0L || playerCount >= maxPlayers) { // Skip empty or full games
+                        if (playerCount == 0L || playerCount >= maxPlayers) {
                             Log.v(TAG, "Game $gameId skipped: Player count $playerCount (max $maxPlayers)")
                             skippedCount++
                             continue
                         }
                         
-                        // Check if game has already started
                         val started = gameSnapshot.child("started").getValue(Boolean::class.java)
                         if (started == true) {
                             Log.v(TAG, "Game $gameId skipped: already started")
@@ -414,7 +440,6 @@ class MultiplayerManager {
                             continue
                         }
                         
-                        // Check if game is private
                         val isPrivateGame = gameSnapshot.child("isPrivate").getValue(Boolean::class.java) ?: false
                         if (isPrivateGame) {
                             Log.v(TAG, "Game $gameId skipped: marked as private")
@@ -422,14 +447,12 @@ class MultiplayerManager {
                             continue
                         }
                         
-                        // Game is available
                         availableGames.add(gameId)
                         Log.d(TAG, "Found potentially available public game: $gameId with $playerCount players")
                     }
                     
                     Log.d(TAG, "Search result: ${availableGames.size} potentially available public games, $skippedCount skipped")
                     
-                    // Select a random game from available ones
                     if (availableGames.isNotEmpty()) {
                         val randomGame = availableGames.random()
                         Log.d(TAG, "Selected random game: $randomGame")
@@ -453,21 +476,19 @@ class MultiplayerManager {
         })
     }
 
-    fun updateLocalPlayerState(newState: PlayerState) {
-        if (localPlayerId == null || playersRef == null) return
-        // Push newState to Firebase under playersRef.child(localPlayerId!!)
-        playersRef?.child(localPlayerId!!)?.setValue(newState)?.addOnFailureListener { e ->
-            Log.w(TAG, "Failed to update player state for $localPlayerId", e)
-            onDatabaseError?.invoke("Update failed: ${e.message}")
-        }
-        updateLastActivityTimestamp() // Player state updated
-        // Log.v(TAG, "Updating local player state for $localPlayerId") // Don't log every update
+    /** Updates the local player's complete state in Firebase. */
+    @Deprecated("This function is buggy and causes permission errors. Use updatePlayerState instead.", ReplaceWith("updatePlayerState(newState.normX, newState.normY, newState.ink, newState.mode)"), DeprecationLevel.ERROR)
+    fun updateLocalPlayerState(_newState: PlayerState) {
+        // This function is deprecated because it sends the entire player state,
+        // which can overwrite the UID and violate security rules.
+        // The new updatePlayerState function sends only the changed fields.
+        Log.e(TAG, "updateLocalPlayerState is deprecated and should not be called.")
+        onDatabaseError?.invoke("Deprecated function was called. See logs.")
     }
 
     /**
-     * Updates only the specified fields for the local player using updateChildren.
-     * @param updateMap A map where keys are the field names in PlayerState (e.g., "normX", "ink")
-     *                  and values are the new values for those fields.
+     * Updates specific fields of the local player's state using atomic updates.
+     * More efficient than full state updates for partial changes like position or ink level.
      */
     fun updateLocalPlayerPartialState(updateMap: Map<String, Any>) {
         if (localPlayerId == null || playersRef == null) return
@@ -475,21 +496,27 @@ class MultiplayerManager {
             Log.w(TAG, "Failed to perform partial update for $localPlayerId with keys ${updateMap.keys}", e)
             onDatabaseError?.invoke("Partial update failed: ${e.message}")
         }
-        updateLastActivityTimestamp() // Player partial state updated
-        Log.v(TAG, "Updating partial state for $localPlayerId: ${updateMap.keys}") // Verbose log
+        updateLastActivityTimestamp()
+        Log.v(TAG, "Updating partial state for $localPlayerId: ${updateMap.keys}")
     }
 
+    /**
+     * Sets up all Firebase listeners for real-time game synchronization.
+     * Includes initial snapshot, incremental player updates, paint actions, 
+     * player count monitoring, and match start signaling.
+     */
     fun setupFirebaseListeners() {
         if (playersRef == null) return
-        clearListeners() // Ensure no old listeners are active
+        clearListeners()
 
         Log.d(TAG, "Setting up Firebase listeners for game: $currentGameId")
 
-        /* 1️⃣ one-shot full snapshot */
         initSnapshotListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 Log.d(TAG, "Initial player snapshot received for $currentGameId. Processing ${snapshot.childrenCount} players.")
                 snapshot.children.forEach { handlePlayerData(it) }
+                initialSnapshotProcessed = true
+                Log.d(TAG, "Initial snapshot processing complete for $currentGameId")
             }
             override fun onCancelled(error: DatabaseError) {
                 Log.w(TAG, "Initial player snapshot cancelled for $currentGameId", error.toException())
@@ -499,26 +526,31 @@ class MultiplayerManager {
         playersRef!!.addListenerForSingleValueEvent(initSnapshotListener!!)
         Log.d(TAG, "Added single value event listener for initial player state.")
 
-        /* 2️⃣ incremental updates */
         childListener = object : ChildEventListener {
             override fun onChildAdded(snap: DataSnapshot, prev: String?) {
-                Log.v(TAG, "Child added: ${snap.key} in $currentGameId") // Verbose
+                Log.v(TAG, "Child added: ${snap.key} in $currentGameId")
+                val playerId = snap.key
+                
+                // Play player join sound only for new players after initial snapshot is processed
+                if (initialSnapshotProcessed && playerId != localPlayerId) {
+                    Log.d(TAG, "New player joined: $playerId, playing join sound")
+                    audioManager?.playSound(com.spiritwisestudios.inkrollers.AudioManager.SoundType.PLAYER_JOIN)
+                }
+                
                 handlePlayerData(snap)
             }
             override fun onChildChanged(snap: DataSnapshot, prev: String?) {
-                 Log.v(TAG, "Child changed: ${snap.key} in $currentGameId") // Verbose
+                 Log.v(TAG, "Child changed: ${snap.key} in $currentGameId")
                  handlePlayerData(snap)
             }
             override fun onChildRemoved(snap: DataSnapshot) {
                  val playerId = snap.key
-                 if (playerId != null) { // Handle local player removal too for cleanup
+                 if (playerId != null) {
                     Log.d(TAG, "Player removed via child event: $playerId in $currentGameId")
                     updateListener?.onPlayerRemoved(playerId)
                  }
             }
-            override fun onChildMoved(snap: DataSnapshot, prev: String?) {
-                 // Not typically used here
-            }
+            override fun onChildMoved(snap: DataSnapshot, prev: String?) {}
             override fun onCancelled(error: DatabaseError) {
                 Log.w(TAG, "Player child listener cancelled for $currentGameId", error.toException())
                 onDatabaseError?.invoke("Player listener error: ${error.message}")
@@ -528,10 +560,8 @@ class MultiplayerManager {
         playersRef!!.addChildEventListener(childListener!!)
         Log.d(TAG, "Added child event listener for player updates.")
 
-        /* 3️⃣ Listen for paint actions */
         setupPaintListener()
 
-        // Listen for number of connected players (to trigger pre-match)
         playerCountListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 Log.d(TAG, "Player count changed to ${snapshot.childrenCount} for game $currentGameId")
@@ -544,7 +574,6 @@ class MultiplayerManager {
         playersRef!!.addValueEventListener(playerCountListener!!)
         Log.d(TAG, "Added player count listener.")
 
-        // Listen for match start signal from host
         startRef = gameRef?.child("started")
         startListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
@@ -552,9 +581,8 @@ class MultiplayerManager {
                 Log.d(TAG, "Match start signal received: started=$started for game $currentGameId")
                 if (started) {
                     onMatchStartRequested?.invoke()
-                    // Detach listener after triggering once
                     startRef?.removeEventListener(this)
-                    startListener = null // Avoid memory leak
+                    startListener = null
                     onMatchStartRequested = null
                     Log.d(TAG, "Removed match start listener for $currentGameId")
                 }
@@ -568,19 +596,18 @@ class MultiplayerManager {
         Log.d(TAG, "Added match start listener.")
     }
     
+    /** Processes individual player state updates from Firebase snapshots. */
     private fun handlePlayerData(snapshot: DataSnapshot) {
          val playerId = snapshot.key
          if (playerId == null) {
              Log.w(TAG, "handlePlayerData received null playerId in game $currentGameId")
-             return // Ignore invalid data
+             return
          }
          try {
              val playerState = snapshot.getValue(PlayerState::class.java)
              if (playerState != null) {
-                 // Log slightly differently for local vs remote for clarity
                  val logPrefix = if (playerId == localPlayerId) "Processing LOCAL" else "Received REMOTE"
-                 // Log normalized coordinates now
-                 Log.v(TAG, "$logPrefix state for $playerId in $currentGameId: NormPos=(${playerState.normX}, ${playerState.normY}), Ink=${playerState.ink}, Mode=${playerState.mode}, Active=${playerState.active}") // Verbose
+                 Log.v(TAG, "$logPrefix state for $playerId in $currentGameId: NormPos=(${playerState.normX}, ${playerState.normY}), Ink=${playerState.ink}, Mode=${playerState.mode}, Active=${playerState.active}")
                  updateListener?.onPlayerStateChanged(playerId, playerState)
              } else {
                  Log.w(TAG, "Received null player state for $playerId in game $currentGameId")
@@ -591,50 +618,41 @@ class MultiplayerManager {
          }
     }
 
+    /** 
+     * Leaves the current game by removing the player's node and cleaning up listeners.
+     * Checks if the game is empty after leaving and removes it from Firebase if necessary.
+     */
     fun leaveGame() {
         val gameIdToLeave = currentGameId
         val playerToRemove = localPlayerId
         Log.d(TAG, "Leaving game: $gameIdToLeave as player $playerToRemove")
         
-        val gameToRemoveRef = gameRef // Capture the reference before clearing
+        val gameToRemoveRef = gameRef
         
-        // Set local player 'active' status to false first (optional, but good practice)
-        // Use a map for potential atomic update if other fields were involved
-        val updates = mapOf("active" to false)
         if (playerToRemove != null && playersRef != null) {
-             playersRef?.child(playerToRemove)?.updateChildren(updates)
+             playersRef?.child(playerToRemove)?.removeValue()
                  ?.addOnCompleteListener { task -> 
-                     Log.d(TAG, "Marked player $playerToRemove inactive in game $gameIdToLeave. Success: ${task.isSuccessful}")
-                     // Proceed with game removal check after marking inactive
+                     Log.d(TAG, "Removed player $playerToRemove from game $gameIdToLeave. Success: ${task.isSuccessful}")
                      checkAndRemoveGameIfEmpty(gameToRemoveRef)
                  }
         } else {
-            // If we can't mark inactive, still check if game should be removed
+            // If there's no player to remove, still check if the game is empty
             checkAndRemoveGameIfEmpty(gameToRemoveRef)
         }
         
-        // Clean up local state and listeners immediately
         clearListenersAndResetState()
     }
     
+    /** Checks if game has any active players and removes it if empty. */
     private fun checkAndRemoveGameIfEmpty(gameToRemoveRef: DatabaseReference?) {
         val gameId = gameToRemoveRef?.key
         Log.d(TAG, "Checking if game $gameId should be removed...")
         gameToRemoveRef?.child("players")?.addListenerForSingleValueEvent(object: ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                var activePlayerFound = false
-                if (snapshot.exists()) {
-                    for (playerSnap in snapshot.children) {
-                        val isActive = playerSnap.child("active").getValue(Boolean::class.java) ?: false
-                        if (isActive) {
-                            activePlayerFound = true
-                            break
-                        }
-                    }
-                }
-                
-                if (!activePlayerFound) {
-                    Log.i(TAG, "No active players remaining in game $gameId. Removing game node.")
+                // If the players node exists and has no children, it's empty.
+                // Or if it doesn't exist at all, it's also empty.
+                if (!snapshot.exists() || !snapshot.hasChildren()) {
+                    Log.i(TAG, "No players remaining in game $gameId. Removing game node.")
                     gameToRemoveRef.removeValue()
                         .addOnSuccessListener { Log.i(TAG, "Successfully removed empty game $gameId from Firebase.") }
                         .addOnFailureListener { e -> Log.w(TAG, "Failed to remove empty game $gameId from Firebase.", e) }
@@ -649,6 +667,7 @@ class MultiplayerManager {
         })
     }
     
+    /** Cleans up all Firebase listeners and resets local state. */
     private fun clearListenersAndResetState() {
         clearListeners()
         gameRef = null
@@ -660,50 +679,42 @@ class MultiplayerManager {
         currentGameId = null
         expectedRematchCount = 0
         gameSettings = null
-        // Don't clear listeners attached to MainActivity
-        // onDatabaseError = null 
-        // onRematchDecision = null
-        // onPlayerCountChanged = null
-        // onMatchStartRequested = null
+        initialSnapshotProcessed = false
         
         Log.d(TAG, "Local MultiplayerManager state reset.")
     }
     
+    /** Removes all active Firebase listeners with error handling. */
     private fun clearListeners() {
-        // Remove child listener
         childListener?.let { listener ->
             try { playersRef?.removeEventListener(listener) } catch (e: Exception) { Log.w(TAG, "Error removing child listener", e) }
             Log.d(TAG, "Removed child listener.")
         }
-        childListener = null // Clear reference
+        childListener = null
 
-        initSnapshotListener = null // Clear reference for single value listener
+        initSnapshotListener = null
 
-        // Remove paint listener
         paintListener?.let { listener ->
             try { paintRef?.removeEventListener(listener) } catch (e: Exception) { Log.w(TAG, "Error removing paint listener", e) }
         }
         paintListener = null
 
-        // Remove player count listener
         playerCountListener?.let { listener -> 
              try { playersRef?.removeEventListener(listener) } catch (e: Exception) { Log.w(TAG, "Error removing player count listener", e) } 
         }
         playerCountListener = null
 
-        // Remove match start listener
         startListener?.let { listener -> 
             try { startRef?.removeEventListener(listener) } catch (e: Exception) { Log.w(TAG, "Error removing start listener", e) }
         }
         startListener = null
-        // Keep startRef itself until state is reset
 
         Log.d(TAG, "Detached Firebase listeners (player, paint, count, start). Rematch listener managed separately.")
     }
 
     /**
-     * Fetches the current state of all players in the game.
-     * @param callback Called with a map of player ID to PlayerState.
+     * Retrieves current state of all players in the game.
+     * Used for rematch coordination and game state synchronization.
      */
     fun getPlayersState(callback: (Map<String, PlayerState?>) -> Unit) {
         if (playersRef == null) {
@@ -722,7 +733,7 @@ class MultiplayerManager {
                             playerStates[playerId] = playerState
                         } catch (e: DatabaseException) {
                             Log.e(TAG, "getPlayersState: Failed to parse player state for $playerId", e)
-                            playerStates[playerId] = null // Indicate parse failure
+                            playerStates[playerId] = null
                         }
                     } else {
                          Log.w(TAG, "getPlayersState: Received null playerId in snapshot.")
@@ -740,11 +751,13 @@ class MultiplayerManager {
         })
     }
 
-    /** Host invokes this to signal all clients to begin countdown */
+    /** 
+     * Signals all clients to begin the pre-match countdown sequence.
+     * Sets match start timestamp and triggers client-side countdown coordination.
+     */
     fun sendMatchStart() {
         if (gameRef == null) return
         Log.d(TAG, "Host sending match start signal for game $currentGameId")
-        // Store the player count at match start
         playersRef?.addListenerForSingleValueEvent(object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val playerCount = snapshot.childrenCount
@@ -752,10 +765,10 @@ class MultiplayerManager {
                 gameRef!!.child("playerCount").setValue(playerCount)
                     .addOnCompleteListener {
                         val updates = mapOf(
-                            "started" to true, // Signals clients to prepare for match start sequence
-                            "gameStartTimeBase" to ServerValue.TIMESTAMP, // Server time when this "start sequence" signal is set
+                            "started" to true,
+                            "gameStartTimeBase" to ServerValue.TIMESTAMP,
                             "gameStartOffsetMs" to CLIENT_SIDE_PRE_GAME_VISUAL_COUNTDOWN_MS,
-                            LAST_ACTIVITY_NODE to ServerValue.TIMESTAMP // Host initiated match start sequence
+                            LAST_ACTIVITY_NODE to ServerValue.TIMESTAMP
                         )
                         gameRef!!.updateChildren(updates)
                             .addOnFailureListener { e ->
@@ -766,7 +779,6 @@ class MultiplayerManager {
             }
             override fun onCancelled(error: DatabaseError) {
                 Log.w(TAG, "sendMatchStart: Failed to get player count", error.toException())
-                // Fallback: still try to initiate start sequence
                 val updates = mapOf(
                     "started" to true,
                     "gameStartTimeBase" to ServerValue.TIMESTAMP,
@@ -783,49 +795,36 @@ class MultiplayerManager {
     }
 
     /**
-     * Send a paint action to Firebase when a player paints at a specific location
-     * @param x Screen X coordinate (for local rendering)
-     * @param y Screen Y coordinate (for local rendering)
-     * @param color The paint color
-     * @param normalizedX Optional normalized X coordinate (0-1) relative to maze width
-     * @param normalizedY Optional normalized Y coordinate (0-1) relative to maze height
+     * Broadcasts a paint action to all other players via Firebase.
+     * Uses normalized coordinates for cross-device synchronization.
      */
-    fun sendPaintAction(x: Int, y: Int, color: Int, normalizedX: Float? = null, normalizedY: Float? = null) {
-        if (paintRef == null || !isConnected()) return
-        // Use push() to ensure each paint action is stored as a unique child
-        val paintData = hashMapOf<String, Any>(
-            // "x" to x, // Don't need absolute X anymore
-            // "y" to y, // Don't need absolute Y anymore
-            "color" to color,
-            "timestamp" to ServerValue.TIMESTAMP,
-            "player" to (localPlayerId ?: "unknown")
-        ).apply {
-            normalizedX?.let { put("normalizedX", it) }
-            normalizedY?.let { put("normalizedY", it) }
-        }
-        // Only send if we have normalized coordinates
-        if (normalizedX != null && normalizedY != null) {
-            paintRef?.push()?.setValue(paintData)
-                ?.addOnSuccessListener { updateLastActivityTimestamp() } // Paint action sent
-                ?.addOnFailureListener { e ->
-                    Log.w(TAG, "Failed to send paint action for $localPlayerId in $currentGameId", e)
-                    // Maybe throttle this error? Could spam if network is bad.
-                    // onDatabaseError?.invoke("Paint failed: ${e.message}") 
-                }
-        } else {
-             Log.v(TAG, "Skipping paint action send: missing normalized coordinates")
+    fun sendPaintAction(x: Int, y: Int, color: Int, normalizedX: Float, normalizedY: Float) {
+        val gameId = currentGameId ?: return
+        val paintRef = database.getReference(GAMES_NODE).child(gameId).child(PAINT_NODE).push()
+        val paintAction = PaintAction(
+            x = x,
+            y = y,
+            color = color,
+            playerId = localPlayerId ?: "",
+            timestamp = ServerValue.TIMESTAMP,
+            // Store normalized coordinates. The 'mazeX' and 'mazeY' fields in PaintAction are repurposed for this.
+            mazeX = (normalizedX * 10000).toInt(),
+            mazeY = (normalizedY * 10000).toInt()
+        )
+        paintRef.setValue(paintAction).addOnFailureListener { e ->
+            Log.e(TAG, "Failed to send paint action", e)
         }
     }
     
-    // Check if we're connected to a game
+    /** Checks if currently connected to an active game. */
     private fun isConnected(): Boolean {
         return currentGameId != null && localPlayerId != null
     }
 
+    /** Sets up listener for real-time paint actions from other players. */
     private fun setupPaintListener() {
         if (paintRef == null) return
         
-        // Detach existing listener if any
         paintListener?.let { listener ->
              try { paintRef?.removeEventListener(listener) } catch (e: Exception) { Log.w(TAG, "Error removing old paint listener", e) }
         }
@@ -833,22 +832,15 @@ class MultiplayerManager {
         
         paintListener = object : ChildEventListener {
             override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
-                // Process new paint action
                 processPaintAction(snapshot)
             }
             
             override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {
-                // Process updated paint action (should be rare)
                 processPaintAction(snapshot)
             }
             
-            override fun onChildRemoved(snapshot: DataSnapshot) {
-                // Not handling paint removal currently
-            }
-            
-            override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {
-                // Not relevant for paint actions
-            }
+            override fun onChildRemoved(snapshot: DataSnapshot) {}
+            override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
             
             override fun onCancelled(error: DatabaseError) {
                 Log.w(TAG, "Paint listener cancelled for $currentGameId", error.toException())
@@ -856,37 +848,28 @@ class MultiplayerManager {
             }
         }
         
-        // Listen for paint actions AFTER the current time to avoid processing old ones on join
         paintRef!!.orderByChild("timestamp").startAt(System.currentTimeMillis().toDouble())
                 .addChildEventListener(paintListener!!)
         Log.d(TAG, "Added paint action listener for $currentGameId (listening from now onwards).")
     }
     
-    // Process a paint action received from Firebase
+    /** 
+     * Processes incoming paint actions from Firebase.
+     * Filters out own actions and applies remote paint using normalized coordinates.
+     */
     private fun processPaintAction(snapshot: DataSnapshot) {
         try {
-            // val x = snapshot.child("x").getValue(Int::class.java) // No longer using absolute X
-            // val y = snapshot.child("y").getValue(Int::class.java) // No longer using absolute Y
-            val color = snapshot.child("color").getValue(Int::class.java)
-            val player = snapshot.child("player").getValue(String::class.java)
-            
-            // Try to get normalized coordinates (stored as Double) then cast to Float
-            val dnX = snapshot.child("normalizedX").getValue(Double::class.java)
-            val dnY = snapshot.child("normalizedY").getValue(Double::class.java)
-            
-            if (color != null && player != null) {
-                // Don't process our own paint actions to avoid double-painting
-                if (player != localPlayerId) {
-                    if (dnX != null && dnY != null) {
-                        val normalizedX = dnX.toFloat()
-                        val normalizedY = dnY.toFloat()
-                        // Use normalized coordinates for better cross-device sync
-                        Log.v(TAG, "Received normalized paint from $player at ($normalizedX,$normalizedY) with color #${color.toString(16)} in game $currentGameId") // Verbose
-                        updateListener?.onPaintAction(0, 0, color, normalizedX, normalizedY) // Pass 0,0 for x,y as they aren't used
-                    } else {
-                        // Log if we received an action without normalized coords (shouldn't happen often)
-                        Log.w(TAG, "Received paint action from $player without normalized coordinates in $currentGameId. Ignoring.")
-                    }
+            val paintAction = snapshot.getValue(PaintAction::class.java)
+
+            if (paintAction != null) {
+                if (paintAction.playerId != localPlayerId) {
+                    // Convert stored integers back to normalized floats
+                    val normalizedX = paintAction.mazeX / 10000f
+                    val normalizedY = paintAction.mazeY / 10000f
+
+                    Log.v(TAG, "Received normalized paint from ${paintAction.playerId} at ($normalizedX,$normalizedY) with color #${paintAction.color.toString(16)} in game $currentGameId")
+                    // The 'x' and 'y' in onPaintAction are now legacy, we pass 0,0 and use normalized coords.
+                    updateListener?.onPaintAction(0, 0, paintAction.color, normalizedX, normalizedY)
                 }
             } else {
                  Log.w(TAG, "Received incomplete paint action in $currentGameId: $snapshot")
@@ -897,9 +880,7 @@ class MultiplayerManager {
         }
     }
 
-    /**
-     * Send this player's rematch answer (true=Yes, false=No) to Firebase.
-     */
+    /** Submits this player's rematch vote (yes/no) to Firebase. */
     fun sendRematchAnswer(wantRematch: Boolean) {
         Log.d(TAG, "sendRematchAnswer called. wantRematch=$wantRematch, currentGameId=$currentGameId, localPlayerId=$localPlayerId")
         if (currentGameId == null || localPlayerId == null) {
@@ -909,39 +890,34 @@ class MultiplayerManager {
         if (rematchRef == null) rematchRef = gameRef?.child(REMATCH_NODE)
         Log.d(TAG, "Sending rematch answer ($wantRematch) for player $localPlayerId in game $currentGameId")
         rematchRef?.child(localPlayerId!!)?.setValue(wantRematch)
-           ?.addOnSuccessListener { updateLastActivityTimestamp() } // Rematch answer sent
+           ?.addOnSuccessListener { updateLastActivityTimestamp() }
            ?.addOnFailureListener { e -> 
                 Log.w(TAG, "Failed to send rematch answer for $localPlayerId in $currentGameId", e) 
                 onDatabaseError?.invoke("Rematch answer failed: ${e.message}")
             }
     }
 
-    /**
-     * Clears the rematch answers node in Firebase.
-     * Only the host should ideally call this during restart logic.
-     */
+    /** Clears all rematch votes from Firebase (typically called by host). */
     fun clearRematchAnswers() {
         Log.d(TAG, "clearRematchAnswers called for game $currentGameId")
         Log.d(TAG, "Clearing rematch answers for game $currentGameId")
         rematchRef?.removeValue()
             ?.addOnFailureListener { e -> 
                 Log.w(TAG, "Failed to clear rematch answers for $currentGameId", e)
-                // Don't necessarily notify user for cleanup failures
             }
     }
 
-    // Listener for rematch answers
     private var rematchListener: ValueEventListener? = null
+    
     /**
-     * Listen for all players' rematch answers and invoke callback when decisions are in.
-     * This listener should be setup *once* per match, ideally after game creation/join
-     * and re-attached in restartMatch.
+     * Sets up listeners for rematch voting coordination.
+     * Monitors player votes and triggers rematch start when all players agree.
      */
     fun setupRematchListener() {
         Log.d(TAG, "setupRematchListener called for game $currentGameId")
         if (rematchRef == null) rematchRef = gameRef?.child(REMATCH_NODE)
         if (rematchInProgressRef == null) rematchInProgressRef = gameRef?.child("rematchInProgress")
-        // Remove previous listener if any to avoid duplicates
+        
         rematchListener?.let { listener ->
              try { rematchRef?.removeEventListener(listener) } catch (e: Exception) { Log.w(TAG, "Error removing old rematch listener", e) }
         }
@@ -952,10 +928,8 @@ class MultiplayerManager {
         rematchInProgressListener = null
         Log.d(TAG, "Setting up rematch listener for game $currentGameId")
 
-        // Always clear rematchInProgress before attaching listeners to avoid stale triggers
         rematchInProgressRef?.setValue(false)?.addOnCompleteListener {
             Log.d(TAG, "rematchInProgress explicitly set to FALSE before attaching rematch listeners for $currentGameId")
-            // Always fetch the number of *active* players from the players node
             playersRef?.addListenerForSingleValueEvent(object : ValueEventListener {
                 override fun onDataChange(snapshot: DataSnapshot) {
                     expectedRematchCount = snapshot.children.filter {
@@ -973,6 +947,7 @@ class MultiplayerManager {
         }
     }
 
+    /** Attaches Firebase listeners for rematch vote monitoring and coordination. */
     private fun attachRematchListener() {
         rematchListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
@@ -1008,13 +983,11 @@ class MultiplayerManager {
         }
         rematchRef?.addValueEventListener(rematchListener!!)
 
-        // Listen for rematchInProgress flag to coordinate reset
         rematchInProgressListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val inProgress = snapshot.getValue(Boolean::class.java) ?: false
                 Log.d(TAG, "rematchInProgressListener: rematchInProgress=$inProgress for $currentGameId")
                 if (inProgress) {
-                    // Defensive: Only allow if all players have answered YES
                     if (expectedRematchCount > 0) {
                         rematchRef?.addListenerForSingleValueEvent(object : ValueEventListener {
                             override fun onDataChange(rematchSnap: DataSnapshot) {
@@ -1050,9 +1023,8 @@ class MultiplayerManager {
     }
 
     /**
-     * Overwrites the state for all specified players in Firebase.
-     * Used to reset players to initial state for rematches.
-     * @param initialStates Map of player ID -> initial PlayerState object.
+     * Resets all player states in Firebase for rematch.
+     * Overwrites existing player data with fresh initial states.
      */
     fun resetAllPlayerStatesFirebase(initialStates: Map<String, PlayerState>) {
         Log.d(TAG, "resetAllPlayerStatesFirebase called for game $currentGameId. initialStates=$initialStates")
@@ -1062,7 +1034,6 @@ class MultiplayerManager {
             return
         }
         Log.d(TAG, "Resetting player states in Firebase for players: ${initialStates.keys} in game $currentGameId")
-        // Use updateChildren for potentially better efficiency than individual setValue calls
         playersRef?.updateChildren(initialStates as Map<String, Any?>)
             ?.addOnSuccessListener { Log.i(TAG, "Successfully reset player states in Firebase for $currentGameId.") }
             ?.addOnFailureListener { e -> 
@@ -1071,10 +1042,7 @@ class MultiplayerManager {
             }
     }
 
-    /**
-     * Clears all paint actions in the current game (used for rematch).
-     * Only host should call this.
-     */
+    /** Removes all paint actions from Firebase (used for rematches). */
     fun clearPaintActions() {
         Log.d(TAG, "Clearing paint actions for game $currentGameId")
         paintRef?.removeValue()?.addOnCompleteListener { task ->
@@ -1084,11 +1052,12 @@ class MultiplayerManager {
         }
     }
 
-    /** Returns the current user's Firebase UID, or null if not authenticated. */
+    /** Returns the current authenticated user's Firebase UID. */
     fun getCurrentUserUid(): String? {
         return auth.currentUser?.uid
     }
 
+    /** Updates the game's last activity timestamp for cleanup monitoring. */
     private fun updateLastActivityTimestamp() {
         gameRef?.child(LAST_ACTIVITY_NODE)?.setValue(ServerValue.TIMESTAMP)
             ?.addOnFailureListener { e ->
@@ -1096,6 +1065,11 @@ class MultiplayerManager {
             }
     }
 
+    /**
+     * Removes old, inactive, or abandoned games from Firebase.
+     * Scans recent games and deletes those past TTL or with no active players.
+     * Helps maintain database cleanliness and performance.
+     */
     private fun performStaleGameCleanup() {
         Log.d(TAG, "Performing stale game cleanup...")
         val gamesQuery = database.getReference(GAMES_NODE)
@@ -1120,34 +1094,24 @@ class MultiplayerManager {
 
                     var shouldDelete = false
                     var reason = ""
+                    
+                    val timeSinceLastActivity = currentTime - lastActivityAt
 
-                    // 1. Check for staleness by TTL
-                    if (currentTime - lastActivityAt > STALE_GAME_TTL_MS) {
+                    // A game is stale if it's been inactive for the full TTL (e.g., 3 hours)
+                    if (timeSinceLastActivity > STALE_GAME_TTL_MS) {
                         shouldDelete = true
                         reason = "Stale by TTL (lastActivityAt: ${Date(lastActivityAt)})"
                     }
-
-                    // 2. Check for all players inactive (if not already marked for deletion and game is old enough)
-                    if (!shouldDelete && (currentTime - createdAt > INACTIVE_GRACE_PERIOD_MS)) {
-                        val playersNode = gameSnapshot.child("players")
-                        if (playersNode.exists() && playersNode.hasChildren()) {
-                            var activePlayerFoundInGame = false
-                            for (playerSnap in playersNode.children) {
-                                val isActive = playerSnap.child("active").getValue(Boolean::class.java) ?: false
-                                if (isActive) {
-                                    activePlayerFoundInGame = true
-                                    break
-                                }
-                            }
-                            if (!activePlayerFoundInGame) {
-                                shouldDelete = true
-                                reason = "All players inactive (createdAt: ${Date(createdAt)})"
-                            }
-                        } else {
-                            // No players node or no players, and game is past grace period
+                    // A game is also considered abandoned if it's past the grace period (e.g. 10 mins)
+                    // and hasn't seen activity for that same amount of time. This catches games
+                    // that were created but never properly left.
+                    else if (timeSinceLastActivity > INACTIVE_GRACE_PERIOD_MS) {
+                         val playersNode = gameSnapshot.child("players")
+                         // Also check if it's empty, to clean up games that were left properly.
+                         if (!playersNode.exists() || !playersNode.hasChildren()) {
                             shouldDelete = true
-                            reason = "No players and past grace period (createdAt: ${Date(createdAt)})"
-                        }
+                            reason = "Empty and inactive past grace period (lastActivityAt: ${Date(lastActivityAt)})"
+                         }
                     }
 
                     if (shouldDelete) {
@@ -1169,5 +1133,49 @@ class MultiplayerManager {
                 onDatabaseError?.invoke("Stale game cleanup failed: ${error.message}")
             }
         })
+    }
+
+    /**
+     * Sends the local player's current state (position, ink, mode) to Firebase.
+     * This is called frequently during gameplay to keep clients synchronized.
+     * Uses a map to only send the fields that change, improving efficiency.
+     */
+    fun updatePlayerState(normX: Float, normY: Float, ink: Float, mode: Int) {
+        val gameId = currentGameId ?: return
+        val playerId = localPlayerId ?: return
+
+        val stateUpdate = mapOf(
+            "normX" to normX,
+            "normY" to normY,
+            "ink" to ink,
+            "mode" to mode
+        )
+
+        database.getReference(GAMES_NODE).child(gameId).child(PLAYERS_NODE).child(playerId)
+            .updateChildren(stateUpdate)
+            .addOnFailureListener { e ->
+                Log.w(TAG, "Failed to update player state for $playerId (Ask Gemini)", e)
+                onDatabaseError?.invoke("Update failed: ${e.message}")
+            }
+    }
+
+    /**
+     * @param mazeY The Y-coordinate in the maze grid system (optional).
+     */
+    fun sendPaintAction(x: Int, y: Int, color: Int, mazeX: Int = -1, mazeY: Int = -1) {
+        val gameId = currentGameId ?: return
+        val paintRef = database.getReference(GAMES_NODE).child(gameId).child(PAINT_NODE).push()
+        val paintAction = PaintAction(
+            x = x,
+            y = y,
+            color = color,
+            playerId = localPlayerId ?: "",
+            timestamp = ServerValue.TIMESTAMP,
+            mazeX = mazeX,
+            mazeY = mazeY
+        )
+        paintRef.setValue(paintAction).addOnFailureListener { e ->
+            Log.e(TAG, "Failed to send paint action", e)
+        }
     }
 } 

@@ -25,9 +25,20 @@ import android.view.View
 import kotlin.math.max
 import kotlin.math.min
 
+/**
+ * Main game rendering surface and engine for Ink Rollers.
+ * 
+ * Manages the complete game loop including player input, movement, painting mechanics,
+ * multiplayer synchronization, HUD updates, and match progression. Coordinates between
+ * local player controls (touch/joystick) and remote player state via MultiplayerManager.
+ * 
+ * Handles both Coverage and Zones game modes with real-time statistics calculation and
+ * UI updates. Provides thread-safe game state management and seamless surface recreation
+ * for Android lifecycle events.
+ */
 class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
     SurfaceView(ctx,attrs),SurfaceHolder.Callback, MultiplayerManager.RemoteUpdateListener { // Implement listener
-  private lateinit var surface:PaintSurface
+  private lateinit var surface: PaintSurface
   // Use a Map to store players, keyed by their Firebase ID (player0, player1, etc.)
   val players = ConcurrentHashMap<String, Player>()
   private val joysticks = ConcurrentHashMap<String, VirtualJoystick>() // Also map joysticks by player ID
@@ -48,6 +59,11 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
   // Multiplayer specific fields
   private var multiplayerManager: MultiplayerManager? = null
   private var localPlayerId: String? = null
+  
+  // Audio manager for game sound effects
+  private val audioManager: com.spiritwisestudios.inkrollers.AudioManager by lazy { 
+    com.spiritwisestudios.inkrollers.AudioManager.getInstance(context)
+  }
   
   // New state flag to prevent premature end-check
   private var isMatchReady: Boolean = false
@@ -72,36 +88,39 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
     setZOrderMediaOverlay(true)
   }
   
+  /** Initializes paint surface and restores previous state if available. */
   override fun surfaceCreated(h:SurfaceHolder){
     Log.i(TAG, "surfaceCreated called. SurfaceView size: ${width}x${height}")
-    // Restore paint surface if available
     surface = if (savedPaintBitmap != null) {
         PaintSurface(width, height, savedPaintBitmap!!)
     } else {
         PaintSurface(width, height)
     }
     savedPaintBitmap = null
-    // Update all players to use the new surface
+    
     for (player in players.values) {
         player.surface = surface
     }
   }
   
+  /** Saves paint state and ensures clean thread termination. */
   override fun surfaceDestroyed(h:SurfaceHolder){ 
     Log.i(TAG, "surfaceDestroyed called. Stopping game thread if running.")
-    // Save paint surface bitmap for persistence
     if (::surface.isInitialized) {
         savedPaintBitmap = surface.getBitmapCopy()
     }
-    stopThread() // Ensure thread is stopped cleanly when surface is destroyed
+    stopThread()
     Log.d(TAG, "Surface destroyed, game thread stopped.")
   }
+  
   override fun surfaceChanged(h:SurfaceHolder,f:Int,w:Int,h2:Int){}
   
-  /** Stop the game thread and wait for it to finish. */
+  /** Safely stops the game thread and waits for completion with timeout handling. */
   fun stopThread() {
       synchronized(this) {
-          // Check if thread is initialized and alive before trying to stop
+          // Clean up any looping sounds from players
+          players.values.forEach { it.cleanup() }
+          
           if (::thread.isInitialized && thread.isAlive) {
               Log.d(TAG, "stopThread: Attempting to stop game thread. State: ${thread.state}")
               var retry = true
@@ -125,7 +144,7 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
       }
   }
 
-  /** Starts the current game thread instance if initialized and not alive. */
+  /** Starts the game loop thread with proper state validation and recovery. */
   fun startGameLoop() {
       synchronized(this) {
           Log.d(TAG, "startGameLoop: Called. Thread initialized: ${if (::thread.isInitialized) "yes" else "no"}, Thread state: ${if (::thread.isInitialized) thread.state else "not initialized"}")
@@ -137,7 +156,7 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
           if (!thread.isAlive) {
               try {
                  if (thread.state == Thread.State.NEW) {
-                    thread.running = true // Set running to true BEFORE starting
+                    thread.running = true
                     Log.d(TAG, "startGameLoop: Starting thread (NEW state)")
                     thread.start()
                     Log.d(TAG, "Game thread started.")
@@ -158,76 +177,56 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
       }
   }
 
+  /** 
+   * Main game loop update method called each frame.
+   * Handles local player movement, Firebase state synchronization, HUD updates,
+   * and game mode progression (coverage/zones calculations, timer management).
+   */
   fun update(deltaTime: Float){
       val localPlayer = getLocalPlayer()
       val localJoystick = if (localPlayerId != null) joysticks[localPlayerId] else null
 
-      // Added Log
-      // if (localJoystick != null) {
-      //      Log.d(TAG, "update: Joystick state: dirX=${localJoystick.directionX}, dirY=${localJoystick.directionY}, mag=${localJoystick.magnitude}")
-      // } else {
-      //      Log.d(TAG, "update: Local joystick is null")
-      // }
-
-      // --- Update Local Player --- 
-      if (localPlayer != null && localJoystick != null && currentLevel is MazeLevel) { // Ensure level is MazeLevel
-          localPlayer.move(localJoystick.directionX, localJoystick.directionY, localJoystick.magnitude, currentLevel, deltaTime)
+      if (localPlayer != null && localJoystick != null && currentLevel is MazeLevel) {
+          localPlayer.move(localJoystick.directionX, localJoystick.directionY, localJoystick.magnitude, deltaTime, currentLevel)
           
-          // Convert local player's screen position to normalized coordinates
           val (nx, ny) = (currentLevel as MazeLevel).screenToMazeCoord(localPlayer.x, localPlayer.y)
           
-          // Send local player state to Firebase using normalized coordinates
-          val currentState = PlayerState(
-              normX = nx,
-              normY = ny,
-              color = localPlayer.getColor(),
-              mode = localPlayer.mode,
-              ink = localPlayer.ink,
-              active = true, // Mark as active
-              playerName = localPlayer.playerName // Pass player name
-          )
-          multiplayerManager?.updateLocalPlayerState(currentState)
+          multiplayerManager?.updatePlayerState(nx, ny, localPlayer.ink, localPlayer.mode)
       }
       
-      // --- Update Other Game Elements --- 
       currentLevel?.update()
       
-      // Periodically update coverage stats
+      // Update coverage statistics periodically for performance
       frameCount++
       if (frameCount >= coverageUpdateFrames) {
           frameCount = 0
           currentLevel?.let { level ->
-              // Ensure surface is initialized before calculating coverage
               if (::surface.isInitialized) {
                   coverageStats = level.calculateCoverage(surface)
               } else {
                   Log.w(TAG, "Surface not initialized, skipping coverage calculation")
               }
-              // Log coverage stats (remove in production)
-              // ... (logging code can remain or be adapted)
           }
       }
       
-      // Update HUD based on local player
+      // Update HUD elements
       localPlayer?.let { 
           inkHudView?.updateHud(it.getInkPercent(), it.getModeText()) 
       }
-      // Handle game mode updates and coverage HUD
-      if (isMatchReady) { // Only check if match is flagged as ready
+      
+      // Process game mode state and end conditions
+      if (isMatchReady) {
           gameModeManager?.let { mgr ->
-            // Update countdown timer
             timerHudView?.updateTime(mgr.timeRemainingMs())
-            mgr.update() // Update the manager's internal state (timer)
+            mgr.update()
 
-            // Check if finished *after* updating the manager
             if (mgr.isFinished()) {
               if (!endNotified) {
                 endNotified = true
-                thread.running = false // Stop the game loop
+                thread.running = false
                 finishMatch("timer_expired")
-              } // end !endNotified
+              }
             } else {
-              // Match is ongoing, update coverage HUD if applicable
               when (mgr.mode) {
                   GameMode.COVERAGE -> {
                       if (currentLevel is MazeLevel) {
@@ -239,11 +238,9 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
                               val leftColor = players["player0"]?.getColor()
                               val rightColor = players["player1"]?.getColor()
 
-                              // Move UI updates to main thread to avoid threading exception
                               Handler(Looper.getMainLooper()).post {
                                   try {
                                       coverageHudView?.updateCoverage(activeStats, leftColor, rightColor)
-                                      // Hide zone HUD in coverage mode
                                       zoneHudView?.visibility = View.GONE
                                       coverageHudView?.visibility = View.VISIBLE
                                   } catch (e: Exception) {
@@ -261,17 +258,15 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
                               val zoneOwnership = ZoneOwnershipCalculator.calculateZoneOwnership(
                                   currentLevel as MazeLevel, 
                                   surface,
-                                  sampleStep = 10 // Changed from (coverageUpdateFrames / 8).coerceAtLeast(2)
+                                  sampleStep = 10
                               )
 
                               val leftColor = players["player0"]?.getColor()
                               val rightColor = players["player1"]?.getColor()
 
-                              // Move UI updates to main thread to avoid threading exception
                               Handler(Looper.getMainLooper()).post {
                                   try {
                                       zoneHudView?.updateZones(zoneOwnership, leftColor, rightColor)
-                                      // Hide coverage HUD in zones mode
                                       coverageHudView?.visibility = View.GONE
                                       zoneHudView?.visibility = View.VISIBLE
                                   } catch (e: Exception) {
@@ -285,10 +280,14 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
                   }
               }
             }
-          } // end gameModeManager?.let
-      } // end isMatchReady
+          }
+      }
   }
   
+  /** 
+   * Main rendering method called each frame.
+   * Draws background, paint surface, level geometry, players, local joystick, and player names.
+   */
   override fun draw(c:Canvas){
     // Draw center-cropped background image
     run {
@@ -306,32 +305,17 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
       c.drawBitmap(bmp, null, dest, null)
     }
     
-    // Log.d(TAG, "GameView.draw() called. Canvas: $c")
-    // background image covers the canvas; remove white fill
-    
-    // Log.d(TAG, "GameView.draw() - Before surface.drawTo(c)")
-    if(::surface.isInitialized) { // Add this check for safety, though it should be by now
+    if(::surface.isInitialized) {
         surface.drawTo(c)
-        // Log.d(TAG, "GameView.draw() - After surface.drawTo(c)")
-    } else {
-        // Log.w(TAG, "GameView.draw() - Surface not initialized, skipping surface.drawTo(c)")
     }
     
-    // Log.d(TAG, "GameView.draw() - Before currentLevel?.draw(c). currentLevel is null: ${currentLevel == null}")
     currentLevel?.draw(c)
-    // Log.d(TAG, "GameView.draw() - After currentLevel?.draw(c)")
 
-    // Draw all players (local and remote)
-    // Log.d(TAG, "GameView.draw() - Drawing ${players.size} players.")
-    for ((id, player) in players) { // Changed to iterate with ID for better logging
-        // Log.d(TAG, "GameView.draw() - Drawing player $id")
+    for (player in players.values) {
         player.draw(c)
     }
 
-    // Draw local joystick only
-    // Log.d(TAG, "GameView.draw() - Before localPlayerId?.let for joystick. localPlayerId: $localPlayerId")
     localPlayerId?.let { joysticks[it]?.draw(c) }
-    // Log.d(TAG, "GameView.draw() - After joystick draw.")
 
     drawCornerNames(c)
   }
@@ -421,25 +405,25 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
     return darkness >= 0.5 // Threshold for considering a color dark
   }
   
+  /** 
+   * Handles touch input for local player joystick control.
+   * Processes only the primary pointer (finger 0) and routes events to the local player's joystick.
+   */
   override fun onTouchEvent(e:MotionEvent):Boolean{
-      // Only handle touch events for the local player's joystick
-      if (localPlayerId == null) return false // No local player yet
+      if (localPlayerId == null) return false
       
       val pointerIndex = e.actionIndex
       val pointerId = e.getPointerId(pointerIndex)
       val action = e.actionMasked
       
-      // We only care about the first touch for the local player's joystick for now
-      // Multi-touch could be used for other actions later if needed.
       if (pointerId == 0) { 
-          val joystick = joysticks[localPlayerId] ?: return false // Safety check
+          val joystick = joysticks[localPlayerId] ?: return false
           val x = e.getX(pointerIndex)
           val y = e.getY(pointerIndex)
           
           when (action) {
               MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> joystick.onDown(x, y)
               MotionEvent.ACTION_MOVE -> {
-                  // ACTION_MOVE events might report multiple points, ensure we use index 0
                   val moveX = e.getX(0)
                   val moveY = e.getY(0)
                   joystick.onMove(moveX, moveY)
@@ -447,50 +431,48 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
               MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> joystick.onUp()
               MotionEvent.ACTION_CANCEL -> joystick.onUp()
           }
-          return true // Indicate we handled the touch event
+          return true
       }
       
-      return false // Don't handle other pointer IDs for now
+      return false
   }
   
   // --- Multiplayer Integration Methods --- 
 
+  /** Registers the MultiplayerManager for Firebase state synchronization. */
   fun setMultiplayerManager(manager: MultiplayerManager) {
       this.multiplayerManager = manager
-      // Register this GameView as the listener for remote updates
       this.multiplayerManager?.updateListener = this 
       Log.d(TAG, "MultiplayerManager set.")
   }
 
-  fun setLocalPlayerId(id: String?, playerColor: Int? = null, playerName: String = "") {
-      Log.d(TAG, "setLocalPlayerId called with id: $id, color: $playerColor, name: $playerName")
+  /** 
+   * Sets the local player ID and initializes their joystick and Player object.
+   * Creates the player at the appropriate starting position based on player index.
+   */
+  fun setLocalPlayerId(id: String?, newPlayerColor: Int? = null, playerName: String = "") {
+      Log.d(TAG, "setLocalPlayerId called with id: $id, color: $newPlayerColor, name: $playerName")
       this.localPlayerId = id
-      if (id == null) return // Exit early if ID is null
+      if (id == null) return
       Log.d(TAG, "Local player ID set: $id")
       
       try {
-          // Initialize joystick for the local player if not already done
           if (!joysticks.containsKey(id)) {
               joysticks[id] = VirtualJoystick()
           }
           
-          // Always ensure the local player is created/updated with correct start position
-          // AFTER currentLevel is initialized.
           if (currentLevel != null) {
-               // Extract player index from ID
                val playerIndex = try {
                    id.replace("player", "").toInt()
                } catch (e: Exception) {
                    Log.e(TAG, "Failed to parse player index from $id, using 0", e)
-                   0 // Fallback to 0
+                   0
                }
                
                val startPos = currentLevel!!.getPlayerStartPosition(playerIndex)
-               // Use provided color or fallback to default colors
                val defaultColor = if (playerIndex == 0) Color.parseColor("#39FF14") else Color.parseColor("#1F51FF")
-               val playerColor = playerColor ?: defaultColor
+               val finalPlayerColor = newPlayerColor ?: defaultColor
                
-               // Check if player already exists (e.g., from a very fast Firebase update after initGame)
                var localPlayer = players[id]
                if (localPlayer == null) {
                    Log.d(TAG, "Creating local player $id at definite start position (${startPos.first}, ${startPos.second})")
@@ -498,22 +480,20 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
                        surface,
                        startPos.first,
                        startPos.second,
-                       playerColor,
+                       finalPlayerColor,
                        multiplayerManager,
-                       currentLevel, // Pass level reference
-                       playerName // Pass the provided player name
+                       currentLevel,
+                       playerName,
+                       audioManager
                    )
                    players[id] = localPlayer
                } else {
-                   // Player exists, ensure its position is correct
                    Log.d(TAG, "Updating existing local player $id object to definite start position (${startPos.first}, ${startPos.second})")
                    localPlayer.x = startPos.first
                    localPlayer.y = startPos.second
-                   localPlayer.playerName = playerName // Set player name for local player directly
-                   // Potentially update color/other fields if needed, though less likely
+                   localPlayer.playerName = playerName
                }
                
-               // Update Firebase with the correct initial normalized position
                if (currentLevel is MazeLevel) {
                    val (normX, normY) = (currentLevel as MazeLevel).screenToMazeCoord(localPlayer.x, localPlayer.y)
                    val initialPositionUpdate = mapOf(
@@ -533,14 +513,19 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
       }
   }
 
+  /** Returns the local player instance if available. */
   fun getLocalPlayer(): Player? {
       return if (localPlayerId != null) players[localPlayerId] else null
   }
 
   // --- MultiplayerManager.RemoteUpdateListener Implementation --- 
 
+  /** 
+   * Processes a player state update from Firebase.
+   * Handles coordinate conversion from normalized to screen space and manages player creation/updates.
+   */
   private fun actuallyProcessPlayerState(playerId: String, newState: PlayerState) {
-      if (currentLevel == null) { // Should be checked by caller or ensured by context
+      if (currentLevel == null) {
           Log.e(TAG, "actuallyProcessPlayerState called with null currentLevel for $playerId")
           return
       }
@@ -552,7 +537,6 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
 
       var player = players[playerId]
       if (player == null) {
-          // New player joined
           Log.i(TAG, "Adding new player via actuallyProcessPlayerState: $playerId")
           val (sx, sy) = mazeLevel.mazeToScreenCoord(newState.normX, newState.normY)
           player = Player(
@@ -562,11 +546,11 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
               newState.color,
               multiplayerManager,
               currentLevel,
-              newState.playerName // Pass player name from newState
+              newState.playerName,
+              audioManager
           )
           players[playerId] = player
       } else {
-          // Update existing player state (Only for REMOTE players)
           if (playerId != localPlayerId) {
               val (sx, sy) = mazeLevel.mazeToScreenCoord(newState.normX, newState.normY)
               Log.d(TAG, "Updating remote player $playerId screen pos to ($sx, $sy) from norm (${newState.normX}, ${newState.normY}) via actuallyProcessPlayerState")
@@ -574,26 +558,21 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
               player.y = sy
           }
       }
-      // Always update mode and ink for all players based on Firebase state
+      
       player.mode = newState.mode
       player.ink = newState.ink
-      if (playerId != localPlayerId) { // Only update name from state for remote players
-          player.playerName = newState.playerName // Update player name directly
+      if (playerId != localPlayerId) {
+          player.playerName = newState.playerName
       }
-      // Commented out per-frame logs to reduce clutter
-      // Log.d(TAG, "Player $playerId state processed. Position: (${player.x}, ${player.y}), Ink: ${player.ink}, Mode: ${player.mode}")
   }
 
+  /** Handles incoming player state changes from Firebase, managing pending states for early arrivals. */
   override fun onPlayerStateChanged(playerId: String, newState: PlayerState) {
-      // Commented out per-frame logs to reduce clutter
-      // Log.d(TAG, "onPlayerStateChanged for $playerId. Active: ${newState.active}, NormPos: (${newState.normX}, ${newState.normY})")
-      // Log.d(TAG, "Processing player state for $playerId as currentLevel is available.")
-      // Log.d(TAG, "Player $playerId state processed. Position: (${player.x}, ${player.y}), Ink: ${player.ink}, Mode: ${player.mode}")
-
       if (!newState.active) {
           Log.i(TAG, "Player $playerId reported as inactive. Removing.")
+          players[playerId]?.cleanup() // Stop any playing sounds
           players.remove(playerId)
-          pendingPlayerStates.remove(playerId) // Also remove from pending if they leave before processing
+          pendingPlayerStates.remove(playerId)
           joysticks.remove(playerId)
           return
       }
@@ -604,9 +583,8 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
           return
       }
 
-      // currentLevel is available, process immediately
       Log.d(TAG, "Processing player state for $playerId as currentLevel is available.")
-      pendingPlayerStates.remove(playerId) // Remove if it was pending
+      pendingPlayerStates.remove(playerId)
       try {
           actuallyProcessPlayerState(playerId, newState)
       } catch (e: Exception) {
@@ -614,13 +592,18 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
       }
   }
 
+  /** Handles player removal notifications from Firebase. */
   override fun onPlayerRemoved(playerId: String) {
       Log.i(TAG, "onPlayerRemoved: $playerId")
+      players[playerId]?.cleanup() // Stop any playing sounds
       players.remove(playerId)
-      joysticks.remove(playerId) // Clean up joystick just in case
+      joysticks.remove(playerId)
   }
 
-  // Updated to better handle errors
+  /** 
+   * Handles remote paint actions from other players.
+   * Converts normalized coordinates to local screen coordinates when available.
+   */
   override fun onPaintAction(x: Int, y: Int, color: Int, normalizedX: Float?, normalizedY: Float?) {
       try {
           if (currentLevel == null) {
@@ -628,11 +611,9 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
               return
           }
           if (normalizedX != null && normalizedY != null && currentLevel is MazeLevel) {
-              // Convert normalized coordinates to screen coordinates for this device
               val screenCoords = (currentLevel as MazeLevel).mazeToScreenCoord(normalizedX, normalizedY)
               Log.d(TAG, "Applying remote paint at normalized($normalizedX,$normalizedY) -> screen(${screenCoords.first},${screenCoords.second})")
               
-              // Safety check before painting
               if (screenCoords.first >= 0 && screenCoords.first < surface.w.toFloat() &&
                   screenCoords.second >= 0 && screenCoords.second < surface.h.toFloat()) {
                   surface.paintAt(screenCoords.first, screenCoords.second, color)
@@ -640,7 +621,6 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
                   Log.w(TAG, "Remote paint coordinates out of bounds: (${screenCoords.first}, ${screenCoords.second})")
               }
           } else {
-              // Fallback to original method using absolute coordinates
               if (x >= 0 && x < surface.w && y >= 0 && y < surface.h) {
                   Log.d(TAG, "Applying remote paint at ($x,$y) with color #${color.toString(16)}")
                   surface.paintAt(x.toFloat(), y.toFloat(), color)
@@ -651,13 +631,14 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
       }
   }
 
-  // For player scale adjustment in onPlayerStateChanged
+  /** Returns the current level's scale factor for player size adjustments. */
   private fun getPlayerScaleFactor(): Float {
       return (currentLevel as? MazeLevel)?.getScale() ?: 1.0f
   }
 
-  // --- Existing Methods --- 
+  // --- Game Lifecycle Methods --- 
   
+  /** Pauses the game thread without destroying state. */
   fun pause(){ 
     if (::thread.isInitialized) {
         thread.running=false 
@@ -666,11 +647,10 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
     }
   }
   
+  /** Resumes the game thread, recreating if necessary. */
   fun resume(){ 
       if (::thread.isInitialized) {
       if (thread.state == Thread.State.TERMINATED) {
-              // The thread was stopped when the surface was destroyed. Create a
-              // fresh instance so the game can resume correctly.
               Log.w(TAG, "Game thread terminated. Recreating for resume().")
 
               thread = GameThread(holder, this)
@@ -684,7 +664,6 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
           } else if (!thread.running) {
               Log.d(TAG, "Resuming game thread.")
               thread.running = true 
-              // If thread wasn't alive, start it (shouldn't happen often here unless paused before start)
               if (!thread.isAlive) {
                   try {
                       thread.start()
@@ -695,80 +674,81 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
           }
       } else {
           Log.w(TAG, "resume() called but thread is not initialized.")
-          // If thread isn't initialized, we might need to trigger game setup if appropriate
-          // This depends on the expected state when resume is called before initGame
       }
   }
+
+  // --- HUD Management Methods ---
 
   fun setHudView(hudView: InkHudView) {
     this.inkHudView = hudView
   }
   
-  fun getPlayerCoverage(playerIndex: Int): Float {
-    // Needs rework based on player map and potentially localPlayerId mapping
-    // For now, return 0f
+  fun setCoverageHudView(view: CoverageHudView) {
+    this.coverageHudView = view
+  }
+
+  fun setZoneHudView(view: ZoneHudView) {
+    this.zoneHudView = view
+  }
+
+  fun setTimerHudView(view: TimerHudView) {
+    this.timerHudView = view
+  }
+  
+  // --- Game State Query Methods ---
+  
+  fun getPlayerCoverage(): Float {
     return 0f
   }
 
-  /** Helper to safely get the current level instance. */
   fun getCurrentLevel(): Level? {
       Log.v(TAG, "getCurrentLevel called. currentLevel is null: ${currentLevel == null}")
       return currentLevel
   }
 
-  /** Helper to get the IDs of currently active players in the local map. */
   fun getActivePlayerIds(): Set<String> {
       Log.v(TAG, "getActivePlayerIds called. Player keys: ${players.keys}")
       return players.keys
   }
 
+  // --- Game Initialization and Management ---
+
   /**
-   * Call this once the shared mazeSeed is available (after host/join completes).
-   * It will create the maze, players, and a NEW GameThread instance.
+   * Initializes a new game instance with the specified maze complexity.
+   * Creates the level, processes pending player states, and prepares a new game thread.
+   * Should be called after multiplayer setup is complete and maze seed is available.
    */
   fun initGame(mazeComplexity: String = HomeActivity.COMPLEXITY_HIGH) {
     Log.d(TAG, "initGame called with mazeComplexity: $mazeComplexity")
-    // Stop any running thread before initializing
     stopThread()
     
-    // Initialize surface if not already done
     if (!::surface.isInitialized) {
         Log.d(TAG, "Surface not initialized, creating new surface")
         surface = PaintSurface(width, height)
     }
     
-    // Clear paint surface to ensure fresh start
     clearPaintSurface()
     
     val seed = multiplayerManager?.mazeSeed ?: System.currentTimeMillis()
 
-    // Determine the height of the coverage HUD to avoid drawing the maze beneath it
     val hudHeight = coverageHudView?.height
         ?: coverageHudView?.layoutParams?.height
         ?: 0
 
-    // Create the level with the synchronized seed, complexity, and reserved top margin
-
     currentLevel = MazeLevel(width, height, 12, 20, 12f, seed, mazeComplexity, hudHeight)
     Log.d(TAG, "Created maze with viewport offset: ${(currentLevel as MazeLevel).getViewportOffset()}")
     
-    // Clear previous game objects for a fresh start (especially for rematches)
     players.clear()
     joysticks.clear()
 
-    // Process any player states that arrived before currentLevel was initialized
     if (pendingPlayerStates.isNotEmpty()) {
         Log.d(TAG, "Processing ${pendingPlayerStates.size} pending player states in initGame.")
-        // Iterate over a copy of keys or entries if modification during iteration is possible,
-        // though onPlayerStateChanged should now handle its own logic based on currentLevel.
-        for ((pId, state) in pendingPlayerStates.toMap()) { // Use .toMap() for safe iteration against concurrent modification
-            // --- START: Skip processing local player's pending state --- 
+        for ((pId, state) in pendingPlayerStates.toMap()) {
             if (pId == this.localPlayerId) {
                 Log.d(TAG, "Skipping pending state processing for local player $pId in initGame. Will be handled by setLocalPlayerId.")
                 continue
             }
-            // --- END: Skip processing --- 
-            if (state.active) { // Ensure we only try to process active states
+            if (state.active) {
                 Log.d(TAG, "Attempting to process pending state for active player: $pId")
                 try {
                     actuallyProcessPlayerState(pId, state)
@@ -779,39 +759,21 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
                 Log.w(TAG, "Skipping inactive pending player state for $pId in initGame.")
             }
         }
-        pendingPlayerStates.clear() // Clear after attempting to process them
+        pendingPlayerStates.clear()
     }
     
-    // Ensure match isn't considered ready until startGameMode is called
     isMatchReady = false
-    
-    // Create a new thread instance for the new game/match
     thread = GameThread(holder, this)
     Log.d(TAG, "New GameThread instance created.")
-
-    // Do NOT start the thread here; wait for startGameLoop() call
     Log.d(TAG, "initGame: Created maze with seed: $seed, complexity: $mazeComplexity")
     Log.d(TAG, "initGame: Cleared previous game objects. Players: ${players.size}, Joysticks: ${joysticks.size}")
     Log.d(TAG, "initGame: Processed pending player states. Remaining: ${pendingPlayerStates.size}")
     Log.d(TAG, "initGame: New GameThread instance created. Thread state: ${thread.state}")
   }
 
-  /**
-   * Assign the coverage HUD for showing game coverage.
-   */
-  fun setCoverageHudView(view: CoverageHudView) {
-    this.coverageHudView = view
-  }
-
-  /**
-   * Assign the zone HUD for showing zone ownership.
-   */
-  fun setZoneHudView(view: ZoneHudView) {
-    this.zoneHudView = view
-  }
-
-  /**
-   * Start the given game mode for the specified duration (ms).
+  /** 
+   * Starts the specified game mode with timer and initializes HUD states.
+   * Sets up initial coverage/zone displays and marks the match as ready for updates.
    */
   fun startGameMode(mode: GameMode, durationMs: Long, startTime: Long? = null) {
     Log.d(TAG, "startGameMode called with mode: $mode, durationMs: $durationMs, startTime: $startTime")
@@ -823,14 +785,12 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
     gameModeManager?.start()
     isMatchReady = true
 
-    // Ensure correct HUD visibility and initial state when mode is set
     Handler(Looper.getMainLooper()).post {
         try {
             when (mode) {
                 GameMode.COVERAGE -> {
                     coverageHudView?.visibility = View.VISIBLE
                     zoneHudView?.visibility = View.GONE
-                    // Initial update for coverage HUD with 0% for active players
                     val initialStats = players.values.map { it.getColor() to 0f }.toMap()
                     val leftColor = players["player0"]?.getColor()
                     val rightColor = players["player1"]?.getColor()
@@ -839,10 +799,9 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
                 GameMode.ZONES -> {
                     zoneHudView?.visibility = View.VISIBLE
                     coverageHudView?.visibility = View.GONE
-                    // Initial update for zone HUD (empty or neutral zones)
                     val leftColor = players["player0"]?.getColor()
                     val rightColor = players["player1"]?.getColor()
-                    zoneHudView?.updateZones(emptyMap(), leftColor, rightColor) // Assuming empty map means neutral
+                    zoneHudView?.updateZones(emptyMap(), leftColor, rightColor)
                 }
             }
         } catch (e: Exception) {
@@ -851,21 +810,19 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
     }
   }
 
-  /** Clears the paint surface (removes all painted areas) */
+  /** Clears all painted areas and resets match end notification state. */
   fun clearPaintSurface() {
     if (::surface.isInitialized) surface.clear()
     endNotified = false
   }
 
-  /** Assign the timer HUD for showing match countdown. */
-  fun setTimerHudView(view: TimerHudView) {
-    this.timerHudView = view
-  }
-
-  // When match finishes, log the reason and handle win/loss
+  /** 
+   * Calculates match winner and triggers completion callback.
+   * Handles both Coverage and Zones game mode victory conditions.
+   */
   private fun finishMatch(reason: String = "unknown") {
       Log.i(TAG, "finishMatch called. Reason: $reason")
-      var didWin = false // Default to loss
+      var didWin = false
       try {
           if (gameModeManager?.mode == GameMode.COVERAGE && currentLevel is MazeLevel) {
               val allStats = (currentLevel as MazeLevel).calculateCoverage(surface)
@@ -874,7 +831,7 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
               val activeStats = allStats.filterKeys { it in activeColors }
               val localFrac = if (localColor != null) activeStats[localColor] ?: 0f else 0f
               val maxOther = activeStats.filterKeys { it != localColor }.values.maxOrNull() ?: 0f
-              didWin = localFrac >= maxOther // Win includes tie
+              didWin = localFrac >= maxOther
           } else if (gameModeManager?.mode == GameMode.ZONES && currentLevel is MazeLevel) {
               val zoneOwnership = ZoneOwnershipCalculator.calculateZoneOwnership(
                   currentLevel as MazeLevel,
@@ -882,19 +839,18 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
               )
               val localColor = getLocalPlayer()?.getColor()
               
-              // Count zones controlled by local player vs others
               var localZones = 0
               var otherZones = 0
               
               for (ownerColor in zoneOwnership.values) {
                   when (ownerColor) {
                       localColor -> localZones++
-                      null -> {} // Neutral zone, doesn't count for anyone
+                      null -> {}
                       else -> otherZones++
                   }
               }
               
-              didWin = localZones >= otherZones // Win includes tie
+              didWin = localZones >= otherZones
               Log.i(TAG, "finishMatch: Zones mode - Local zones: $localZones, Other zones: $otherZones")
           }
       } catch (e: Exception) {
@@ -908,17 +864,21 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
   }
 }
 
+/**
+ * Dedicated rendering thread for smooth game loop execution.
+ * Handles frame timing, surface validation, and safe canvas operations
+ * with delta time calculation for consistent frame-rate independent updates.
+ */
 class GameThread(private val sh:SurfaceHolder,private val gv:GameView):Thread(){
   var running=false
-  private val TAG = "GameThread" // Added TAG for logging
-  private var lastTimeNanos: Long = System.nanoTime() // For delta time calculation
+  private val TAG = "GameThread"
+  private var lastTimeNanos: Long = System.nanoTime()
 
   override fun run(){ 
       Log.i(TAG, "run() started. Initial running state: $running")
-      lastTimeNanos = System.nanoTime() // Initialize lastTimeNanos before the loop starts
+      lastTimeNanos = System.nanoTime()
       try {
           while(running){ 
-              // --- SAFETY CHECK: Ensure surface is valid before drawing ---
               if (!sh.surface.isValid) {
                   Log.w(TAG, "Surface is not valid, skipping frame.")
                   try { Thread.sleep(8) } catch (e: InterruptedException) { /* ignore */ }
@@ -927,12 +887,12 @@ class GameThread(private val sh:SurfaceHolder,private val gv:GameView):Thread(){
               val currentTimeNanos = System.nanoTime()
               val deltaTimeSeconds = (currentTimeNanos - lastTimeNanos) / 1_000_000_000.0f
               lastTimeNanos = currentTimeNanos
-              var c: Canvas? = null // Declare c outside try so it can be logged in finally
+              var c: Canvas? = null
               try {
                   c = sh.lockCanvas()
                   if(c!=null){ 
                       try {
-                          gv.update(deltaTimeSeconds) // Pass deltaTime here
+                          gv.update(deltaTimeSeconds)
                       } catch (e: Exception) {
                           Log.e(TAG, "Exception in GameView.update()", e)
                       }
@@ -942,14 +902,12 @@ class GameThread(private val sh:SurfaceHolder,private val gv:GameView):Thread(){
                           Log.e(TAG, "Exception in GameView.draw()", e)
                       }
                   } else {
-                      // If canvas is consistently null, the surface might not be ready or valid.
                       Log.w(TAG, "lockCanvas() returned null. Surface may not be ready.")
                       try { Thread.sleep(16) } catch (e: InterruptedException) { /* ignore */ }
                   }
               } catch (e: Exception) {
                   Log.e(TAG, "Exception in GameThread run loop (lockCanvas or unlock)", e)
               } finally {
-                  // --- SAFETY CHECK: Only unlock if surface is still valid ---
                   if (c != null) {
                       if (sh.surface.isValid) {
                           try {

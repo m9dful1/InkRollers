@@ -9,9 +9,12 @@ import java.util.Stack
 import android.util.Log
 
 /**
- * A perfect maze: exactly one path between any two cells.
- * Generates a rectangular grid of cells, builds wall rectangles for collision,
- * and exposes simple draw() / update() hooks.
+ * Perfect maze level implementation using depth-first search generation with 180-degree rotational symmetry.
+ * 
+ * Generates a rectangular grid maze where exactly one path exists between any two cells, then applies
+ * selective braiding to create multiple paths while maintaining symmetry. Handles coordinate conversion
+ * between screen space and normalized coordinates for multiplayer synchronization. Provides collision
+ * detection, zone definitions for game modes, and player spawn positioning.
  */
 class MazeLevel(
     private val screenW: Int,
@@ -80,37 +83,24 @@ class MazeLevel(
         buildWallRects()
     }
 
-    /**
-     * Calculate scaling factors to ensure proper proportions
-     * while ensuring the entire maze is visible
-     */
+    /** Calculates scaling and positioning to center the maze within available screen space. */
     private fun calculateScaling() {
-        // Calculate cell size based on screen dimensions and desired cell count
-        // Apply a safety margin (0.9) to ensure the maze doesn't touch screen edges
         val safetyMargin = 0.9f
-
-        // Account for reserved top margin so the maze fits below overlay UI.
         val availableHeight = (screenH - topMargin).toFloat()
         val cellW = (screenW.toFloat() * safetyMargin) / cellsX
         val cellH = (availableHeight * safetyMargin) / cellsY
         
-        // Use the smaller dimension to ensure square cells and full visibility
         cellSize = minOf(cellW, cellH)
-        
-        // Calculate the actual maze dimensions after scaling
         mazeWidth = cellSize * cellsX
         mazeHeight = cellSize * cellsY
-        
-        // Center the maze on screen
         viewportOffsetX = (screenW - mazeWidth) / 2
         viewportOffsetY = topMargin + (availableHeight - mazeHeight) / 2
-        
-        // Scale walls thickness proportionally but with a min/max bound
-        scale = minOf(maxOf(cellSize / 64f, 0.5f), 2.0f) // Keep scale between 0.5 and 2.0
+        scale = minOf(maxOf(cellSize / 64f, 0.5f), 2.0f)
         
         Log.d("MazeLevel", "Scaling: cellSize=$cellSize, offset=($viewportOffsetX,$viewportOffsetY), scale=$scale, maze size=${mazeWidth}x${mazeHeight}")
     }
 
+    /** Initializes wall grids and generates the complete maze structure. */
     private fun generateGrids() {
         // allocate wall grids with the now‑known sizes
         horizontalWalls = Array(cellsY + 1) { BooleanArray(cellsX) { true } }
@@ -119,31 +109,21 @@ class MazeLevel(
         ensureMultiplePaths(minPaths = 3)
     }
 
-    /* -------------------------------------------------------------------- */
-    /*                            Maze Generation                            */
-    /* -------------------------------------------------------------------- */
-
+    /**
+     * Generates perfect maze using depth-first search with 180-degree rotational symmetry.
+     * Every wall removal operation is mirrored to maintain symmetrical maze structure.
+     */
     private fun generateMaze() {
-        /*
-         * 180-degree rotational symmetry:
-         * Every time we remove a wall between (x,y) and its neighbour in direction dir,
-         * we also remove the opposite wall of the rotated cell (rx,ry).
-         * We mark both cells as visited together so the DFS never carves them twice.
-         */
-
         fun oppositeDir(d: Int): Int = when (d) { 0 -> 1; 1 -> 0; 2 -> 3; else -> 2 }
 
-        // helper that knocks down chosen wall + its rotated counterpart
         fun knockDownWall(x: Int, y: Int, dir: Int) {
-            // original
             when (dir) {
-                0 -> horizontalWalls[y][x] = false            // north
-                1 -> horizontalWalls[y + 1][x] = false        // south
-                2 -> verticalWalls[y][x + 1] = false          // east
-                3 -> verticalWalls[y][x] = false              // west
+                0 -> horizontalWalls[y][x] = false
+                1 -> horizontalWalls[y + 1][x] = false
+                2 -> verticalWalls[y][x + 1] = false
+                3 -> verticalWalls[y][x] = false
             }
 
-            // rotated counterpart
             val rx = cellsX - 1 - x
             val ry = cellsY - 1 - y
             val rDir = oppositeDir(dir)
@@ -170,12 +150,11 @@ class MazeLevel(
         val rnd = Random(seed)
 
         while (visited.any { row -> row.any { !it } }) {
-            // collect unvisited neighbours of (cx,cy)
-            val nbrs = mutableListOf<Triple<Int, Int, Int>>() // dx,dy,dir
-            if (cy > 0 && !visited[cy - 1][cx]) nbrs += Triple(0, -1, 0) // north
-            if (cy < cellsY - 1 && !visited[cy + 1][cx]) nbrs += Triple(0, 1, 1) // south
-            if (cx < cellsX - 1 && !visited[cy][cx + 1]) nbrs += Triple(1, 0, 2) // east
-            if (cx > 0 && !visited[cy][cx - 1]) nbrs += Triple(-1, 0, 3) // west
+            val nbrs = mutableListOf<Triple<Int, Int, Int>>()
+            if (cy > 0 && !visited[cy - 1][cx]) nbrs += Triple(0, -1, 0)
+            if (cy < cellsY - 1 && !visited[cy + 1][cx]) nbrs += Triple(0, 1, 1)
+            if (cx < cellsX - 1 && !visited[cy][cx + 1]) nbrs += Triple(1, 0, 2)
+            if (cx > 0 && !visited[cy][cx - 1]) nbrs += Triple(-1, 0, 3)
 
             if (nbrs.isNotEmpty()) {
                 val (dx, dy, dir) = nbrs.random(rnd)
@@ -193,7 +172,6 @@ class MazeLevel(
                 cx = bx
                 cy = by
             } else {
-                // find any unvisited cell to continue
                 outer@ for (y in 0 until cellsY) {
                     for (x in 0 until cellsX) {
                         if (!visited[y][x]) { cx = x; cy = y; break@outer }
@@ -205,12 +183,10 @@ class MazeLevel(
     }
 
     /**
-     * Ensures there are at least [minPaths] distinct, mirrored paths from entrance to exit.
-     * Uses a braiding approach: after generating a perfect maze, selectively removes walls (and their mirrored counterparts)
-     * to create additional connections, while maintaining 180-degree rotational symmetry.
+     * Creates multiple paths by selectively removing walls while maintaining symmetry.
+     * Uses path counting and braiding to ensure at least the specified number of distinct paths exist.
      */
     private fun ensureMultiplePaths(minPaths: Int) {
-        // Helper to count all unique non-cyclic paths from ENTRANCE to EXIT (DFS, with early exit if over minPaths)
         fun countPaths(maxCount: Int = Int.MAX_VALUE): Int {
             val visited = Array(cellsY) { BooleanArray(cellsX) }
             var pathCount = 0
@@ -221,12 +197,11 @@ class MazeLevel(
                 }
                 if (pathCount >= maxCount) return
                 visited[y][x] = true
-                // For each direction, check if wall is open and cell is not visited
                 val dirs = listOf(
-                    Triple(0, -1, 0), // north
-                    Triple(0, 1, 1),  // south
-                    Triple(1, 0, 2),  // east
-                    Triple(-1, 0, 3)  // west
+                    Triple(0, -1, 0),
+                    Triple(0, 1, 1),
+                    Triple(1, 0, 2),
+                    Triple(-1, 0, 3)
                 )
                 for ((dx, dy, dir) in dirs) {
                     val nx = x + dx
@@ -251,26 +226,22 @@ class MazeLevel(
             return pathCount
         }
 
-        // Helper to check if a wall is removable (not on boundary, not already open)
         fun isRemovableWall(x: Int, y: Int, dir: Int): Boolean {
-            // Don't braid outer boundary
             return when (dir) {
-                0 -> y > 0 && horizontalWalls[y][x] // north
-                1 -> y < cellsY - 1 && horizontalWalls[y + 1][x] // south
-                2 -> x < cellsX - 1 && verticalWalls[y][x + 1] // east
-                3 -> x > 0 && verticalWalls[y][x] // west
+                0 -> y > 0 && horizontalWalls[y][x]
+                1 -> y < cellsY - 1 && horizontalWalls[y + 1][x]
+                2 -> x < cellsX - 1 && verticalWalls[y][x + 1]
+                3 -> x > 0 && verticalWalls[y][x]
                 else -> false
             }
         }
 
-        // Try to braid until at least minPaths exist, or a reasonable number of attempts
-        val rnd = Random(seed + 42) // Different seed for braiding
+        val rnd = Random(seed + 42)
         val candidateWalls = mutableListOf<Triple<Int, Int, Int>>()
         for (y in 0 until cellsY) {
             for (x in 0 until cellsX) {
                 for (dir in 0..3) {
                     if (isRemovableWall(x, y, dir)) {
-                        // Only consider one of each mirrored pair
                         val rx = cellsX - 1 - x
                         val ry = cellsY - 1 - y
                         if (y < ry || (y == ry && x <= rx)) {
@@ -285,7 +256,6 @@ class MazeLevel(
         val maxAttempts = candidateWalls.size * 2
         while (countPaths(minPaths) < minPaths && attempts < maxAttempts && candidateWalls.isNotEmpty()) {
             val (x, y, dir) = candidateWalls.removeAt(0)
-            // Remove wall and its mirrored counterpart
             fun knockDownWallPair(x: Int, y: Int, dir: Int) {
                 when (dir) {
                     0 -> horizontalWalls[y][x] = false
@@ -308,19 +278,14 @@ class MazeLevel(
         }
     }
 
-    /* -------------------------------------------------------------------- */
-    /*                        Wall Rectangle Builder                         */
-    /* -------------------------------------------------------------------- */
-
+    /** Converts wall grid data into screen-space rectangles for collision detection and rendering. */
     private fun buildWallRects() {
-        // Use scaled cell size for all calculations
         val scaledWallThickness = wallThickness * scale
         val halfThick = scaledWallThickness / 2f
 
-        wallRects.clear() // Clear existing rects if any (e.g. if called multiple times)
+        wallRects.clear()
 
-        // horizontal walls
-        for (row in 0..cellsY) {            // note: horizontalWalls size is cellsY+1
+        for (row in 0..cellsY) {
             for (col in 0 until cellsX) {
                 if (horizontalWalls[row][col]) {
                     val yCenter = viewportOffsetY + row * cellSize
@@ -336,9 +301,8 @@ class MazeLevel(
             }
         }
 
-        // vertical walls
         for (row in 0 until cellsY) {
-            for (col in 0..cellsX) {        // verticalWalls size is cellsX+1
+            for (col in 0..cellsX) {
                 if (verticalWalls[row][col]) {
                     val xCenter = viewportOffsetX + col * cellSize
                     val yStart = viewportOffsetY + row * cellSize
@@ -358,58 +322,35 @@ class MazeLevel(
     /*                             Level API                                 */
     /* -------------------------------------------------------------------- */
 
-    override fun update(): Boolean {
-        // no dynamic behaviour yet
-        return false
-    }
+    override fun update(): Boolean = false
 
     override fun draw(canvas: Canvas) {
-        // Log.d(TAG, "MazeLevel.draw() called. Number of wallRects: ${wallRects.size}")
-        if (wallRects.isNotEmpty()) {
-            // Log.d(TAG, "MazeLevel.draw() - First wall rect: ${wallRects.first()}")
-        }
         wallRects.forEach { canvas.drawRect(it, paint) }
-        // Log.d(TAG, "MazeLevel.draw() - Finished drawing walls.")
     }
 
-    /* Helper for collision queries */
+    /** Returns all wall rectangles for advanced collision queries. */
     fun getWalls(): List<RectF> = wallRects
 
-    /** 
-     * Returns per‑color coverage; Maze itself has no paint so we delegate later.
-     * For now this satisfies the Level interface.
-     */
+    /** Delegates coverage calculation to CoverageCalculator with optimized sampling. */
     override fun calculateCoverage(paintSurface: PaintSurface): Map<Int, Float> {
-        // Delegate to CoverageCalculator with default sampling step
         return CoverageCalculator.calculate(this, paintSurface, sampleStep = (cellSize / 4).toInt().coerceAtLeast(1))
     }
 
-    /**
-     * Convert screen coordinates to maze-relative coordinates (normalized 0-1 range)
-     * This ensures coordinates can be properly synchronized across different devices
-     */
+    /** Converts screen coordinates to normalized maze coordinates for multiplayer synchronization. */
     fun screenToMazeCoord(x: Float, y: Float): Pair<Float, Float> {
-        // Subtract viewport offset before normalizing
         val relX = (x - viewportOffsetX) / mazeWidth
         val relY = (y - viewportOffsetY) / mazeHeight
         return Pair(relX, relY)
     }
 
-    /**
-     * Convert maze-relative coordinates (normalized 0-1 range) to screen coordinates
-     * This allows consistent positioning across different screen sizes and orientations
-     */
+    /** Converts normalized maze coordinates to screen coordinates for rendering and input. */
     fun mazeToScreenCoord(relX: Float, relY: Float): Pair<Float, Float> {
-        // Add viewport offset after denormalizing
         val screenX = viewportOffsetX + (relX * mazeWidth)
         val screenY = viewportOffsetY + (relY * mazeHeight)
         return Pair(screenX, screenY)
     }
 
-    /**
-     * Simple point‑vs‑wall test used by GameView/Player.
-     * Returns true if (x,y) intersects any wall rectangle.
-     */
+    /** Returns true if the specified point intersects any wall rectangle. */
     override fun checkCollision(x: Float, y: Float): Boolean {
         for (rect in wallRects) {
             if (rect.contains(x, y)) return true
@@ -417,23 +358,17 @@ class MazeLevel(
         return false
     }
 
-    /**
-     * Returns the starting (x,y) in screen pixels for each player.
-     * Player 0 starts at the entrance (NW), player 1 at the exit (SE).
-     * Additional players are placed at different corners.
-     */
+    /** Returns starting screen coordinates for players at maze corners. */
     override fun getPlayerStartPosition(playerIndex: Int): Pair<Float, Float> {
-        // Use different corners for up to 4 players
         val position = when (playerIndex % 4) {
-            0 -> ENTRANCE // Top-left
-            1 -> EXIT     // Bottom-right
-            2 -> Pair(cellsX - 1, 0) // Top-right
-            3 -> Pair(0, cellsY - 1) // Bottom-left
-            else -> ENTRANCE // Fallback
+            0 -> ENTRANCE
+            1 -> EXIT
+            2 -> Pair(cellsX - 1, 0)
+            3 -> Pair(0, cellsY - 1)
+            else -> ENTRANCE
         }
         
         val (cx, cy) = position
-        // centre of the target cell
         val px = viewportOffsetX + cx * cellSize + cellSize / 2
         val py = viewportOffsetY + cy * cellSize + cellSize / 2
         
@@ -441,28 +376,15 @@ class MazeLevel(
         return px to py
     }
     
-    /**
-     * Returns the viewport offset to ensure correct painting coordinates
-     */
-    fun getViewportOffset(): Pair<Float, Float> {
-        return viewportOffsetX to viewportOffsetY
-    }
+    /** Returns viewport offset for coordinate system alignment. */
+    fun getViewportOffset(): Pair<Float, Float> = viewportOffsetX to viewportOffsetY
     
-    /**
-     * Returns the scale factor being used
-     */
-    fun getScale(): Float {
-        return scale
-    }
+    /** Returns current scale factor used for proportional rendering. */
+    fun getScale(): Float = scale
     
-    /**
-     * Get the zones defined for this maze level (for Zones game mode).
-     * Returns 6 zones arranged in a 2x3 grid in normalized coordinates (0.0-1.0).
-     */
+    /** Returns normalized zone boundaries for Zones game mode in a 2x3 grid layout. */
     override fun getZones(): List<RectF> {
         val zones = mutableListOf<RectF>()
-        
-        // Create a 2x3 grid of zones (2 rows, 3 columns)
         val rows = 2
         val cols = 3
         val zoneWidth = 1.0f / cols

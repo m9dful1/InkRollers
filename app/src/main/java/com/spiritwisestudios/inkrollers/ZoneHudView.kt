@@ -9,8 +9,11 @@ import android.util.AttributeSet
 import android.view.View
 
 /**
- * HUD overlay to display zone ownership for Zones game mode.
- * Shows a mini-map grid where each cell represents a zone.
+ * HUD component displaying zone control status for Zones game mode.
+ * 
+ * Shows a 2x3 grid mini-map where each cell represents a zone in the maze.
+ * Zones are colored by their controlling player, with numbered labels and
+ * a score summary showing zone counts for each player.
  */
 class ZoneHudView @JvmOverloads constructor(
     context: Context,
@@ -48,12 +51,7 @@ class ZoneHudView @JvmOverloads constructor(
     private val zoneCols = 3
     private val totalZones = zoneRows * zoneCols
 
-    /**
-     * Update zone ownership and redraw.
-     * @param ownership Map of zone index to owner color (null if uncontrolled)
-     * @param leftColor Color value for the player on the left side
-     * @param rightColor Color value for the player on the right side
-     */
+    /** Updates zone ownership data and triggers redraw. Called by GameView during Zones mode. */
     fun updateZones(
         ownership: Map<Int, Int?>,
         leftColor: Int? = this.leftPlayerColor,
@@ -73,14 +71,11 @@ class ZoneHudView @JvmOverloads constructor(
         val viewWidth = width.toFloat()
         val viewHeight = height.toFloat()
         
-        // Draw background
         canvas.drawRect(0f, 0f, viewWidth, viewHeight, backgroundPaint)
         
-        // Calculate zone cell dimensions
         val cellWidth = viewWidth / zoneCols
         val cellHeight = viewHeight / zoneRows
         
-        // Draw each zone
         for (zoneIndex in 0 until totalZones) {
             val row = zoneIndex / zoneCols
             val col = zoneIndex % zoneCols
@@ -92,7 +87,6 @@ class ZoneHudView @JvmOverloads constructor(
             
             val zoneRect = RectF(left + 1, top + 1, right - 1, bottom - 1)
             
-            // Get zone owner color
             val ownerColor = zoneOwnership[zoneIndex]
             
             if (ownerColor != null) {
@@ -100,26 +94,23 @@ class ZoneHudView @JvmOverloads constructor(
                 canvas.drawRect(zoneRect, zonePaint)
             }
             
-            // Draw zone border
             canvas.drawRect(zoneRect, borderPaint)
             
-            // Draw zone number
             val centerX = (left + right) / 2
             val centerY = (top + bottom) / 2 + textPaint.textSize / 3
             canvas.drawText((zoneIndex + 1).toString(), centerX, centerY, textPaint)
         }
         
-        // Draw player score summary at the bottom
         drawScoreSummary(canvas, viewWidth, viewHeight)
     }
     
+    /** Renders player zone counts at the bottom of the HUD. */
     private fun drawScoreSummary(canvas: Canvas, viewWidth: Float, viewHeight: Float) {
         val leftColor = leftPlayerColor
         val rightColor = rightPlayerColor
         
         if (leftColor == null || rightColor == null) return
         
-        // Count zones controlled by each player
         var leftZones = 0
         var rightZones = 0
         var neutralZones = 0
@@ -132,7 +123,6 @@ class ZoneHudView @JvmOverloads constructor(
             }
         }
         
-        // Draw score text at the bottom
         val scoreY = viewHeight - 8f
         val leftText = "P1: $leftZones"
         val rightText = "P2: $rightZones"
@@ -145,7 +135,6 @@ class ZoneHudView @JvmOverloads constructor(
         textPaint.color = rightColor
         canvas.drawText(rightText, viewWidth - 8f, scoreY, textPaint)
         
-        // Reset text paint
         textPaint.textAlign = Paint.Align.CENTER
         textPaint.color = Color.WHITE
     }

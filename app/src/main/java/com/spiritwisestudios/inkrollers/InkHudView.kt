@@ -7,6 +7,13 @@ import android.graphics.Paint
 import android.util.AttributeSet
 import android.view.View
 
+/**
+ * HUD component displaying local player's ink level and current mode.
+ * 
+ * Shows a vertical ink meter (blue bar) and mode text ("PAINT" or "FILL")
+ * positioned on the left side of the screen. Updated by GameView based
+ * on local player state.
+ */
 class InkHudView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
 ) : View(context, attrs, defStyleAttr) {
@@ -19,6 +26,7 @@ class InkHudView @JvmOverloads constructor(
     private val borderPaint = Paint().apply { color = Color.BLACK; style = Paint.Style.STROKE; strokeWidth = 4f }
     private val textPaint = Paint().apply { color = Color.BLACK; textSize = 40f; textAlign = Paint.Align.CENTER }
 
+    /** Updates ink level and mode display. Called by GameView when local player state changes. */
     fun updateHud(inkPercent: Float, modeText: String) {
         this.inkPercent = inkPercent.coerceIn(0f, 1f)
         this.modeText = modeText
@@ -34,18 +42,15 @@ class InkHudView @JvmOverloads constructor(
         val barTop = height * 0.1f
         val barBottom = barTop + barHeight
 
-        // Draw background and border
         canvas.drawRect(barLeft, barTop, barLeft + barWidth, barBottom, barBackgroundPaint)
         canvas.drawRect(barLeft, barTop, barLeft + barWidth, barBottom, borderPaint)
 
-        // Draw ink level
         val inkHeight = barHeight * inkPercent
         val inkTop = barBottom - inkHeight
         canvas.drawRect(barLeft, inkTop, barLeft + barWidth, barBottom, barPaint)
 
-        // Draw mode text
         val textX = width / 2f
-        val textY = height * 0.9f // Below the bar
+        val textY = height * 0.9f
         canvas.drawText(modeText, textX, textY, textPaint)
     }
 } 
