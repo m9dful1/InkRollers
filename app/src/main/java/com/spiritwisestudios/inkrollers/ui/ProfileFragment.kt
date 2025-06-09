@@ -19,6 +19,11 @@ import com.spiritwisestudios.inkrollers.ui.FriendAdapter
 import com.spiritwisestudios.inkrollers.ui.FriendDisplay
 import android.util.Log
 import android.widget.Toast
+import com.spiritwisestudios.inkrollers.HomeActivity
+import com.google.firebase.database.DataSnapshot
+import com.google.firebase.database.DatabaseError
+import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ValueEventListener
 
 class ProfileFragment : Fragment() {
     private lateinit var editPlayerName: TextInputEditText
@@ -134,9 +139,14 @@ class ProfileFragment : Fragment() {
         setupColorPickers()
 
         recyclerFriends.layoutManager = LinearLayoutManager(requireContext())
-        friendAdapter = FriendAdapter(friendDisplays) { friend ->
-            removeFriend(friend)
-        }
+        friendAdapter = FriendAdapter(
+            friendDisplays,
+            onRemove = { friend -> removeFriend(friend) },
+            onJoin = { gameId ->
+                Toast.makeText(requireContext(), "Joining game: $gameId", Toast.LENGTH_SHORT).show()
+                (activity as? HomeActivity)?.startGameActivity(HomeActivity.MODE_JOIN, gameId)
+            }
+        )
         recyclerFriends.adapter = friendAdapter
     }
 
@@ -167,34 +177,71 @@ class ProfileFragment : Fragment() {
 
     private fun loadFriends(friendUids: List<String>) {
         friendDisplays.clear()
+        friendAdapter?.notifyDataSetChanged()
+
         if (friendUids.isEmpty()) {
-            friendAdapter?.notifyDataSetChanged()
             return
         }
-        // Load each friend's profile from Firebase
-        var loadedCount = 0
-        for (uid in friendUids) {
-            ProfileRepository.loadPlayerProfile(uid) { friendProfile ->
-                loadedCount++
-                if (friendProfile != null) {
-                    friendDisplays.add(
-                        FriendDisplay(
-                            uid = friendProfile.uid,
-                            name = friendProfile.playerName,
-                            friendCode = friendProfile.friendCode,
-                            winCount = friendProfile.winCount,
-                            lossCount = friendProfile.lossCount,
-                            isOnline = friendProfile.isOnline
-                        )
-                    )
-                }
-                if (loadedCount == friendUids.size) {
-                    // All loaded
+
+        val totalFriends = friendUids.size
+        var friendsProcessed = 0
+
+        val onFriendProcessed: () -> Unit = {
+            friendsProcessed++
+            if (friendsProcessed == totalFriends) {
+                activity?.runOnUiThread {
                     friendDisplays.sortBy { it.name }
                     friendAdapter?.notifyDataSetChanged()
                 }
             }
         }
+
+        for (uid in friendUids) {
+            ProfileRepository.loadPlayerProfile(uid) { friendProfile ->
+                if (friendProfile == null) {
+                    onFriendProcessed()
+                    return@loadPlayerProfile
+                }
+
+                val lobbyId = friendProfile.currentLobbyId
+                if (!lobbyId.isNullOrEmpty()) {
+                    val gameRef = FirebaseDatabase.getInstance().getReference("games").child(lobbyId)
+                    gameRef.addListenerForSingleValueEvent(object : ValueEventListener {
+                        override fun onDataChange(snapshot: DataSnapshot) {
+                            val isStarted = snapshot.child("started").getValue(Boolean::class.java) ?: false
+                            val playerCount = snapshot.child("players").childrenCount
+                            val isJoinable = !isStarted && playerCount < 4
+
+                            addFriendToList(friendProfile, isJoinable)
+                            onFriendProcessed()
+                        }
+
+                        override fun onCancelled(error: DatabaseError) {
+                            addFriendToList(friendProfile, false)
+                            onFriendProcessed()
+                        }
+                    })
+                } else {
+                    addFriendToList(friendProfile, false)
+                    onFriendProcessed()
+                }
+            }
+        }
+    }
+
+    private fun addFriendToList(friendProfile: PlayerProfile, isJoinable: Boolean) {
+        friendDisplays.add(
+            FriendDisplay(
+                uid = friendProfile.uid,
+                name = friendProfile.playerName,
+                friendCode = friendProfile.friendCode,
+                winCount = friendProfile.winCount,
+                lossCount = friendProfile.lossCount,
+                isOnline = friendProfile.isOnline,
+                currentLobbyId = friendProfile.currentLobbyId,
+                isLobbyJoinable = isJoinable
+            )
+        )
     }
 
     private fun removeFriend(friend: FriendDisplay) {

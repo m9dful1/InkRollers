@@ -61,4 +61,27 @@ object ProfileRepository {
         // Optional: cancel onDisconnect if explicitly signing out but app remains open.
         // profileRef.child("isOnline").onDisconnect().cancel()
     }
+
+    fun updatePlayerLobby(uid: String, lobbyId: String?, onComplete: (Boolean) -> Unit) {
+        if (uid.isEmpty()) {
+            onComplete(false)
+            return
+        }
+        val profileRef = FirebaseDatabase.getInstance().getReference("profiles").child(uid)
+        profileRef.child("currentLobbyId").setValue(lobbyId)
+            .addOnSuccessListener { onComplete(true) }
+            .addOnFailureListener { onComplete(false) }
+    }
+
+    fun setLobbyOnDisconnect(uid: String) {
+        if (uid.isEmpty()) return
+        val lobbyRef = FirebaseDatabase.getInstance().getReference("profiles").child(uid).child("currentLobbyId")
+        lobbyRef.onDisconnect().setValue(null)
+    }
+
+    fun cancelLobbyOnDisconnect(uid: String) {
+        if (uid.isEmpty()) return
+        val lobbyRef = FirebaseDatabase.getInstance().getReference("profiles").child(uid).child("currentLobbyId")
+        lobbyRef.onDisconnect().cancel()
+    }
 } 

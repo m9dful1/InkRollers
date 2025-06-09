@@ -6,6 +6,7 @@ import android.view.ViewGroup
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.TextView
+import android.widget.Button
 import androidx.recyclerview.widget.RecyclerView
 import com.spiritwisestudios.inkrollers.R
 
@@ -15,12 +16,15 @@ data class FriendDisplay(
     val friendCode: String,
     val winCount: Int,
     val lossCount: Int,
-    val isOnline: Boolean
+    val isOnline: Boolean,
+    val currentLobbyId: String? = null,
+    val isLobbyJoinable: Boolean = false
 )
 
 class FriendAdapter(
     private val friends: List<FriendDisplay>,
-    private val onRemove: (FriendDisplay) -> Unit
+    private val onRemove: (FriendDisplay) -> Unit,
+    private val onJoin: (String) -> Unit
 ) : RecyclerView.Adapter<FriendAdapter.FriendViewHolder>() {
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): FriendViewHolder {
         val view = LayoutInflater.from(parent.context).inflate(R.layout.item_friend, parent, false)
@@ -28,7 +32,7 @@ class FriendAdapter(
     }
 
     override fun onBindViewHolder(holder: FriendViewHolder, position: Int) {
-        holder.bind(friends[position], onRemove)
+        holder.bind(friends[position], onRemove, onJoin)
     }
 
     override fun getItemCount(): Int = friends.size
@@ -39,8 +43,9 @@ class FriendAdapter(
         private val winLoss: TextView = itemView.findViewById(R.id.text_friend_win_loss)
         private val btnRemove: ImageButton = itemView.findViewById(R.id.btn_remove_friend)
         private val onlineStatusIndicator: ImageView = itemView.findViewById(R.id.image_online_status)
+        private val btnJoin: Button = itemView.findViewById(R.id.btn_join_game)
 
-        fun bind(friend: FriendDisplay, onRemove: (FriendDisplay) -> Unit) {
+        fun bind(friend: FriendDisplay, onRemove: (FriendDisplay) -> Unit, onJoin: (String) -> Unit) {
             name.text = friend.name
             code.text = friend.friendCode
             winLoss.text = "${friend.winCount} / ${friend.lossCount}"
@@ -50,6 +55,15 @@ class FriendAdapter(
                 onlineStatusIndicator.visibility = View.VISIBLE
             } else {
                 onlineStatusIndicator.visibility = View.GONE
+            }
+
+            if (friend.isLobbyJoinable && !friend.currentLobbyId.isNullOrEmpty()) {
+                btnJoin.visibility = View.VISIBLE
+                btnJoin.setOnClickListener {
+                    onJoin(friend.currentLobbyId)
+                }
+            } else {
+                btnJoin.visibility = View.GONE
             }
         }
     }

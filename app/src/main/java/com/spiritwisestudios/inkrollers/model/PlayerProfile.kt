@@ -22,7 +22,8 @@ data class PlayerProfile(
     var friends: List<String> = listOf(),
     var winCount: Int = 0,
     var lossCount: Int = 0,
-    var isOnline: Boolean = false // New field for online status
+    var isOnline: Boolean = false, // New field for online status
+    var currentLobbyId: String? = null // New field for the lobby the player is currently in
 ) {
     fun isValidColorSelection(): Boolean {
         return favoriteColors.size == 3 &&

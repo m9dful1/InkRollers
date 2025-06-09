@@ -10,6 +10,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.ktx.auth
 import android.os.Handler
 import java.util.Date
+import com.spiritwisestudios.inkrollers.repository.ProfileRepository
 
 // Data class to hold game settings read by clients
 data class GameSettings(val durationMs: Long, val complexity: String, val gameMode: String)
@@ -160,14 +161,16 @@ class MultiplayerManager(private val context: android.content.Context? = null) {
         clearListeners()
         performStaleGameCleanup()
         
-        if (auth.currentUser == null) {
+        val currentUser = auth.currentUser
+        if (currentUser == null) {
             Log.e(TAG, "Cannot host game: User not authenticated")
             onDatabaseError?.invoke("Authentication required to host game")
             callback(false, null, null)
             return
         }
-        Log.d(TAG, "User authenticated with UID: ${auth.currentUser?.uid}, proceeding with hostGame")
+        Log.d(TAG, "User authenticated with UID: ${currentUser.uid}, proceeding with hostGame")
         
+        initialPlayerState.uid = currentUser.uid
         currentGameId = generateGameId()
         gameRef = database.getReference(GAMES_NODE).child(currentGameId!!)
         playersRef = gameRef?.child("players")
@@ -222,6 +225,15 @@ class MultiplayerManager(private val context: android.content.Context? = null) {
                                 Log.d(TAG, "Verified game data was written correctly (mazeSeed matches)")
                                 updateLastActivityTimestamp()
                                 setupFirebaseListeners()
+                                auth.currentUser?.uid?.let { uid ->
+                                    ProfileRepository.updatePlayerLobby(uid, currentGameId) { success ->
+                                        if (success) {
+                                            ProfileRepository.setLobbyOnDisconnect(uid)
+                                        } else {
+                                            Log.w(TAG, "Failed to update player lobby ID for host.")
+                                        }
+                                    }
+                                }
                                 callback(true, currentGameId, gameSettings)
                             } else {
                                 Log.e(TAG, "Game data verification failed - mazeSeed doesn't match: stored=$storedSeed, local=$mazeSeed")
@@ -273,13 +285,16 @@ class MultiplayerManager(private val context: android.content.Context? = null) {
     fun joinGame(gameId: String?, initialPlayerState: PlayerState, callback: (success: Boolean, playerId: String?, gameSettings: GameSettings?) -> Unit) {
         clearListeners()
         
-        if (auth.currentUser == null) {
+        val currentUser = auth.currentUser
+        if (currentUser == null) {
             Log.e(TAG, "Cannot join game: User not authenticated")
             onDatabaseError?.invoke("Authentication required to join game")
             callback(false, null, null)
             return
         }
-        Log.d(TAG, "User authenticated with UID: ${auth.currentUser?.uid}, proceeding with joinGame")
+        Log.d(TAG, "User authenticated with UID: ${currentUser.uid}, proceeding with joinGame")
+        
+        initialPlayerState.uid = currentUser.uid
 
         if (gameId == null) {
             findRandomAvailableGame { randomGameId ->
@@ -361,6 +376,15 @@ class MultiplayerManager(private val context: android.content.Context? = null) {
                         updateLastActivityTimestamp()
                         setupFirebaseListeners()
                         setupRematchListener()
+                        auth.currentUser?.uid?.let { uid ->
+                            ProfileRepository.updatePlayerLobby(uid, currentGameId) { success ->
+                                if (success) {
+                                    ProfileRepository.setLobbyOnDisconnect(uid)
+                                } else {
+                                    Log.w(TAG, "Failed to update player lobby ID for joining client.")
+                                }
+                            }
+                        }
                         callback(true, assignedId, gameSettings)
                     }
                     .addOnFailureListener { e ->
@@ -626,6 +650,15 @@ class MultiplayerManager(private val context: android.content.Context? = null) {
         val gameIdToLeave = currentGameId
         val playerToRemove = localPlayerId
         Log.d(TAG, "Leaving game: $gameIdToLeave as player $playerToRemove")
+
+        auth.currentUser?.uid?.let { uid ->
+            ProfileRepository.cancelLobbyOnDisconnect(uid)
+            ProfileRepository.updatePlayerLobby(uid, null) { success ->
+                if (!success) {
+                    Log.w(TAG, "Failed to clear player lobby ID on leaveGame.")
+                }
+            }
+        }
         
         val gameToRemoveRef = gameRef
         

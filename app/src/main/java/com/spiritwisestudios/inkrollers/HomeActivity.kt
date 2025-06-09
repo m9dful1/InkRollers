@@ -221,7 +221,7 @@ class HomeActivity : AppCompatActivity() {
     }
 
     /** Launches MainActivity with the specified game configuration. */
-    private fun startGameActivity(mode: String, gameId: String? = null, timeLimit: Int = 3, complexity: String = COMPLEXITY_HIGH, gameMode: String = GAME_MODE_COVERAGE, isPrivate: Boolean = false) {
+    fun startGameActivity(mode: String, gameId: String? = null, timeLimit: Int = 3, complexity: String = COMPLEXITY_HIGH, gameMode: String = GAME_MODE_COVERAGE, isPrivate: Boolean = false) {
         android.util.Log.d("HomeActivity", "Starting MainActivity with mode: $mode, gameId: $gameId, timeLimit: $timeLimit, mazeComplexity: $complexity, gameMode: $gameMode, isPrivate: $isPrivate")
         val intent = Intent(this, MainActivity::class.java).apply {
             putExtra(EXTRA_MODE, mode)
