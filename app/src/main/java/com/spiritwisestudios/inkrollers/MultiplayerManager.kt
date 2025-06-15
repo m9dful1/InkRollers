@@ -49,12 +49,10 @@ class MultiplayerManager(private val context: android.content.Context? = null) {
     private var paintRef: DatabaseReference? = null
     private var rematchRef: DatabaseReference? = null
 
-    // Audio manager for multiplayer events
     private val audioManager: com.spiritwisestudios.inkrollers.AudioManager? by lazy {
         context?.let { com.spiritwisestudios.inkrollers.AudioManager.getInstance(it) }
     }
 
-    // Add companion object back
     companion object {
         private const val TAG = "MultiplayerManager"
         internal const val GAMES_NODE = "games"
@@ -72,29 +70,24 @@ class MultiplayerManager(private val context: android.content.Context? = null) {
         const val CLIENT_SIDE_PRE_GAME_VISUAL_COUNTDOWN_MS = 4000L
     }
 
-    // Callback for database error notifications
     var onDatabaseError: ((String) -> Unit)? = null
 
-    // Number of players in this game (used for rematch decision)
+    /** The number of players whose rematch responses are expected. */
     private var expectedRematchCount: Long = 0L
 
-    // Flag to track if initial snapshot has been processed
     private var initialSnapshotProcessed = false
 
-    // New callbacks for pre-match flow: player count and match start requests
     var onPlayerCountChanged: ((Int) -> Unit)? = null
     var onMatchStartRequested: (() -> Unit)? = null
 
     private var playerCountListener: ValueEventListener? = null
     private var startListener: ValueEventListener? = null
     private var startRef: DatabaseReference? = null
-    // To store game settings for clients
     private var gameSettings: GameSettings? = null
     
     // Keep auth instance for potential future use if needed
     private val auth: FirebaseAuth = Firebase.auth
 
-    // Add a connectivity check at initialization
     init {
         testFirebaseConnection()
     }
@@ -125,11 +118,9 @@ class MultiplayerManager(private val context: android.content.Context? = null) {
     var currentGameId: String? = null
         private set
         
-    // Maze seed for the current game
     var mazeSeed: Long = 0
         private set
         
-    // Callback interface for GameView to receive updates
     interface RemoteUpdateListener {
         fun onPlayerStateChanged(playerId: String, newState: PlayerState)
         fun onPlayerRemoved(playerId: String)
@@ -137,19 +128,17 @@ class MultiplayerManager(private val context: android.content.Context? = null) {
     }
     var updateListener: RemoteUpdateListener? = null
 
-    // Keep track of player listeners to remove them correctly
     private val playerListeners = mutableMapOf<String, ValueEventListener>()
     private var gameStructureListener: ValueEventListener? = null // Listener for overall game changes (optional)
-    private var paintListener: ChildEventListener? = null // Listener for paint actions
+    private var paintListener: ChildEventListener? = null
 
     /** Callback to notify when both players have answered rematch: true=both yes, false=at least one no */
     var onRematchDecision: ((Boolean) -> Unit)? = null
 
-    // Add a new flag for rematch coordination
     private var rematchInProgressRef: DatabaseReference? = null
     private var rematchInProgressListener: ValueEventListener? = null
 
-    // Callback for when rematch should actually start (after both YES)
+    /** Callback for when rematch should actually start (after both YES) */
     var onRematchStartSignal: (() -> Unit)? = null
 
     /**
@@ -1106,7 +1095,7 @@ class MultiplayerManager(private val context: android.content.Context? = null) {
     private fun performStaleGameCleanup() {
         Log.d(TAG, "Performing stale game cleanup...")
         val gamesQuery = database.getReference(GAMES_NODE)
-            .orderByChild(CREATED_AT_NODE)
+            .orderByChild(LAST_ACTIVITY_NODE)
             .limitToFirst(MAX_GAMES_TO_SCAN_FOR_CLEANUP)
 
         gamesQuery.addListenerForSingleValueEvent(object : ValueEventListener {

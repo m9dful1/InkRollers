@@ -19,13 +19,11 @@ import android.util.Log
 class MazeLevel(
     private val screenW: Int,
     private val screenH: Int,
-    // Default values for fixedCellsX and fixedCellsY are no longer used directly here,
-    // but kept for potential reference or other constructors if added later.
-    private val _fixedCellsX_default: Int = 12, // Renamed to avoid confusion
-    private val _fixedCellsY_default: Int = 20, // Renamed to avoid confusion
+    private val _fixedCellsX_default: Int = 12,
+    private val _fixedCellsY_default: Int = 20,
     private val wallThickness: Float = 12f,
     private val seed: Long = System.currentTimeMillis(), // Use provided seed or current time as fallback
-    private val complexity: String = HomeActivity.COMPLEXITY_HIGH, // Added complexity parameter
+    private val complexity: String = HomeActivity.COMPLEXITY_HIGH,
 
     /**
      * Top margin (in pixels) reserved for overlay UI such as the coverage HUD.
@@ -62,12 +60,12 @@ class MazeLevel(
     private val paint = Paint().apply { color = Color.parseColor("#C0C0C0") }
     
     // Viewport variables to handle proper scaling and positioning
-    private var cellSize: Float = 0f   // Size of one cell in pixels
-    private var viewportOffsetX: Float = 0f    // X offset to center the maze
-    private var viewportOffsetY: Float = 0f    // Y offset to center the maze
-    private var mazeWidth: Float = 0f  // Total maze width in pixels
-    private var mazeHeight: Float = 0f // Total maze height in pixels
-    private var scale: Float = 1f      // Uniform scale factor
+    private var cellSize: Float = 0f
+    private var viewportOffsetX: Float = 0f
+    private var viewportOffsetY: Float = 0f
+    private var mazeWidth: Float = 0f
+    private var mazeHeight: Float = 0f
+    private var scale: Float = 1f
 
     companion object {
         private const val TAG = "MazeLevel"
@@ -79,7 +77,7 @@ class MazeLevel(
         Log.d(TAG, "Creating maze in $orientationStr orientation with cells: ${this.cellsX}x${this.cellsY} for screen ${screenW}x${screenH}, complexity: $complexity")
         
         calculateScaling()
-        generateGrids()      // build wall arrays & maze
+        generateGrids()
         buildWallRects()
     }
 
@@ -102,7 +100,6 @@ class MazeLevel(
 
     /** Initializes wall grids and generates the complete maze structure. */
     private fun generateGrids() {
-        // allocate wall grids with the now‑known sizes
         horizontalWalls = Array(cellsY + 1) { BooleanArray(cellsX) { true } }
         verticalWalls   = Array(cellsY)     { BooleanArray(cellsX + 1) { true } }
         generateMaze()

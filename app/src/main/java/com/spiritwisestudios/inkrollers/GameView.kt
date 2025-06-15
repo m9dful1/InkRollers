@@ -10,7 +10,7 @@ import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.graphics.PixelFormat
 import android.util.Log
-import java.util.concurrent.ConcurrentHashMap // Use thread-safe map
+import java.util.concurrent.ConcurrentHashMap
 import com.spiritwisestudios.inkrollers.GameModeManager
 import com.spiritwisestudios.inkrollers.GameMode
 import com.spiritwisestudios.inkrollers.CoverageHudView
@@ -37,18 +37,20 @@ import kotlin.math.min
  * for Android lifecycle events.
  */
 class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
-    SurfaceView(ctx,attrs),SurfaceHolder.Callback, MultiplayerManager.RemoteUpdateListener { // Implement listener
+    SurfaceView(ctx,attrs),SurfaceHolder.Callback, MultiplayerManager.RemoteUpdateListener {
   private lateinit var surface: PaintSurface
-  // Use a Map to store players, keyed by their Firebase ID (player0, player1, etc.)
+  /** Map of active players in the game, keyed by their Firebase ID (e.g., "player0"). */
   val players = ConcurrentHashMap<String, Player>()
-  private val joysticks = ConcurrentHashMap<String, VirtualJoystick>() // Also map joysticks by player ID
-  private val pendingPlayerStates = ConcurrentHashMap<String, PlayerState>() // Cache for early arrivals
+  /** Map of virtual joysticks, keyed by player ID. */
+  private val joysticks = ConcurrentHashMap<String, VirtualJoystick>()
+  /** Cache for player state updates that arrive before the player object is fully initialized. */
+  private val pendingPlayerStates = ConcurrentHashMap<String, PlayerState>()
   private var inkHudView: InkHudView? = null
   private var coverageHudView: CoverageHudView? = null
   private var zoneHudView: ZoneHudView? = null
   private var gameModeManager: GameModeManager? = null
   private var timerHudView: TimerHudView? = null
-  // Use var and lateinit for the thread to allow recreation
+  /** The main game loop thread; recreated for each match. */
   private lateinit var thread: GameThread 
   
   private var currentLevel: Level? = null 
@@ -56,29 +58,26 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
   private var coverageUpdateFrames = 30 
   private var frameCount = 0
   
-  // Multiplayer specific fields
   private var multiplayerManager: MultiplayerManager? = null
   private var localPlayerId: String? = null
   
-  // Audio manager for game sound effects
   private val audioManager: com.spiritwisestudios.inkrollers.AudioManager by lazy { 
     com.spiritwisestudios.inkrollers.AudioManager.getInstance(context)
   }
   
-  // New state flag to prevent premature end-check
+  /** Flag to indicate that the pre-match countdown is complete and the game is active. */
   private var isMatchReady: Boolean = false
   
-  // New field for match end listener
   var onMatchEnd: ((Boolean) -> Unit)? = null
-  // Flag to prevent multiple match end notifications
   private var endNotified: Boolean = false
   
-  // Background image for the maze (center-cropped)
+  /** Background image for the maze. */
   private val bgBitmap: Bitmap by lazy { BitmapFactory.decodeResource(context.resources, R.drawable.space_bg) }
   
   companion object {
       private const val TAG = "GameView"
-      var savedPaintBitmap: android.graphics.Bitmap? = null // For paint persistence
+      /** Static bitmap to persist the painted surface across SurfaceView destruction/recreation. */
+      var savedPaintBitmap: android.graphics.Bitmap? = null
   }
   
   init {

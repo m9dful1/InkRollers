@@ -50,7 +50,6 @@ class AudioManager private constructor(private val context: Context) {
     // For tracking looping sounds
     private val loopingStreams = mutableMapOf<SoundType, Int>()
 
-    // Sound effect types
     enum class SoundType(val fileName: String) {
         PAINT("paint_splash.wav"),
         MODE_TOGGLE("mode_toggle.wav"),

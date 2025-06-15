@@ -24,7 +24,13 @@ import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
+import com.spiritwisestudios.inkrollers.util.EspressoIdlingResource
 
+/**
+ * Fragment for displaying and editing the player's profile.
+ * Handles UI for player name, catchphrase, favorite colors, friend list,
+ * and win/loss record. Interacts with ProfileRepository to persist changes.
+ */
 class ProfileFragment : Fragment() {
     private lateinit var editPlayerName: TextInputEditText
     private lateinit var editCatchPhrase: TextInputEditText
@@ -63,16 +69,13 @@ class ProfileFragment : Fragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
+        EspressoIdlingResource.increment() // Task started: Loading profile
         return inflater.inflate(R.layout.fragment_profile, container, false)
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        Toast.makeText(requireContext(), "ProfileFragment onViewCreated!", Toast.LENGTH_LONG).show()
-        Log.d("ProfileFragment", "onViewCreated CALLED")
-
-        // Bind UI
         editPlayerName = view.findViewById(R.id.edit_player_name)
         editCatchPhrase = view.findViewById(R.id.edit_catch_phrase)
         textFriendCode = view.findViewById(R.id.text_friend_code)
@@ -86,45 +89,32 @@ class ProfileFragment : Fragment() {
         btnAddFriend = view.findViewById(R.id.btn_add_friend)
         btnSaveProfile = view.findViewById(R.id.btn_save_profile)
 
-        // Disable save button initially
         btnSaveProfile.isEnabled = false
 
-        // Load profile
         val uid = arguments?.getString(ARG_UID)
-        Log.d("ProfileFragment", "Attempting to load profile. UID from arguments: $uid")
-
         if (uid == null) {
-            Toast.makeText(requireContext(), "User not signed in. Cannot load profile.", Toast.LENGTH_LONG).show()
-            Log.e("ProfileFragment", "UID is null. ProfileFragment will not initialize further.")
-            return // Essential to stop further execution if no user
+            return
         }
 
         ProfileRepository.loadPlayerProfile(uid) { profile ->
-            Log.i("ProfileFragment", "ProfileRepository.loadPlayerProfile callback executed. Profile is null? ${profile == null}")
             if (profile != null) {
-                Log.d("ProfileFragment", "Existing profile loaded for UID: $uid. FriendCode: ${profile.friendCode}")
                 currentProfile = profile
                 populateProfile(profile)
             } else {
-                Log.d("ProfileFragment", "No existing profile for UID: $uid. Generating new profile.")
                 generateUniqueFriendCodeAndCreateProfile(uid)
             }
         }
 
-        // Save profile
         btnSaveProfile.setOnClickListener {
             saveProfile()
         }
 
-        // Copy friend code
         btnCopyFriendCode.setOnClickListener {
             val code = textFriendCode.text.toString()
             val clipboard = requireContext().getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
             clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Friend Code", code))
-            Toast.makeText(requireContext(), "Copied!", Toast.LENGTH_SHORT).show()
         }
 
-        // Add friend
         btnAddFriend.setOnClickListener {
             val code = editAddFriendCode.text.toString().trim().uppercase()
             if (code.isNotEmpty()) {
@@ -132,10 +122,6 @@ class ProfileFragment : Fragment() {
             }
         }
 
-        Log.d("ProfileFragment", "onViewCreated: Checking color pickers AFTER profile load initiated.")
-        Log.d("ProfileFragment", "onViewCreated: colorPicker1 is findViewById null? ${view.findViewById<FrameLayout>(R.id.color_picker_1) == null}")
-        Log.d("ProfileFragment", "onViewCreated: colorPicker2 is findViewById null? ${view.findViewById<FrameLayout>(R.id.color_picker_2) == null}")
-        Log.d("ProfileFragment", "onViewCreated: colorPicker3 is findViewById null? ${view.findViewById<FrameLayout>(R.id.color_picker_3) == null}")
         setupColorPickers()
 
         recyclerFriends.layoutManager = LinearLayoutManager(requireContext())
@@ -143,25 +129,22 @@ class ProfileFragment : Fragment() {
             friendDisplays,
             onRemove = { friend -> removeFriend(friend) },
             onJoin = { gameId ->
-                Toast.makeText(requireContext(), "Joining game: $gameId", Toast.LENGTH_SHORT).show()
                 (activity as? HomeActivity)?.startGameActivity(HomeActivity.MODE_JOIN, gameId)
             }
         )
         recyclerFriends.adapter = friendAdapter
     }
 
+    /** Populates the UI fields with data from the loaded player profile. */
     private fun populateProfile(profile: PlayerProfile) {
         activity?.runOnUiThread {
-            Log.d("ProfileFragment", "populateProfile [UI Thread]: Populating UI with profile: ${profile.uid}")
             editPlayerName.setText(profile.playerName)
             editCatchPhrase.setText(profile.catchPhrase)
 
-            Log.d("ProfileFragment", "populateProfile [UI Thread]: Received friendCode: '${profile.friendCode}'")
             if (profile.friendCode.isNotEmpty()) {
                 textFriendCode.text = profile.friendCode
             } else {
-                textFriendCode.text = "DEBUG: EMPTY CODE"
-                Log.w("ProfileFragment", "populateProfile [UI Thread]: profile.friendCode is empty! Setting debug text.")
+                textFriendCode.text = "GENERATING..."
             }
 
             textWinLoss.text = "${profile.winCount} / ${profile.lossCount}"
@@ -169,12 +152,12 @@ class ProfileFragment : Fragment() {
             while (selectedColors.size < 3) selectedColors.add(null)
             loadFriends(profile.friends)
             refreshColorPickers()
-            // Enable save button once profile is loaded/populated
-            Log.d("ProfileFragment", "populateProfile [UI Thread]: Enabling save button.")
             btnSaveProfile.isEnabled = true
+            EspressoIdlingResource.decrement() // Task finished: Profile loaded and UI populated
         }
     }
 
+    /** Fetches profiles for all friend UIDs and populates the friends list. */
     private fun loadFriends(friendUids: List<String>) {
         friendDisplays.clear()
         friendAdapter?.notifyDataSetChanged()
@@ -229,6 +212,7 @@ class ProfileFragment : Fragment() {
         }
     }
 
+    /** Adds a friend's profile details to the UI list. */
     private fun addFriendToList(friendProfile: PlayerProfile, isJoinable: Boolean) {
         friendDisplays.add(
             FriendDisplay(
@@ -244,10 +228,12 @@ class ProfileFragment : Fragment() {
         )
     }
 
+    /** Removes a friend from the current user's profile and updates the UI. */
     private fun removeFriend(friend: FriendDisplay) {
-        val profile = currentProfile ?: return
-        val newFriends = profile.friends.filter { it != friend.uid }
-        currentProfile = profile.copy(friends = newFriends)
+        val currentUser = currentProfile ?: return
+        val friendUidToRemove = friend.uid
+        val newFriends = currentUser.friends.filter { it != friendUidToRemove }
+        currentProfile = currentUser.copy(friends = newFriends)
         saveProfile()
         loadFriends(newFriends)
     }
@@ -362,6 +348,7 @@ class ProfileFragment : Fragment() {
                     currentProfile = newProfile
                     populateProfile(newProfile)
                     saveProfile() // Save the newly created profile with unique code
+                    EspressoIdlingResource.decrement() // Task finished: New profile created
                 } else {
                     Log.w("ProfileFragment", "Code '$potentialCode' not unique. Retrying for $uid")
                     tryGenerate() // Retry generation because of collision

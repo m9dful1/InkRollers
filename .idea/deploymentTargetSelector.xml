@@ -4,7 +4,7 @@
     <selectionStates>
       <SelectionState runConfigName="app">
         <option name="selectionMode" value="DROPDOWN" />
-        <DropdownSelection timestamp="2025-06-09T00:57:24.732426Z">
+        <DropdownSelection timestamp="2025-06-14T18:10:46.873611Z">
           <Target type="DEFAULT_BOOT">
             <handle>
               <DeviceId pluginId="LocalEmulator" identifier="path=/Users/cthul/.android/avd/Pixel_3a_API_34_extension_level_7_arm64-v8a.avd" />
@@ -13,10 +13,16 @@
         </DropdownSelection>
         <DialogSelection />
       </SelectionState>
-      <SelectionState runConfigName="All Tests">
+      <SelectionState runConfigName="Tests in 'com.spiritwisestudios.inkrollers'">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
-      <SelectionState runConfigName="joinRandomGameAndSeeSearchingMessage()">
+      <SelectionState runConfigName="EndToEndFlowTest">
+        <option name="selectionMode" value="DROPDOWN" />
+      </SelectionState>
+      <SelectionState runConfigName="testCompleteHostGameFlow()">
+        <option name="selectionMode" value="DROPDOWN" />
+      </SelectionState>
+      <SelectionState runConfigName="testProfileToGameWorkflow()">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
     </selectionStates>

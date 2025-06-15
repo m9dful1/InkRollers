@@ -1,0 +1,52 @@
+{
+  "rules": {
+    "profiles": {
+      ".read": "auth != null",
+      ".indexOn": "friendCode",
+      "$uid": {
+        ".write": "auth != null && auth.uid == $uid",
+        ".validate": "newData.hasChildren(['uid', 'playerName', 'friendCode'])"
+      }
+    },
+    "games": {
+      ".read": "auth != null",
+      ".indexOn": ["createdAt", "isPrivate", "lastActivityAt"],
+      "$gameId": {
+        ".write": "auth != null && !newData.exists()",
+        ".validate": "!newData.exists() || newData.hasChildren(['createdAt', 'lastActivityAt', 'mazeSeed', 'started', 'players'])",
+
+        "createdAt": { ".write": "!data.exists() && newData.val() == now" },
+        "lastActivityAt": { ".write": "auth != null && newData.val() == now" },
+        "isPrivate": { ".write": "!data.exists() || data.val() == newData.val()" },
+        "mazeSeed": { ".write": "!data.exists() || data.val() == newData.val()" },
+        "mazeComplexity": { ".write": "!data.exists() || data.val() == newData.val()" },
+        "gameMode": { ".write": "!data.exists() || data.val() == newData.val()" },
+        "matchDurationMs": { ".write": "!data.exists() || data.val() == newData.val()" },
+        "playerCount": { ".write": "auth != null" },
+
+        "started": {
+          ".write": "(!data.exists() && newData.val() == false) || (data.val() == false && newData.val() == true && root.child('games/' + $gameId + '/players/player0/uid').val() == auth.uid)"
+        },
+        "gameStartTimeBase": {
+           ".write": "!data.exists() && root.child('games/' + $gameId + '/players/player0/uid').val() == auth.uid"
+        },
+        "gameStartOffsetMs": {
+           ".write": "!data.exists() && root.child('games/' + $gameId + '/players/player0/uid').val() == auth.uid"
+        },
+        "rematchRequests": { ".write": "auth != null" },
+        "rematchInProgress": { ".write": "auth != null" },
+
+        "players": {
+          "$playerId": {
+            ".write": "( !data.exists() && newData.child('uid').val() === auth.uid ) || ( data.exists() && data.child('uid').val() === auth.uid && (!newData.exists() || newData.child('uid').val() === auth.uid) )",
+            ".validate": "newData.hasChildren(['active', 'color', 'ink', 'mode', 'normX', 'normY', 'playerName', 'uid', 'mazeSeed'])"
+          }
+        },
+        "paint": {
+          ".write": "root.child('games/' + $gameId + '/started').val() == true && auth != null"
+        },
+        "$other": { ".write": false }
+      }
+    }
+  }
+} 

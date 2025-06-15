@@ -34,7 +34,6 @@ class VirtualJoystick {
     private var handleX = 0f
     private var handleY = 0f
 
-    // Normalized direction vector (-1.0 to 1.0 for each axis)
     var directionX = 0f
         private set
     var directionY = 0f

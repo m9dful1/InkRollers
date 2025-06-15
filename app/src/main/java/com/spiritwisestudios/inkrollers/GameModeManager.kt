@@ -39,6 +39,6 @@ class GameModeManager(
 
 /** Available game modes that determine win conditions and HUD displays. */
 enum class GameMode {
-    COVERAGE, // Win by painting the most area
-    ZONES     // Win by controlling the most zones
+    COVERAGE,
+    ZONES
 } 

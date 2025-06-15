@@ -1,5 +1,8 @@
 package com.spiritwisestudios.inkrollers.model
 
+/**
+ * Defines a palette of available player colors.
+ */
 object PlayerColorPalette {
     val COLORS = listOf(
         0xFF39FF14.toInt(), // Neon Green
@@ -13,17 +16,21 @@ object PlayerColorPalette {
     )
 }
 
+/**
+ * Data model for a player's profile, containing user-customizable information,
+ * game statistics, and social features.
+ */
 data class PlayerProfile(
     var uid: String = "",
     var playerName: String = "",
-    var favoriteColors: List<Int> = listOf(), // Must be 3 distinct colors from palette
+    var favoriteColors: List<Int> = listOf(),
     var catchPhrase: String = "",
     var friendCode: String = "",
     var friends: List<String> = listOf(),
     var winCount: Int = 0,
     var lossCount: Int = 0,
-    var isOnline: Boolean = false, // New field for online status
-    var currentLobbyId: String? = null // New field for the lobby the player is currently in
+    var isOnline: Boolean = false,
+    var currentLobbyId: String? = null
 ) {
     fun isValidColorSelection(): Boolean {
         return favoriteColors.size == 3 &&
@@ -33,7 +40,7 @@ data class PlayerProfile(
     
     companion object {
         /**
-         * Static method to validate color selection for testing purposes
+         * Static method to validate color selection
          */
         fun isValidColorSelection(colors: List<Int>): Boolean {
             return colors.size == 3 &&

@@ -1,13 +1,18 @@
 package com.spiritwisestudios.inkrollers
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import android.app.AlertDialog
 import android.os.Handler
 import android.os.Looper
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.spiritwisestudios.inkrollers.TimerHudView
 import com.spiritwisestudios.inkrollers.GameModeManager
 import com.google.firebase.auth.FirebaseAuth
@@ -17,6 +22,7 @@ import com.google.firebase.database.FirebaseDatabase
 import com.spiritwisestudios.inkrollers.repository.ProfileRepository
 import com.spiritwisestudios.inkrollers.model.PlayerProfile
 import kotlin.random.Random
+import android.view.View
 
 /**
  * Main game activity managing the complete multiplayer match lifecycle.
@@ -44,27 +50,23 @@ class MainActivity:AppCompatActivity(){
   private lateinit var zoneHudView: ZoneHudView
   private lateinit var timerHudView: TimerHudView
   private var matchDurationMs: Long = 180000L // 3 minute match
-  private var mazeComplexity: String = HomeActivity.COMPLEXITY_HIGH // Default High
-  private var gameMode: String = HomeActivity.GAME_MODE_COVERAGE // Default Coverage
-  private var isPrivateMatch: Boolean = false // Default to public
+  private var mazeComplexity: String = HomeActivity.COMPLEXITY_HIGH
+  private var gameMode: String = HomeActivity.GAME_MODE_COVERAGE
+  private var isPrivateMatch: Boolean = false
   
   private lateinit var multiplayerManager: MultiplayerManager
   private var localPlayerId: String? = null
   
-  // New fields for dialogs
   private var waitingDialog: AlertDialog? = null
   private var countdownDialog: AlertDialog? = null
   
-  // Add Firebase Auth field
   private lateinit var auth: FirebaseAuth
   
-  // Audio manager for game events
   private lateinit var audioManager: com.spiritwisestudios.inkrollers.AudioManager
 
-  // Add this field to the MainActivity class
   private var rematchInProgressHandled = false
 
-  private var matchStartTime: Long? = null // Add this field to store the synchronized start time
+  private var matchStartTime: Long? = null
 
   companion object {
       private const val TAG = "MainActivity"
@@ -75,6 +77,26 @@ class MainActivity:AppCompatActivity(){
   override fun onCreate(savedInstanceState: Bundle?){
     super.onCreate(savedInstanceState)
     setContentView(R.layout.activity_main)
+
+    // Modern fullscreen approach
+    WindowCompat.setDecorFitsSystemWindows(window, false)
+    val controller = WindowInsetsControllerCompat(window, findViewById(R.id.main_container))
+    controller.hide(WindowInsetsCompat.Type.systemBars())
+    controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+
+    // Handle display cutout
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+      window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+    }
+
+    // Deprecated fallback for maximum compatibility
+    @Suppress("DEPRECATION")
+    window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+            or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+            or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+            or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+            or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+            or View.SYSTEM_UI_FLAG_FULLSCREEN)
 
     auth = Firebase.auth
     audioManager = com.spiritwisestudios.inkrollers.AudioManager.getInstance(this)

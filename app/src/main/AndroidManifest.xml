@@ -6,7 +6,8 @@
       android:label="Ink Rollers"
       android:roundIcon="@mipmap/ic_launcher_round"
       android:supportsRtl="true"
-      android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+      android:theme="@style/Theme.AppCompat.Light.NoActionBar"
+      android:networkSecurityConfig="@xml/network_security_config">
 
     <!-- HomeActivity is now the launcher -->
     <activity

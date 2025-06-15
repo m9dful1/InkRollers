@@ -16,13 +16,13 @@ import com.google.firebase.database.IgnoreExtraProperties
 data class PlayerState(
     var normX: Float = 0.5f,    // Normalized X (0.0 to 1.0)
     var normY: Float = 0.5f,    // Normalized Y (0.0 to 1.0)
-    var color: Int = Color.GRAY, // Default color
-    var mode: Int = 0,          // 0=PAINT, 1=FILL
-    var ink: Float = Player.MAX_INK, // Use Player constant for default max ink
-    var active: Boolean = true,    // Player connection status
-    var mazeSeed: Long = 0,        // Ensures synchronized maze generation across clients
-    var playerName: String = "",  // Player name from profile
-    var uid: String = ""         // Firebase Auth UID for profile association
+    var color: Int = Color.GRAY,
+    var mode: Int = 0,          // PAINT=0, FILL=1
+    var ink: Float = Player.MAX_INK,
+    var active: Boolean = true,
+    var mazeSeed: Long = 0,
+    var playerName: String = "",
+    var uid: String = ""
 ) {
     /** No-argument constructor required by Firebase deserialization. */
     constructor() : this(0.5f, 0.5f, Color.GRAY, 0, Player.MAX_INK, true, 0, "", "")

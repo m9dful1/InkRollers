@@ -35,7 +35,8 @@ class Player(
   var x = startX
   var y = startY
   private val paint=Paint().apply{ color = playerColor }
-  var mode=0 // 0=PAINT, 1=FILL
+  /** Player mode: 0 for PAINT, 1 for FILL. */
+  var mode=0
   
   // Track painting state to control audio
   private var isPaintSoundPlaying = false
@@ -196,8 +197,6 @@ class Player(
   
   /** Returns player's paint color for coverage calculations and display. */
   fun getColor(): Int = paint.color
-  
-  fun update(){}
   
   /** Cleanup method to stop any playing sounds. Should be called when player is removed. */
   fun cleanup() {

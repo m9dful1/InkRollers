@@ -7,6 +7,11 @@ import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.DialogFragment
 import com.google.android.material.switchmaterial.SwitchMaterial
 
+/**
+ * A DialogFragment that provides UI for adjusting audio settings.
+ * It allows the user to enable/disable and control the volume for both
+ * sound effects (SFX) and background music. Changes are applied in real-time.
+ */
 class SettingsFragment : DialogFragment() {
 
     private lateinit var audioManager: AudioManager
@@ -23,7 +28,6 @@ class SettingsFragment : DialogFragment() {
         val musicSwitch = view.findViewById<SwitchMaterial>(R.id.switch_music)
         val musicSeekBar = view.findViewById<SeekBar>(R.id.seekbar_music_volume)
 
-        // Initialize UI with current settings
         sfxSwitch.isChecked = audioManager.isSfxEnabled()
         sfxSeekBar.progress = (audioManager.getMasterVolume() * 100).toInt()
         sfxSeekBar.isEnabled = sfxSwitch.isChecked
@@ -32,7 +36,6 @@ class SettingsFragment : DialogFragment() {
         musicSeekBar.progress = (audioManager.getMusicVolume() * 100).toInt()
         musicSeekBar.isEnabled = musicSwitch.isChecked
 
-        // Add listeners
         sfxSwitch.setOnCheckedChangeListener { _, isChecked ->
             audioManager.setSfxEnabled(isChecked)
             sfxSeekBar.isEnabled = isChecked
@@ -64,9 +67,7 @@ class SettingsFragment : DialogFragment() {
         })
 
         builder.setView(view)
-            .setPositiveButton("Done") { _, _ ->
-                // Settings are saved in real-time, so we just dismiss.
-            }
+            .setPositiveButton("Done") { _, _ -> }
 
         return builder.create()
     }

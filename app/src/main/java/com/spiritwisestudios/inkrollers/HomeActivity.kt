@@ -1,11 +1,13 @@
 package com.spiritwisestudios.inkrollers
 
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.View
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -22,6 +24,11 @@ import com.spiritwisestudios.inkrollers.databinding.ActivityHomeBinding
 import android.widget.Button
 import android.widget.ImageButton
 import android.widget.LinearLayout
+import com.spiritwisestudios.inkrollers.util.EspressoIdlingResource
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.activity.OnBackPressedCallback
 
 /**
  * Main entry point for the Ink Rollers game application.
@@ -45,12 +52,10 @@ class HomeActivity : AppCompatActivity() {
         const val MODE_HOST = "HOST"
         const val MODE_JOIN = "JOIN"
 
-        // Maze Complexity Levels
         const val COMPLEXITY_LOW = "LOW"
         const val COMPLEXITY_MEDIUM = "MEDIUM"
         const val COMPLEXITY_HIGH = "HIGH"
         
-        // Game Modes
         const val GAME_MODE_COVERAGE = "COVERAGE"
         const val GAME_MODE_ZONES = "ZONES"
     }
@@ -60,11 +65,33 @@ class HomeActivity : AppCompatActivity() {
         binding = ActivityHomeBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        // Modern fullscreen approach
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        val controller = WindowInsetsControllerCompat(window, binding.root)
+        controller.hide(WindowInsetsCompat.Type.systemBars())
+        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+
+        // Handle display cutout
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+
+        // Deprecated fallback for maximum compatibility
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_FULLSCREEN)
+
         audioManager = com.spiritwisestudios.inkrollers.AudioManager.getInstance(this)
         audioManager.initialize()
 
         initializeFirebaseAppCheck()
         setupUIClickListeners()
+
+        onBackPressedDispatcher.addCallback(this, backPressedCallback)
     }
 
     /** Configures Firebase App Check for enhanced security based on build type. */
@@ -137,6 +164,7 @@ class HomeActivity : AppCompatActivity() {
 
     /** Performs anonymous sign-in and then displays the profile fragment. */
     private fun signInAndShowProfile() {
+        EspressoIdlingResource.increment() // Signal that a long-running task has started
         Firebase.auth.signInAnonymously()
             .addOnCompleteListener(this) { task ->
                 if (task.isSuccessful) {
@@ -152,6 +180,7 @@ class HomeActivity : AppCompatActivity() {
                     Log.w("HomeActivity", "Anonymous sign-in failed for profile view.", task.exception)
                     Toast.makeText(baseContext, "Sign-in failed. Cannot view profile.", Toast.LENGTH_SHORT).show()
                 }
+                EspressoIdlingResource.decrement() // Signal that the task is complete
             }
     }
 
@@ -238,12 +267,17 @@ class HomeActivity : AppCompatActivity() {
         startActivity(intent)
     }
 
-    override fun onBackPressed() {
-        if (binding.layoutSubmenu.visibility == View.VISIBLE) {
-            binding.layoutSubmenu.visibility = View.GONE
-            binding.buttonPlay.visibility = View.VISIBLE
-        } else {
-            super.onBackPressed()
+    private val backPressedCallback = object : OnBackPressedCallback(true) {
+        override fun handleOnBackPressed() {
+            if (binding.layoutSubmenu.visibility == View.VISIBLE) {
+                binding.layoutSubmenu.visibility = View.GONE
+                binding.buttonPlay.visibility = View.VISIBLE
+            } else {
+                // If the custom logic doesn't apply, we disable the callback
+                // and let the default back button behavior execute.
+                isEnabled = false
+                onBackPressedDispatcher.onBackPressed()
+            }
         }
     }
 

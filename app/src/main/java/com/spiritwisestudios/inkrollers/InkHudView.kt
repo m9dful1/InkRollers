@@ -18,7 +18,7 @@ class InkHudView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
 ) : View(context, attrs, defStyleAttr) {
 
-    private var inkPercent = 1f // 0.0 to 1.0
+    private var inkPercent = 1f
     private var modeText = "PAINT"
 
     private val barPaint = Paint().apply { color = Color.BLUE; style = Paint.Style.FILL }
@@ -30,7 +30,7 @@ class InkHudView @JvmOverloads constructor(
     fun updateHud(inkPercent: Float, modeText: String) {
         this.inkPercent = inkPercent.coerceIn(0f, 1f)
         this.modeText = modeText
-        invalidate() // Request a redraw
+        invalidate()
     }
 
     override fun onDraw(canvas: Canvas) {
