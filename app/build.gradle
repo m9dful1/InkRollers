@@ -42,6 +42,9 @@ android {
           task.enabled = false
       }
   }
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
   kotlinOptions { jvmTarget='1.8' }
   buildFeatures {
