@@ -64,12 +64,26 @@ class MultiplayerManager {
 
     private fun testFirebaseConnection() {
         Log.d(TAG, "Testing Firebase connectivity...")
+        
+        // Log current authentication state
+        val currentUser = auth.currentUser
+        if (currentUser != null) {
+            Log.d(TAG, "User is authenticated with UID: ${currentUser.uid}")
+            Log.d(TAG, "User is anonymous: ${currentUser.isAnonymous}")
+            Log.d(TAG, "User provider data: ${currentUser.providerData}")
+        } else {
+            Log.w(TAG, "User is NOT authenticated")
+        }
+        
         val connectedRef = database.getReference(".info/connected")
         connectedRef.addValueEventListener(object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val connected = snapshot.getValue(Boolean::class.java) ?: false
                 if (connected) {
                      Log.d(TAG, "Firebase connection established")
+                     
+                     // Test a simple read operation to check permissions
+                     testFirebasePermissions()
                 } else {
                     Log.w(TAG, "Firebase NOT connected - waiting for connection...")
                 }
@@ -77,7 +91,38 @@ class MultiplayerManager {
 
             override fun onCancelled(error: DatabaseError) {
                 Log.e(TAG, "Firebase connection check cancelled", error.toException())
-                onDatabaseError?.invoke("Connection check error: ${error.message}")
+                Log.e(TAG, "DatabaseError code: ${error.code}, message: ${error.message}")
+                Log.e(TAG, "DatabaseError details: ${error.details}")
+                onDatabaseError?.invoke("Connection check error: ${error.message} (Code: ${error.code})")
+            }
+        })
+    }
+    
+    /** Tests Firebase read/write permissions with detailed error logging. */
+    private fun testFirebasePermissions() {
+        Log.d(TAG, "Testing Firebase permissions...")
+        
+        val testRef = database.getReference("games").limitToLast(1)
+        testRef.addListenerForSingleValueEvent(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                Log.d(TAG, "Firebase read permission test PASSED")
+                Log.d(TAG, "Test read returned ${snapshot.childrenCount} items")
+            }
+            
+            override fun onCancelled(error: DatabaseError) {
+                Log.e(TAG, "Firebase read permission test FAILED")
+                Log.e(TAG, "Permission error code: ${error.code}")
+                Log.e(TAG, "Permission error message: ${error.message}")
+                Log.e(TAG, "Permission error details: ${error.details}")
+                
+                val currentUser = auth.currentUser
+                if (currentUser != null) {
+                    Log.e(TAG, "User WAS authenticated during permission test - UID: ${currentUser.uid}")
+                } else {
+                    Log.e(TAG, "User was NOT authenticated during permission test!")
+                }
+                
+                onDatabaseError?.invoke("Permission test failed: ${error.message} (Code: ${error.code}). Check authentication and Firebase rules.")
             }
         })
     }

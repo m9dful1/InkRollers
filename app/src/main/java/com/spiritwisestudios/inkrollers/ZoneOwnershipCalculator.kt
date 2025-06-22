@@ -12,11 +12,20 @@ object ZoneOwnershipCalculator {
     private const val TAG = "ZoneOwnershipCalculator"
     
     /**
+<<<<<<< Updated upstream
      * Calculate zone ownership for a maze level.
      * @param level The maze level containing zones
      * @param paintSurface The paint surface to sample
      * @param sampleStep Sampling step size (higher = faster but less accurate)
      * @return Map of zone index to owner color (null if uncontrolled)
+=======
+     * Determines the ownership of all defined zones based on paint coverage.
+     * 
+     * @param level The maze level, providing zone definitions and collision geometry.
+     * @param paintSurface The surface containing the painted pixels to be analyzed.
+     * @param sampleStep The frequency for pixel sampling; a higher value improves performance but reduces accuracy.
+     * @return A map where the key is the zone index and the value is the color of the controlling player, or null if the zone is neutral.
+>>>>>>> Stashed changes
      */
     fun calculateZoneOwnership(
         level: MazeLevel,

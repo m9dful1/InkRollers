@@ -1,0 +1,52 @@
+{
+  "rules": {
+    "profiles": {
+      ".read": "auth != null",
+      ".indexOn": "friendCode",
+      "$uid": {
+        ".write": "auth != null && auth.uid == $uid",
+        ".validate": "newData.hasChildren(['uid', 'playerName', 'friendCode'])"
+      }
+    },
+    "games": {
+      ".read": "auth != null",
+      ".indexOn": ["createdAt", "isPrivate", "lastActivityAt"],
+      "$gameId": {
+        ".write": "auth != null",
+        ".validate": "newData.hasChildren(['createdAt', 'lastActivityAt', 'mazeSeed', 'started', 'players'])",
+
+        "createdAt": { ".write": "auth != null && !data.exists()" },
+        "lastActivityAt": { ".write": "auth != null" },
+        "isPrivate": { ".write": "auth != null && (!data.exists() || data.val() == newData.val())" },
+        "mazeSeed": { ".write": "auth != null && (!data.exists() || data.val() == newData.val())" },
+        "mazeComplexity": { ".write": "auth != null && (!data.exists() || data.val() == newData.val())" },
+        "gameMode": { ".write": "auth != null && (!data.exists() || data.val() == newData.val())" },
+        "matchDurationMs": { ".write": "auth != null && (!data.exists() || data.val() == newData.val())" },
+        "playerCount": { ".write": "auth != null" },
+
+        "started": {
+          ".write": "auth != null && ((!data.exists() && newData.val() == false) || (data.val() == false && newData.val() == true))"
+        },
+        "gameStartTimeBase": {
+           ".write": "auth != null && !data.exists()"
+        },
+        "gameStartOffsetMs": {
+           ".write": "auth != null && !data.exists()"
+        },
+        "rematchRequests": { ".write": "auth != null" },
+        "rematchInProgress": { ".write": "auth != null" },
+
+        "players": {
+          "$playerId": {
+            ".write": "auth != null && ((!data.exists() && newData.child('uid').val() == auth.uid) || (data.exists() && data.child('uid').val() == auth.uid))",
+            ".validate": "newData.hasChildren(['active', 'color', 'ink', 'mode', 'normX', 'normY', 'playerName', 'uid', 'mazeSeed'])"
+          }
+        },
+        "paint": {
+          ".write": "auth != null"
+        },
+        "$other": { ".write": "auth != null" }
+      }
+    }
+  }
+} 

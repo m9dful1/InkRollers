@@ -14,6 +14,35 @@ android {
       versionName "1.0" 
       testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
   }
+<<<<<<< Updated upstream
+=======
+  buildTypes {
+      release {
+          minifyEnabled true
+          proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+      }
+  }
+  
+  packaging {
+      resources {
+          excludes += ['**/baseline.prof', '**/baseline.profm', 'assets/dexopt/baseline.prof', 'assets/dexopt/baseline.profm']
+      }
+  }
+  
+  // Disable baseline profile generation entirely
+  androidResources {
+      generateLocaleConfig = false
+  }
+  
+  // Disable baseline profile tasks
+  tasks.whenTaskAdded { task ->
+      if (task.name.contains("BaselineProfile") || 
+          task.name.contains("generateBaselineProfile") ||
+          task.name.contains("copyBaselineProf")) {
+          task.enabled = false
+      }
+  }
+>>>>>>> Stashed changes
   kotlinOptions { jvmTarget='1.8' }
   buildFeatures {
       compose true
@@ -86,9 +115,9 @@ dependencies {
     androidTestImplementation 'androidx.test.espresso:espresso-contrib:3.5.1'
     androidTestImplementation 'androidx.test.espresso:espresso-idling-resource:3.5.1'
     
-    // Performance Testing - Macrobenchmark & Microbenchmark
-    androidTestImplementation 'androidx.benchmark:benchmark-macro-junit4:1.2.2'
-    androidTestImplementation 'androidx.benchmark:benchmark-junit4:1.2.2'
+    // Performance Testing - Macrobenchmark & Microbenchmark (commented out to prevent baseline profile issues)
+    // androidTestImplementation 'androidx.benchmark:benchmark-macro-junit4:1.2.2'
+    // androidTestImplementation 'androidx.benchmark:benchmark-junit4:1.2.2'
     
     // UI Testing Support
     androidTestImplementation 'androidx.test.uiautomator:uiautomator:2.2.0'

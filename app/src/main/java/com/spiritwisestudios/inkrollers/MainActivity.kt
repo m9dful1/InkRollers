@@ -68,8 +68,12 @@ class MainActivity:AppCompatActivity(){
     // Listen for database permission/connectivity issues
     multiplayerManager.onDatabaseError = { errorMessage ->
         runOnUiThread {
+            // Show detailed error in both Toast and Log
             Toast.makeText(this, "Firebase error: $errorMessage", Toast.LENGTH_LONG).show()
             Log.e(TAG, "Firebase database error: $errorMessage")
+            
+            // Also show in a dialog for longer messages
+            showFirebaseErrorDialog(errorMessage)
         }
     }
     
@@ -808,6 +812,14 @@ class MainActivity:AppCompatActivity(){
   private fun showError(message: String) {
       Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
       finish()
+  }
+
+  private fun showFirebaseErrorDialog(errorMessage: String) {
+      AlertDialog.Builder(this)
+          .setTitle("Firebase Error")
+          .setMessage(errorMessage)
+          .setPositiveButton("OK") { _, _ -> }
+          .show()
   }
 }
 

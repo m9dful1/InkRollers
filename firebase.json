@@ -1,4 +1,7 @@
 {
+  "database": {
+    "rules": "firebase.rules.json"
+  },
   "emulators": {
     "singleProjectMode": true,
     "auth": {
