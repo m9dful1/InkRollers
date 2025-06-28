@@ -182,7 +182,8 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
               mode = localPlayer.mode,
               ink = localPlayer.ink,
               active = true, // Mark as active
-              playerName = localPlayer.playerName // Pass player name
+              playerName = localPlayer.playerName, // Pass player name
+              uid = multiplayerManager?.getCurrentUserUid() ?: "" // Include UID
           )
           multiplayerManager?.updateLocalPlayerState(currentState)
       }

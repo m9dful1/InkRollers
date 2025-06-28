@@ -2,6 +2,7 @@ plugins {
     id 'com.android.application'
     id 'kotlin-android' 
     id 'com.google.gms.google-services'
+    id 'com.google.firebase.crashlytics'
 }
 android {
   namespace 'com.spiritwisestudios.inkrollers'
@@ -10,42 +11,17 @@ android {
       applicationId 'com.spiritwisestudios.inkrollers' 
       minSdk 26
       targetSdk 34 
-      versionCode 1 
-      versionName "1.0" 
+      versionCode 3
+      versionName "1.0.1" 
       testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
   }
-<<<<<<< Updated upstream
-=======
   buildTypes {
       release {
           minifyEnabled true
           proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+          signingConfig signingConfigs.debug
       }
   }
-  
-  packaging {
-      resources {
-          excludes += ['**/baseline.prof', '**/baseline.profm', 'assets/dexopt/baseline.prof', 'assets/dexopt/baseline.profm']
-      }
-  }
-  
-  // Disable baseline profile generation entirely
-  androidResources {
-      generateLocaleConfig = false
-  }
-  
-  // Disable baseline profile tasks
-  tasks.whenTaskAdded { task ->
-      if (task.name.contains("BaselineProfile") || 
-          task.name.contains("generateBaselineProfile") ||
-          task.name.contains("copyBaselineProf")) {
-          task.enabled = false
-      }
-  }
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
   kotlinOptions { jvmTarget='1.8' }
   buildFeatures {
       compose true
@@ -81,6 +57,7 @@ dependencies {
   // implementation 'com.google.firebase:firebase-database-ktx:21.0.0' // REMOVED: Duplicate and overrides BoM
   // implementation 'com.google.firebase:firebase-analytics' // REMOVED: Not needed for DB MVP
   implementation 'com.google.firebase:firebase-auth-ktx' // Rely on BoM for version
+  implementation 'com.google.firebase:firebase-crashlytics-ktx'
   implementation 'androidx.recyclerview:recyclerview:1.3.2'
     implementation 'com.google.android.material:material:1.12.0'
     implementation 'com.google.firebase:firebase-appcheck-ktx:18.0.0'
@@ -118,11 +95,43 @@ dependencies {
     androidTestImplementation 'androidx.test.espresso:espresso-contrib:3.5.1'
     androidTestImplementation 'androidx.test.espresso:espresso-idling-resource:3.5.1'
     
-    // Performance Testing - Macrobenchmark & Microbenchmark (commented out to prevent baseline profile issues)
-    // androidTestImplementation 'androidx.benchmark:benchmark-macro-junit4:1.2.2'
-    // androidTestImplementation 'androidx.benchmark:benchmark-junit4:1.2.2'
+    // Performance Testing - Macrobenchmark & Microbenchmark
+    androidTestImplementation 'androidx.benchmark:benchmark-macro-junit4:1.2.2'
+    androidTestImplementation 'androidx.benchmark:benchmark-junit4:1.2.2'
     
     // UI Testing Support
     androidTestImplementation 'androidx.test.uiautomator:uiautomator:2.2.0'
+    
+    // Add missing startup provider dependency
+    implementation 'androidx.startup:startup-runtime:1.1.1'
+    androidTestImplementation 'androidx.startup:startup-runtime:1.1.1'
+    
+    // Add WorkManager testing for better activity management
+    androidTestImplementation 'androidx.work:work-testing:2.8.1'
+    
+    // Add concurrent testing support
+    androidTestImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.6.4'
 
+    // Coroutines
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+
+    // Testing
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.6.1'
+    androidTestImplementation 'androidx.test:runner:1.6.1'
+    androidTestImplementation 'androidx.test:rules:1.6.1'
+    androidTestImplementation 'androidx.test.espresso:espresso-contrib:3.6.1'
+    implementation 'androidx.test.espresso:espresso-idling-resource:3.6.1'
+    
+    // WorkManager Testing
+    androidTestImplementation "androidx.work:work-testing:2.9.0"
+
+    // Coroutines Testing
+    androidTestImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3'
+
+    // App Startup - Ensure it is available for both main app and tests
+    implementation 'androidx.startup:startup-runtime:1.1.1'
+    androidTestImplementation 'androidx.startup:startup-runtime:1.1.1'
 }

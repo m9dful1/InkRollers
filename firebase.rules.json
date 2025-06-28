@@ -4,48 +4,82 @@
       ".read": "auth != null",
       ".indexOn": "friendCode",
       "$uid": {
+        ".read": "auth != null && (auth.uid == $uid || (root.child('profiles').child(auth.uid).child('friends').val() != null && root.child('profiles').child(auth.uid).child('friends').val().contains($uid)))",
         ".write": "auth != null && auth.uid == $uid",
         ".validate": "newData.hasChildren(['uid', 'playerName', 'friendCode'])"
+      }
+    },
+    "gamesList": {
+      ".read": "auth != null",
+      ".indexOn": ["createdAt", "isPrivate", "started"],
+      "$gameId": {
+        ".write": "auth != null && !data.exists()",
+        ".validate": "newData.hasChildren(['createdAt', 'isPrivate', 'playerCount', 'started'])"
       }
     },
     "games": {
       ".read": "auth != null",
       ".indexOn": ["createdAt", "isPrivate", "lastActivityAt"],
       "$gameId": {
-        ".write": "auth != null",
-        ".validate": "newData.hasChildren(['createdAt', 'lastActivityAt', 'mazeSeed', 'started', 'players'])",
+        ".write": "auth != null && !data.exists()",
 
-        "createdAt": { ".write": "auth != null && !data.exists()" },
-        "lastActivityAt": { ".write": "auth != null" },
-        "isPrivate": { ".write": "auth != null && (!data.exists() || data.val() == newData.val())" },
-        "mazeSeed": { ".write": "auth != null && (!data.exists() || data.val() == newData.val())" },
-        "mazeComplexity": { ".write": "auth != null && (!data.exists() || data.val() == newData.val())" },
-        "gameMode": { ".write": "auth != null && (!data.exists() || data.val() == newData.val())" },
-        "matchDurationMs": { ".write": "auth != null && (!data.exists() || data.val() == newData.val())" },
-        "playerCount": { ".write": "auth != null" },
+        "createdAt": { 
+          ".write": "auth != null && !data.exists()" 
+        },
+        "lastActivityAt": { 
+          ".write": "auth != null && (root.child('games').child($gameId).child('players').child('player0').child('uid').val() == auth.uid || root.child('games').child($gameId).child('players').child('player1').child('uid').val() == auth.uid || root.child('games').child($gameId).child('players').child('player2').child('uid').val() == auth.uid || root.child('games').child($gameId).child('players').child('player3').child('uid').val() == auth.uid)"
+        },
+        "isPrivate": { 
+          ".write": "auth != null && !data.exists()" 
+        },
+        "mazeSeed": { 
+          ".write": "auth != null && !data.exists()" 
+        },
+        "mazeComplexity": { 
+          ".write": "auth != null && !data.exists()" 
+        },
+        "gameMode": { 
+          ".write": "auth != null && !data.exists()" 
+        },
+        "matchDurationMs": { 
+          ".write": "auth != null && !data.exists()" 
+        },
+        "playerCount": { 
+          ".write": "auth != null && root.child('games').child($gameId).child('players').child('player0').child('uid').val() == auth.uid"
+        },
 
         "started": {
-          ".write": "auth != null && ((!data.exists() && newData.val() == false) || (data.val() == false && newData.val() == true))"
+          ".write": "auth != null && ((!data.exists() && newData.val() == false) || (data.val() == false && newData.val() == true && root.child('games').child($gameId).child('players').child('player0').child('uid').val() == auth.uid))"
+        },
+        "startTime": {
+           ".write": "auth != null && !data.exists() && root.child('games').child($gameId).child('players').child('player0').child('uid').val() == auth.uid"
         },
         "gameStartTimeBase": {
-           ".write": "auth != null && !data.exists()"
+           ".write": "auth != null && !data.exists() && root.child('games').child($gameId).child('players').child('player0').child('uid').val() == auth.uid"
         },
         "gameStartOffsetMs": {
-           ".write": "auth != null && !data.exists()"
+           ".write": "auth != null && !data.exists() && root.child('games').child($gameId).child('players').child('player0').child('uid').val() == auth.uid"
         },
-        "rematchRequests": { ".write": "auth != null" },
-        "rematchInProgress": { ".write": "auth != null" },
+        "rematchRequests": { 
+          "$playerId": {
+            ".write": "auth != null && root.child('games').child($gameId).child('players').child($playerId).child('uid').val() == auth.uid"
+          }
+        },
+        "rematchInProgress": { 
+          ".write": "auth != null && root.child('games').child($gameId).child('players').child('player0').child('uid').val() == auth.uid"
+        },
 
         "players": {
           "$playerId": {
-            ".write": "auth != null && ((!data.exists() && newData.child('uid').val() == auth.uid) || (data.exists() && data.child('uid').val() == auth.uid))",
-            ".validate": "newData.hasChildren(['active', 'color', 'ink', 'mode', 'normX', 'normY', 'playerName', 'uid', 'mazeSeed'])"
+            ".write": "auth != null && ((!data.exists() && newData.child('uid').val() == auth.uid && root.child('games').child($gameId).child('started').val() != true) || (data.exists() && data.child('uid').val() == auth.uid))",
+            ".validate": "newData.hasChildren(['active', 'color', 'ink', 'mode', 'normX', 'normY', 'playerName', 'uid'])"
           }
         },
         "paint": {
-          ".write": "auth != null"
-        },
-        "$other": { ".write": "auth != null" }
+          "$paintId": {
+            ".write": "auth != null && (root.child('games').child($gameId).child('players').child('player0').child('uid').val() == auth.uid || root.child('games').child($gameId).child('players').child('player1').child('uid').val() == auth.uid || root.child('games').child($gameId).child('players').child('player2').child('uid').val() == auth.uid || root.child('games').child($gameId).child('players').child('player3').child('uid').val() == auth.uid)"
+          }
+        }
       }
     }
   }

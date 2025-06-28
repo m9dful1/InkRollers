@@ -18,10 +18,9 @@ data class PlayerState(
     var mode: Int = 0,          // 0=PAINT, 1=FILL
     var ink: Float = Player.MAX_INK, // Use Player constant for default max ink
     var active: Boolean = true,    // To indicate if player is currently connected
-    var mazeSeed: Long = 0,        // Seed for maze generation (0 means use default/local)
     var playerName: String = "",  // Player name from profile
     var uid: String = ""         // Add UID field
 ) {
     // No-argument constructor required by Firebase
-    constructor() : this(0.5f, 0.5f, Color.GRAY, 0, Player.MAX_INK, true, 0, "", "") // Update constructor
+    constructor() : this(0.5f, 0.5f, Color.GRAY, 0, Player.MAX_INK, true, "", "")
 }

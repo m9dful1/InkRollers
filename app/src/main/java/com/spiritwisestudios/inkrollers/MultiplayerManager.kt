@@ -28,6 +28,7 @@ class MultiplayerManager {
     companion object {
         private const val TAG = "MultiplayerManager"
         internal const val GAMES_NODE = "games"
+        internal const val GAMES_LIST_NODE = "gamesList"
         private const val PAINT_NODE = "paint"
         private const val REMATCH_NODE = "rematchRequests"
         internal const val LAST_ACTIVITY_NODE = "lastActivityAt"
@@ -184,8 +185,6 @@ class MultiplayerManager {
         
         // Generate a maze seed for this game
         mazeSeed = System.currentTimeMillis()
-        // Set the seed in the player state
-        initialPlayerState.mazeSeed = mazeSeed
         Log.d(TAG, "Generated maze seed: $mazeSeed")
         
         createGameAfterConnectionTest(initialPlayerState, durationMs, complexity, gameMode, isPrivate, callback)
@@ -228,6 +227,8 @@ class MultiplayerManager {
                             val storedSeed = snapshot.child("mazeSeed").getValue(Long::class.java)
                             if (storedSeed == mazeSeed) {
                                 Log.d(TAG, "Verified game data was written correctly (mazeSeed matches)")
+                                // Add to public gamesList for discovery
+                                addToGamesList(currentGameId!!, isPrivate, 1L, false)
                                 updateLastActivityTimestamp()
                                 setupFirebaseListeners() // Start listening for other players
                                 callback(true, currentGameId, gameSettings)
@@ -307,6 +308,9 @@ class MultiplayerManager {
         
         Log.d(TAG, "joinGame(): requested specific gameId=$gameId")
 
+        // ✅ RUN STALE GAME CLEANUP BEFORE JOINING SPECIFIC GAME
+        performStaleGameCleanup()
+
         // Rest of the existing method for joining a specific game
         val potentialGameRef = database.getReference(GAMES_NODE).child(gameId)
         
@@ -322,6 +326,47 @@ class MultiplayerManager {
                     return
                 }
 
+                // ✅ VALIDATE GAME STATE BEFORE JOINING
+                val started = snapshot.child("started").getValue(Boolean::class.java) ?: false
+                if (started) {
+                    Log.w(TAG, "Game $gameId has already started and cannot accept new players.")
+                    onDatabaseError?.invoke("Game $gameId has already started")
+                    callback(false, null, null)
+                    return
+                }
+
+                // Check if game is private
+                val isPrivateGame = snapshot.child("isPrivate").getValue(Boolean::class.java) ?: false
+                if (isPrivateGame) {
+                    Log.w(TAG, "Game $gameId is private.")
+                    onDatabaseError?.invoke("Game $gameId is private")
+                    callback(false, null, null)
+                    return
+                }
+
+                // Check if match has ended by time
+                val matchDuration = snapshot.child("matchDurationMs").getValue(Long::class.java) ?: 300000L
+                val gameStartTime = snapshot.child("startTime").getValue(Long::class.java)
+                if (gameStartTime != null) {
+                    val matchEndTime = gameStartTime + matchDuration
+                    if (System.currentTimeMillis() > matchEndTime) {
+                        Log.w(TAG, "Game $gameId has ended (match time expired).")
+                        onDatabaseError?.invoke("Game $gameId has ended")
+                        callback(false, null, null)
+                        return
+                    }
+                }
+
+                // Check for stale games
+                val lastActivity = snapshot.child(LAST_ACTIVITY_NODE).getValue(Long::class.java) ?: 0L
+                val currentTime = System.currentTimeMillis()
+                if (currentTime - lastActivity > STALE_GAME_TTL_MS) {
+                    Log.w(TAG, "Game $gameId is stale (last activity too old).")
+                    onDatabaseError?.invoke("Game $gameId is no longer active")
+                    callback(false, null, null)
+                    return
+                }
+
                 // Get the maze seed from the game
                 val gameMazeSeed = snapshot.child("mazeSeed").getValue(Long::class.java)
                 // Get game settings
@@ -332,13 +377,11 @@ class MultiplayerManager {
 
                 if (gameMazeSeed != null) {
                     mazeSeed = gameMazeSeed
-                    initialPlayerState.mazeSeed = gameMazeSeed  // Use the host's seed
                     Log.d(TAG, "Retrieved maze seed from host: $mazeSeed")
                 } else {
                     // Fallback if no seed found
                     Log.w(TAG, "No maze seed found in game data for $gameId, using local time")
                     mazeSeed = System.currentTimeMillis()
-                    initialPlayerState.mazeSeed = mazeSeed
                 }
                 
                 // Now check players to determine the next available ID
@@ -359,6 +402,25 @@ class MultiplayerManager {
                     return
                 }
 
+                // ✅ CHECK FOR ACTIVE PLAYERS TO AVOID JOINING DEAD GAMES
+                var activePlayerCount = 0
+                for (playerSnap in playersNodeSnapshot.children) {
+                    val isActive = playerSnap.child("active").getValue(Boolean::class.java) ?: false
+                    if (isActive) {
+                        activePlayerCount++
+                    }
+                }
+                
+                // If there are no active players, the game is probably dead
+                if (activePlayerCount == 0) {
+                    Log.w(TAG, "Game $gameId has no active players (dead game).")
+                    onDatabaseError?.invoke("Game $gameId has no active players")
+                    callback(false, null, null)
+                    return
+                }
+                
+                Log.d(TAG, "Game $gameId validation passed: $activePlayerCount active players out of $playerCount total")
+
                 // pick next available slot
                 var nextIndex = 1
                 while (playersNodeSnapshot.hasChild("player$nextIndex")) {
@@ -378,6 +440,8 @@ class MultiplayerManager {
                 playersRef!!.child(assignedId).setValue(initialPlayerState)
                     .addOnSuccessListener {
                         Log.i(TAG, "Added $assignedId to Firebase game $gameId.")
+                        // Update gamesList player count
+                        updateGamesListPlayerCount(gameId, playerCount + 1)
                         updateLastActivityTimestamp()
                         setupFirebaseListeners()
                         // After both players (host and this joiner) are present, start listening for rematch decisions
@@ -405,12 +469,12 @@ class MultiplayerManager {
      * @param callback Called with the game ID if found, or null if no games available
      */
     private fun findRandomAvailableGame(callback: (String?) -> Unit) {
-        val gamesRef = database.getReference(GAMES_NODE)
+        val gamesListRef = database.getReference(GAMES_LIST_NODE)
         
-        Log.d(TAG, "Searching for available games...")
+        Log.d(TAG, "Searching for available games in gamesList...")
         performStaleGameCleanup() // Call cleanup before searching
         
-        gamesRef.orderByChild(CREATED_AT_NODE).limitToLast(MAX_GAMES_TO_SCAN_FOR_CLEANUP) // Use constant for limit
+        gamesListRef.orderByChild(CREATED_AT_NODE).limitToLast(MAX_GAMES_TO_SCAN_FOR_CLEANUP) // Use constant for limit
               .addListenerForSingleValueEvent(object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 try {
@@ -427,18 +491,10 @@ class MultiplayerManager {
                     for (gameSnapshot in snapshot.children.reversed()) { // Check newest first
                         val gameId = gameSnapshot.key ?: continue
                         
-                        // Log the raw game data for debugging
-                        Log.v(TAG, "Examining game: $gameId -> ${gameSnapshot.value}") // Use verbose logging
+                        // GamesList contains only: createdAt, isPrivate, playerCount, started
+                        Log.v(TAG, "Examining gamesList entry: $gameId -> ${gameSnapshot.value}") // Use verbose logging
                         
-                        // Check if game has players node and fewer than maxPlayers
-                        val playersSnapshot = gameSnapshot.child("players")
-                        if (!playersSnapshot.exists()) {
-                            Log.v(TAG, "Game $gameId skipped: no players node")
-                            skippedCount++
-                            continue
-                        }
-                        
-                        val playerCount = playersSnapshot.childrenCount
+                        val playerCount = gameSnapshot.child("playerCount").getValue(Long::class.java) ?: 0L
                         val maxPlayers = 4
                         
                         if (playerCount == 0L || playerCount >= maxPlayers) { // Skip empty or full games
@@ -448,8 +504,8 @@ class MultiplayerManager {
                         }
                         
                         // Check if game has already started
-                        val started = gameSnapshot.child("started").getValue(Boolean::class.java)
-                        if (started == true) {
+                        val started = gameSnapshot.child("started").getValue(Boolean::class.java) ?: false
+                        if (started) {
                             Log.v(TAG, "Game $gameId skipped: already started")
                             skippedCount++
                             continue
@@ -463,9 +519,9 @@ class MultiplayerManager {
                             continue
                         }
                         
-                        // Game is available
+                        // Game is available (gamesList only contains active games)
                         availableGames.add(gameId)
-                        Log.d(TAG, "Found potentially available public game: $gameId with $playerCount players")
+                        Log.d(TAG, "Found available public game: $gameId with $playerCount players")
                     }
                     
                     Log.d(TAG, "Search result: ${availableGames.size} potentially available public games, $skippedCount skipped")
@@ -492,6 +548,53 @@ class MultiplayerManager {
                 callback(null)
             }
         })
+    }
+
+    /**
+     * Adds a game to the public gamesList for discovery
+     */
+    private fun addToGamesList(gameId: String, isPrivate: Boolean, playerCount: Long, started: Boolean) {
+        val gamesListRef = database.getReference(GAMES_LIST_NODE).child(gameId)
+        val gamesListData = mapOf(
+            CREATED_AT_NODE to ServerValue.TIMESTAMP,
+            "isPrivate" to isPrivate,
+            "playerCount" to playerCount,
+            "started" to started
+        )
+        
+        gamesListRef.setValue(gamesListData).addOnFailureListener { e ->
+            Log.w(TAG, "Failed to add game $gameId to gamesList", e)
+        }
+    }
+
+    /**
+     * Updates the player count in gamesList when players join/leave
+     */
+    private fun updateGamesListPlayerCount(gameId: String, playerCount: Long) {
+        val gamesListRef = database.getReference(GAMES_LIST_NODE).child(gameId)
+        gamesListRef.child("playerCount").setValue(playerCount).addOnFailureListener { e ->
+            Log.w(TAG, "Failed to update player count in gamesList for $gameId", e)
+        }
+    }
+
+    /**
+     * Updates the started status in gamesList when a game starts
+     */
+    private fun updateGamesListStarted(gameId: String, started: Boolean) {
+        val gamesListRef = database.getReference(GAMES_LIST_NODE).child(gameId)
+        gamesListRef.child("started").setValue(started).addOnFailureListener { e ->
+            Log.w(TAG, "Failed to update started status in gamesList for $gameId", e)
+        }
+    }
+
+    /**
+     * Removes a game from gamesList when it's no longer discoverable
+     */
+    private fun removeFromGamesList(gameId: String) {
+        val gamesListRef = database.getReference(GAMES_LIST_NODE).child(gameId)
+        gamesListRef.removeValue().addOnFailureListener { e ->
+            Log.w(TAG, "Failed to remove game $gameId from gamesList", e)
+        }
     }
 
     fun updateLocalPlayerState(newState: PlayerState) {
@@ -800,6 +903,12 @@ class MultiplayerManager {
                             LAST_ACTIVITY_NODE to ServerValue.TIMESTAMP // Host started match
                         )
                         gameRef!!.updateChildren(updates)
+                            .addOnSuccessListener {
+                                // Update gamesList to mark game as started
+                                currentGameId?.let { gameId ->
+                                    updateGamesListStarted(gameId, true)
+                                }
+                            }
                             .addOnFailureListener { e ->
                                 Log.w(TAG, "Failed to send match start for $currentGameId", e)
                                 onDatabaseError?.invoke("Failed to send start signal: "+e.message)
@@ -816,6 +925,12 @@ class MultiplayerManager {
                     LAST_ACTIVITY_NODE to ServerValue.TIMESTAMP // Host started match (fallback)
                 )
                 gameRef!!.updateChildren(updates)
+                    .addOnSuccessListener {
+                        // Update gamesList to mark game as started (fallback case)
+                        currentGameId?.let { gameId ->
+                            updateGamesListStarted(gameId, true)
+                        }
+                    }
                     .addOnFailureListener { e ->
                         Log.w(TAG, "Failed to send match start for $currentGameId", e)
                         onDatabaseError?.invoke("Failed to send start signal: "+e.message)

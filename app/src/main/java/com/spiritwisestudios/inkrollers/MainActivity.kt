@@ -304,8 +304,8 @@ class MainActivity:AppCompatActivity(){
                    multiplayerManager.joinGame(null, initialState) { success, playerId, gameSettings ->
                        if (success && playerId != null) {
                            this.localPlayerId = playerId
-                                   // Set local player ID with the determined color and name
-                                   gameView.setLocalPlayerId(playerId, playerColor, playerName)
+                               // Set local player ID with the determined color and name
+                               gameView.setLocalPlayerId(playerId, playerColor, playerName)
 
                            // Apply game settings received from Firebase
                            gameSettings?.let {
@@ -457,7 +457,7 @@ class MainActivity:AppCompatActivity(){
                 if (uidsToLoad.isEmpty()) {
                     Log.w(TAG, "No valid player UIDs found from Firebase states for rematch setup.")
                     // Fallback to default colors/names if no profiles can be loaded
-                    assignDefaultColorsAndNames(playerIds, initialStates, currentLevel, multiplayerManager.mazeSeed)
+                    assignDefaultColorsAndNames(playerIds, initialStates, currentLevel)
                     gameView.clearPaintSurface()
                     gameView.initGame(mazeComplexity)
                     val localPlayerId = multiplayerManager.localPlayerId
@@ -482,7 +482,7 @@ class MainActivity:AppCompatActivity(){
                         if (loadedProfileCount == uidsToLoad.size) {
                             // All profiles loaded, now assign colors and names
                             Log.d(TAG, "All profiles loaded for rematch. Assigning colors and names.")
-                            assignColorsAndNamesForRematch(playerIds, playerProfiles, initialStates, currentLevel, multiplayerManager.mazeSeed)
+                            assignColorsAndNamesForRematch(playerIds, playerProfiles, initialStates, currentLevel)
                            
                             // 4. Clear the paint surface
                             gameView.clearPaintSurface()
@@ -516,7 +516,7 @@ class MainActivity:AppCompatActivity(){
   }
 
   // Helper function to assign default colors and names if profiles can't be loaded
-  private fun assignDefaultColorsAndNames(playerIds: Set<String>, initialStates: MutableMap<String, PlayerState>, currentLevel: Level?, mazeSeed: Long) {
+  private fun assignDefaultColorsAndNames(playerIds: Set<String>, initialStates: MutableMap<String, PlayerState>, currentLevel: Level?) {
       Log.d(TAG, "Assigning default colors and names for rematch.")
       if (currentLevel !is MazeLevel) {
            Log.e(TAG, "Cannot assign default states: currentLevel is not MazeLevel or null")
@@ -533,16 +533,15 @@ class MainActivity:AppCompatActivity(){
             val (normX, normY) = currentLevel.screenToMazeCoord(startPosScreen.first, startPosScreen.second)
            val defaultColor = if (playerIndex == 0) NEON_GREEN else NEON_BLUE
            val defaultName = "Player ${playerIndex + 1}"
-            initialStates[playerId] = PlayerState(
+                        initialStates[playerId] = PlayerState(
                 normX = normX,
                 normY = normY,
-               color = defaultColor,
-               mode = 0,
-               ink = Player.MAX_INK,
+                color = defaultColor,
+                mode = 0,
+                ink = Player.MAX_INK,
                 active = true,
-               mazeSeed = mazeSeed,
-               playerName = defaultName,
-               uid = multiplayerManager.getCurrentUserUid() ?: "" // Use getter for local UID as fallback
+                playerName = defaultName,
+                uid = multiplayerManager.getCurrentUserUid() ?: "" // Use getter for local UID as fallback
             )
         }
        Log.d(TAG, "Default initial states created: $initialStates")
@@ -551,12 +550,12 @@ class MainActivity:AppCompatActivity(){
   }
 
   // Helper function to assign colors and names based on profiles, handling duplicates
-  private fun assignColorsAndNamesForRematch(playerIds: Set<String>, playerProfiles: Map<String, PlayerProfile?>, initialStates: MutableMap<String, PlayerState>, currentLevel: Level?, mazeSeed: Long) {
+  private fun assignColorsAndNamesForRematch(playerIds: Set<String>, playerProfiles: Map<String, PlayerProfile?>, initialStates: MutableMap<String, PlayerState>, currentLevel: Level?) {
       Log.d(TAG, "Assigning colors and names based on profiles for rematch.")
       if (currentLevel !is MazeLevel) {
           Log.e(TAG, "Cannot assign states based on profiles: currentLevel is not MazeLevel or null")
           // Fallback to defaults
-          assignDefaultColorsAndNames(playerIds, initialStates, currentLevel, mazeSeed)
+          assignDefaultColorsAndNames(playerIds, initialStates, currentLevel)
           return
       }
 
@@ -628,7 +627,6 @@ class MainActivity:AppCompatActivity(){
                mode = 0,
                ink = Player.MAX_INK,
                active = true,
-               mazeSeed = mazeSeed,
                playerName = playerName,
                uid = uid
            )
