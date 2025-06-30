@@ -13,15 +13,21 @@
       ".read": "auth != null",
       ".indexOn": ["createdAt", "isPrivate", "started"],
       "$gameId": {
-        ".write": "auth != null && !data.exists()",
-        ".validate": "newData.hasChildren(['createdAt', 'isPrivate', 'playerCount', 'started'])"
+        ".write": "auth != null && (!data.exists() || newData.val() == null)",
+        ".validate": "newData.hasChildren(['createdAt', 'isPrivate', 'playerCount', 'started'])",
+        "playerCount": {
+          ".write": "auth != null"
+        },
+        "started": {
+          ".write": "auth != null && root.child('games').child($gameId).child('players').child('player0').child('uid').val() == auth.uid"
+        }
       }
     },
     "games": {
       ".read": "auth != null",
       ".indexOn": ["createdAt", "isPrivate", "lastActivityAt"],
       "$gameId": {
-        ".write": "auth != null && !data.exists()",
+        ".write": "auth != null && (!data.exists() || newData.val() == null)",
 
         "createdAt": { 
           ".write": "auth != null && !data.exists()" 
