@@ -6,10 +6,13 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.View
+import android.view.WindowInsets
+import android.view.WindowInsetsController
+import android.view.WindowManager
+import android.os.Build
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import com.google.firebase.BuildConfig
 import com.spiritwisestudios.inkrollers.ui.ProfileFragment
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.ktx.Firebase
@@ -19,7 +22,6 @@ import com.google.firebase.appcheck.FirebaseAppCheck
 import com.google.firebase.appcheck.playintegrity.PlayIntegrityAppCheckProviderFactory
 import com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory
 import com.spiritwisestudios.inkrollers.databinding.ActivityHomeBinding
-//import com.spiritwisestudios.inkrollers.BuildConfig
 
 class HomeActivity : AppCompatActivity() {
 
@@ -50,8 +52,14 @@ class HomeActivity : AppCompatActivity() {
         binding = ActivityHomeBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        // Enable full screen immersive mode
+        enableFullScreenMode()
+
         // Initialize Firebase App Check
         FirebaseApp.initializeApp(this)
+        // TODO: Re-enable App Check after proper registration with Firebase Console
+        // Temporarily disabled due to "App not registered" error
+        /*
         val firebaseAppCheck = FirebaseAppCheck.getInstance()
         if (BuildConfig.DEBUG) {
             firebaseAppCheck.installAppCheckProviderFactory(
@@ -62,6 +70,7 @@ class HomeActivity : AppCompatActivity() {
                 PlayIntegrityAppCheckProviderFactory.getInstance()
             )
         }
+        */
 
         binding.buttonPlay.setOnClickListener {
             // Apply the press animation
@@ -134,6 +143,8 @@ class HomeActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // Re-enable full screen mode when returning to the activity
+        enableFullScreenMode()
         // REMOVE: Set user online when activity resumes
         // Firebase.auth.currentUser?.uid?.let {
         // ProfileRepository.setUserOnlineStatus(it)
@@ -224,6 +235,41 @@ class HomeActivity : AppCompatActivity() {
             binding.buttonPlay.visibility = View.VISIBLE
         } else {
             super.onBackPressed()
+        }
+    }
+
+    /**
+     * Enables full screen immersive mode by hiding status bar and navigation bar
+     */
+    private fun enableFullScreenMode() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // For Android 11 (API 30) and above
+            window.insetsController?.let { controller ->
+                controller.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+                controller.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        } else {
+            // For Android 10 (API 29) and below
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = (
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_FULLSCREEN
+            )
+        }
+        
+        // Keep screen on during app usage
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            // Re-enable full screen mode when window regains focus
+            enableFullScreenMode()
         }
     }
 } 

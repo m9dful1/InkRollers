@@ -160,6 +160,10 @@ class MultiplayerManager {
     // Callback for when rematch should actually start (after both YES)
     var onRematchStartSignal: (() -> Unit)? = null
 
+    // Public getter methods for accessing private state
+    fun getCurrentUserUid(): String? = auth.currentUser?.uid
+    fun getGameRef(): DatabaseReference? = gameRef
+
     fun hostGame(initialPlayerState: PlayerState, durationMs: Long, complexity: String, gameMode: String, isPrivate: Boolean, callback: (success: Boolean, gameId: String?, gameSettings: GameSettings?) -> Unit) {
         clearListeners() // Clear any previous listeners
         
@@ -299,6 +303,93 @@ class MultiplayerManager {
             Log.d(TAG, "joinGame(): requested specific gameId=$gameId")
             attemptToJoinGame(gameId, initialPlayerState, null, callback)
         }
+    }
+    
+    /**
+     * Special method for rejoining an existing game where the player was previously active
+     * This handles reactivating the existing player slot instead of creating a new one
+     */
+    fun rejoinGame(initialPlayerState: PlayerState, gameId: String, expectedPlayerId: String, callback: (success: Boolean, gameId: String?, gameSettings: GameSettings?) -> Unit) {
+        clearListeners() // Clear any previous listeners
+        
+        // Ensure user is authenticated before proceeding
+        if (auth.currentUser == null) {
+            Log.e(TAG, "Cannot rejoin game: User not authenticated")
+            onDatabaseError?.invoke("Authentication required to rejoin game")
+            callback(false, null, null)
+            return
+        }
+        
+        Log.d(TAG, "Attempting to rejoin game $gameId as $expectedPlayerId")
+        
+        val ref = database.getReference(GAMES_NODE).child(gameId)
+        ref.addListenerForSingleValueEvent(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                if (snapshot.exists()) {
+                    val isStarted = snapshot.child("started").getValue(Boolean::class.java) ?: false
+                    val playersNode = snapshot.child("players")
+                    val existingPlayer = playersNode.child(expectedPlayerId)
+                    
+                    if (!existingPlayer.exists()) {
+                        Log.w(TAG, "Player $expectedPlayerId does not exist in game $gameId - cannot rejoin")
+                        callback(false, null, null)
+                        return
+                    }
+                    
+                    // Player exists, proceed with rejoin
+                    Log.i(TAG, "Rejoining game $gameId as existing player $expectedPlayerId")
+                    currentGameId = gameId
+                    gameRef = ref
+                    playersRef = gameRef?.child("players")
+                    paintRef = gameRef?.child(PAINT_NODE)
+                    localPlayerId = expectedPlayerId
+
+                    // Read game settings
+                    val duration = snapshot.child("matchDurationMs").getValue(Long::class.java) ?: 60000L
+                    val complexity = snapshot.child("mazeComplexity").getValue(String::class.java) ?: HomeActivity.COMPLEXITY_MEDIUM
+                    val mode = snapshot.child("gameMode").getValue(String::class.java) ?: HomeActivity.GAME_MODE_COVERAGE
+                    gameSettings = GameSettings(duration, complexity, mode)
+                    
+                    mazeSeed = snapshot.child("mazeSeed").getValue(Long::class.java) ?: System.currentTimeMillis()
+
+                    // Reactivate the existing player by updating their state
+                    val reactivateUpdates = mapOf(
+                        "active" to true,
+                        "color" to initialPlayerState.color,
+                        "playerName" to initialPlayerState.playerName,
+                        "uid" to initialPlayerState.uid
+                        // Keep existing position if game is in progress
+                    )
+                    
+                    playersRef?.child(expectedPlayerId)?.updateChildren(reactivateUpdates)?.addOnSuccessListener {
+                        Log.d(TAG, "Successfully reactivated player $expectedPlayerId in game $gameId")
+                        updateLastActivityTimestamp()
+                        setupFirebaseListeners()
+                        
+                        // If game has already started, we need to handle mid-game rejoin
+                        if (isStarted) {
+                            Log.d(TAG, "Rejoining game $gameId that has already started")
+                            // Game is in progress, trigger immediate rejoin flow
+                            callback(true, currentGameId, gameSettings)
+                        } else {
+                            Log.d(TAG, "Rejoined game $gameId before start")
+                            callback(true, currentGameId, gameSettings)
+                        }
+                    }?.addOnFailureListener { e ->
+                        Log.e(TAG, "Failed to reactivate player $expectedPlayerId in game $gameId", e)
+                        callback(false, null, null)
+                    }
+                } else {
+                    Log.w(TAG, "Game with ID $gameId does not exist for rejoin.")
+                    callback(false, null, null)
+                }
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Log.e(TAG, "Error rejoining game $gameId", error.toException())
+                callback(false, null, null)
+            }
+        })
     }
     
     // Find an available public game
@@ -1157,10 +1248,7 @@ class MultiplayerManager {
         }
     }
 
-    /** Returns the current user's Firebase UID, or null if not authenticated. */
-    fun getCurrentUserUid(): String? {
-        return auth.currentUser?.uid
-    }
+
 
     private fun updateLastActivityTimestamp() {
         gameRef?.child(LAST_ACTIVITY_NODE)?.setValue(ServerValue.TIMESTAMP)

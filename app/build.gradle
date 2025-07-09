@@ -71,6 +71,9 @@ dependencies {
     implementation 'androidx.compose.runtime:runtime'
     implementation 'androidx.activity:activity-compose:1.9.0'
     implementation 'com.google.firebase:firebase-appcheck-debug:18.0.0'
+    
+    // JSON serialization for game state persistence
+    implementation 'com.google.code.gson:gson:2.10.1'
 
     testImplementation 'junit:junit:4.13.2'
   testImplementation "org.jetbrains.kotlin:kotlin-test-junit:$kotlin_version"

@@ -8,12 +8,20 @@ import androidx.appcompat.app.AppCompatActivity
 import android.app.AlertDialog
 import android.os.Handler
 import android.os.Looper
+import android.view.View
+import android.view.WindowInsets
+import android.view.WindowInsetsController
+import android.view.WindowManager
+import android.os.Build
 import com.spiritwisestudios.inkrollers.TimerHudView
 import com.spiritwisestudios.inkrollers.GameModeManager
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.ktx.Firebase
 import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ValueEventListener
+import com.google.firebase.database.DataSnapshot
+import com.google.firebase.database.DatabaseError
 import com.spiritwisestudios.inkrollers.repository.ProfileRepository
 import com.spiritwisestudios.inkrollers.model.PlayerProfile
 import kotlin.random.Random
@@ -43,6 +51,12 @@ class MainActivity:AppCompatActivity(){
   private var rematchInProgressHandled = false
 
   private var matchStartTime: Long? = null // Add this field to store the synchronized start time
+  
+  // Game state manager for persistence
+  private lateinit var gameStateManager: GameStateManager
+  
+  // Flag to track if user is intentionally exiting
+  private var isIntentionalExit = false
 
   companion object {
       private const val TAG = "MainActivity"
@@ -54,8 +68,14 @@ class MainActivity:AppCompatActivity(){
     super.onCreate(savedInstanceState)
     setContentView(R.layout.activity_main)
 
+    // Enable full screen immersive mode
+    enableFullScreenMode()
+
     // Initialize Firebase Auth
     auth = Firebase.auth
+    
+    // Initialize Game State Manager
+    gameStateManager = GameStateManager(this)
 
     gameView=findViewById(R.id.game_view)
     inkHudView = findViewById(R.id.ink_hud_view)
@@ -151,6 +171,43 @@ class MainActivity:AppCompatActivity(){
     signInAnonymouslyAndProceed()
   }
 
+  /**
+   * Enables full screen immersive mode by hiding status bar and navigation bar
+   */
+  private fun enableFullScreenMode() {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+      // For Android 11 (API 30) and above
+      window.insetsController?.let { controller ->
+        controller.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+        controller.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+      }
+    } else {
+      // For Android 10 (API 29) and below
+      @Suppress("DEPRECATION")
+      window.decorView.systemUiVisibility = (
+        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+        or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+        or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+        or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+        or View.SYSTEM_UI_FLAG_FULLSCREEN
+      )
+    }
+    
+    // Keep screen on during gameplay
+    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+  }
+
+
+
+  override fun onWindowFocusChanged(hasFocus: Boolean) {
+    super.onWindowFocusChanged(hasFocus)
+    if (hasFocus) {
+      // Re-enable full screen mode when window regains focus
+      enableFullScreenMode()
+    }
+  }
+
   private fun signInAnonymouslyAndProceed() {
       Log.d(TAG, "Attempting anonymous sign-in...")
       auth.signInAnonymously()
@@ -160,7 +217,16 @@ class MainActivity:AppCompatActivity(){
                   Log.d(TAG, "Anonymous sign-in successful")
                   val user = auth.currentUser
                   Log.d(TAG, "Authenticated with UID: ${user?.uid}")
-                  handleIntentExtras() // Now proceed with hosting/joining
+                  
+                  // Check if we should attempt to rejoin an existing game
+                  if (gameStateManager.shouldAttemptRejoin()) {
+                      Log.d(TAG, "Found existing game state, attempting to rejoin")
+                      attemptRejoinExistingGame()
+                  } else {
+                      Log.d(TAG, "No existing game to rejoin, proceeding with normal flow")
+                      gameStateManager.clearIntentionalExit() // Clear any old exit flags
+                      handleIntentExtras() // Proceed with hosting/joining new game
+                  }
               } else {
                   // If sign in fails, display a message to the user.
                   Log.w(TAG, "Anonymous sign-in failed", task.exception)
@@ -261,11 +327,11 @@ class MainActivity:AppCompatActivity(){
           HomeActivity.MODE_JOIN -> {
               val gameId = intent.getStringExtra(HomeActivity.EXTRA_GAME_ID)
               if (gameId != null) {
-                  multiplayerManager.joinGame(gameId, initialState) { success, playerId, gameSettings ->
-                       if (success && playerId != null) {
-                           this.localPlayerId = playerId
+                  multiplayerManager.joinGame(initialState, gameId) { success, joinedGameId, gameSettings ->
+                       if (success && joinedGameId != null) {
+                           this.localPlayerId = multiplayerManager.localPlayerId
                                    // Set local player ID with the determined color and name
-                                   gameView.setLocalPlayerId(playerId, playerColor, playerName)
+                                   gameView.setLocalPlayerId(this.localPlayerId, playerColor, playerName)
 
                            // Apply game settings received from Firebase
                            gameSettings?.let {
@@ -277,7 +343,7 @@ class MainActivity:AppCompatActivity(){
                            // Show waiting dialog until host starts
                            runOnUiThread {
                                showWaitingForHostDialog()
-                               Toast.makeText(this, "Joined Game: $gameId as $playerId", Toast.LENGTH_LONG).show()
+                               Toast.makeText(this, "Joined Game: $joinedGameId as ${this.localPlayerId}", Toast.LENGTH_LONG).show()
                            }
                            multiplayerManager.onMatchStartRequested = {
                                // Only trigger once
@@ -287,7 +353,7 @@ class MainActivity:AppCompatActivity(){
                                    startPreMatchCountdown(isHost = false)
                                }
                            }
-                           Log.i(TAG, "Joining successful. Game ID: $gameId, Player ID: ${this.localPlayerId}")
+                           Log.i(TAG, "Joining successful. Game ID: $joinedGameId, Player ID: ${this.localPlayerId}")
                        } else {
                             Log.e(TAG, "Failed to join game $gameId.")
                             runOnUiThread {
@@ -301,11 +367,11 @@ class MainActivity:AppCompatActivity(){
                    runOnUiThread {
                        Toast.makeText(this, "Searching for an available game...", Toast.LENGTH_SHORT).show()
                    }
-                   multiplayerManager.joinGame(null, initialState) { success, playerId, gameSettings ->
-                       if (success && playerId != null) {
-                           this.localPlayerId = playerId
+                   multiplayerManager.joinGame(initialState, null) { success, joinedGameId, gameSettings ->
+                       if (success && joinedGameId != null) {
+                           this.localPlayerId = multiplayerManager.localPlayerId
                                // Set local player ID with the determined color and name
-                               gameView.setLocalPlayerId(playerId, playerColor, playerName)
+                               gameView.setLocalPlayerId(this.localPlayerId, playerColor, playerName)
 
                            // Apply game settings received from Firebase
                            gameSettings?.let {
@@ -315,9 +381,8 @@ class MainActivity:AppCompatActivity(){
                                Log.d(TAG, "Joined random game with settings: Duration=${matchDurationMs}ms, Complexity=$mazeComplexity, GameMode=$gameMode")
                            }
                            // Show the game ID that was joined
-                           val joinedGameId = multiplayerManager.currentGameId
                            runOnUiThread {
-                               Toast.makeText(this, "Joined Random Game: $joinedGameId as $playerId", Toast.LENGTH_LONG).show()
+                               Toast.makeText(this, "Joined Random Game: $joinedGameId as ${this.localPlayerId}", Toast.LENGTH_LONG).show()
                                // Show waiting dialog until host starts
                                showWaitingForHostDialog()
                            }
@@ -363,14 +428,221 @@ class MainActivity:AppCompatActivity(){
         countdownDialog = null
       }
       super.onDestroy()
-      Log.d(TAG, "onDestroy called, leaving game...")
-      multiplayerManager.leaveGame()
+      
+      Log.d(TAG, "onDestroy called. IsIntentionalExit: $isIntentionalExit, IsFinishing: $isFinishing")
+      
+      if (isIntentionalExit || isFinishing) {
+          // Only leave game if user is intentionally exiting or app is finishing
+          Log.d(TAG, "Leaving game due to intentional exit or app finishing")
+          gameStateManager.markIntentionalExit()
+          gameStateManager.clearActiveGameState()
+          multiplayerManager.leaveGame()
+      } else {
+          // App is going to background, save game state for potential rejoin
+          Log.d(TAG, "App backgrounding - saving game state for potential rejoin")
+          saveCurrentGameState()
+      }
   }
 
   override fun onPause(){ super.onPause(); gameView.pause() }
-  override fun onResume(){ super.onResume(); gameView.resume() }
+  override fun onResume() { 
+    super.onResume()
+    // Re-enable full screen mode when returning to the activity
+    enableFullScreenMode()
+    gameView.resume() 
+  }
+  
+  // Handle back button press as intentional exit
+  override fun onBackPressed() {
+      Log.d(TAG, "Back button pressed - marking as intentional exit")
+      isIntentionalExit = true
+      super.onBackPressed()
+  }
+  
+  /**
+   * Save the current game state to persistent storage for potential rejoin
+   */
+     private fun saveCurrentGameState() {
+       val gameId = multiplayerManager.currentGameId
+       val playerId = localPlayerId
+       val playerColor = gameView.getLocalPlayer()?.getColor()
+       val playerName = gameView.getLocalPlayer()?.playerName ?: ""
+       val playerUid = auth.currentUser?.uid ?: ""
+      
+      if (gameId != null && playerId != null) {
+          Log.d(TAG, "Saving game state: gameId=$gameId, playerId=$playerId")
+          gameStateManager.saveActiveGameState(
+              gameId = gameId,
+              localPlayerId = playerId,
+              matchDurationMs = matchDurationMs,
+              mazeComplexity = mazeComplexity,
+              gameMode = gameMode,
+              isPrivateMatch = isPrivateMatch,
+              isHost = (playerId == "player0"),
+              playerColor = playerColor,
+              playerName = playerName,
+              playerUid = playerUid
+          )
+             } else {
+           Log.w(TAG, "Cannot save game state: gameId=$gameId, playerId=$playerId")
+       }
+   }
+   
+   /**
+    * Attempt to rejoin an existing game from saved state
+    */
+   private fun attemptRejoinExistingGame() {
+       val savedState = gameStateManager.getActiveGameState()
+       if (savedState == null) {
+           Log.w(TAG, "No saved game state found for rejoin attempt")
+           handleIntentExtras()
+           return
+       }
+       
+       Log.d(TAG, "Attempting to rejoin game: ${savedState.gameId} as ${savedState.localPlayerId}")
+       
+       // Restore the saved game settings
+       matchDurationMs = savedState.matchDurationMs
+       mazeComplexity = savedState.mazeComplexity
+       gameMode = savedState.gameMode
+       isPrivateMatch = savedState.isPrivateMatch
+       
+       // Create initial player state for rejoin
+       val playerColor = savedState.playerColor ?: (if (savedState.localPlayerId == "player0") NEON_GREEN else NEON_BLUE)
+       val initialState = PlayerState(
+           normX = 0.5f, // Default position, will be updated from Firebase
+           normY = 0.5f,
+           color = playerColor,
+           mode = 0,
+           ink = Player.MAX_INK,
+           active = true,
+           playerName = savedState.playerName,
+           uid = savedState.playerUid
+       )
+       
+       // Show reconnecting dialog
+       runOnUiThread {
+           showReconnectingDialog()
+       }
+       
+       // Attempt to rejoin the specific game using the specialized rejoin method
+       multiplayerManager.rejoinGame(initialState, savedState.gameId, savedState.localPlayerId) { success, joinedGameId, gameSettings ->
+           runOnUiThread {
+               waitingDialog?.dismiss()
+               waitingDialog = null
+           }
+           
+           if (success && joinedGameId != null) {
+               Log.d(TAG, "Successfully rejoined game: $joinedGameId")
+               this.localPlayerId = multiplayerManager.localPlayerId
+               
+               // Set local player ID with saved color and name
+               gameView.setLocalPlayerId(this.localPlayerId, playerColor, savedState.playerName)
+               
+               // Apply game settings (should match saved state)
+               gameSettings?.let {
+                   matchDurationMs = it.durationMs
+                   mazeComplexity = it.complexity
+                   gameMode = it.gameMode
+               }
+               
+               runOnUiThread {
+                   Toast.makeText(this, "Reconnected to game: $joinedGameId", Toast.LENGTH_SHORT).show()
+                   
+                   // Check if game has already started by querying Firebase
+                   multiplayerManager.getGameRef()?.child("started")?.addListenerForSingleValueEvent(object : ValueEventListener {
+                       override fun onDataChange(snapshot: DataSnapshot) {
+                           val gameStarted = snapshot.getValue(Boolean::class.java) ?: false
+                           if (gameStarted) {
+                               Log.d(TAG, "Rejoined a game that's already in progress - starting immediately")
+                               // Game is already running, initialize and start immediately
+                               gameView.initGame(mazeComplexity)
+                               gameView.setLocalPlayerId(localPlayerId, playerColor, savedState.playerName)
+                               
+                               // Start the game mode if we have a start time
+                               multiplayerManager.getGameRef()?.child("startTime")?.addListenerForSingleValueEvent(object : ValueEventListener {
+                                   override fun onDataChange(startTimeSnapshot: DataSnapshot) {
+                                       val startTime = startTimeSnapshot.getValue(Long::class.java)
+                                       val selectedGameMode = when (gameMode) {
+                                           HomeActivity.GAME_MODE_ZONES -> GameMode.ZONES
+                                           HomeActivity.GAME_MODE_COVERAGE -> GameMode.COVERAGE
+                                           else -> GameMode.COVERAGE
+                                       }
+                                       
+                                       if (startTime != null) {
+                                           gameView.startGameMode(selectedGameMode, matchDurationMs, startTime)
+                                       } else {
+                                           gameView.startGameMode(selectedGameMode, matchDurationMs)
+                                       }
+                                       gameView.startGameLoop()
+                                       Log.d(TAG, "Rejoined mid-game and started successfully")
+                                   }
+                                   override fun onCancelled(error: DatabaseError) {
+                                       Log.w(TAG, "Failed to get start time for rejoin", error.toException())
+                                       // Fallback to starting without specific start time
+                                       val selectedGameMode = when (gameMode) {
+                                           HomeActivity.GAME_MODE_ZONES -> GameMode.ZONES
+                                           HomeActivity.GAME_MODE_COVERAGE -> GameMode.COVERAGE
+                                           else -> GameMode.COVERAGE
+                                       }
+                                       gameView.startGameMode(selectedGameMode, matchDurationMs)
+                                       gameView.startGameLoop()
+                                   }
+                               })
+                           } else {
+                               Log.d(TAG, "Rejoined a game that hasn't started yet - waiting for host")
+                               // Game hasn't started yet, wait for host to start
+                               multiplayerManager.onMatchStartRequested = {
+                                   multiplayerManager.onMatchStartRequested = null
+                                   runOnUiThread {
+                                       startPreMatchCountdown(isHost = false)
+                                   }
+                               }
+                           }
+                       }
+                       override fun onCancelled(error: DatabaseError) {
+                           Log.w(TAG, "Failed to check game started status for rejoin", error.toException())
+                           // Fallback to waiting for start signal
+                           multiplayerManager.onMatchStartRequested = {
+                               multiplayerManager.onMatchStartRequested = null
+                               runOnUiThread {
+                                   startPreMatchCountdown(isHost = false)
+                               }
+                           }
+                       }
+                   })
+               }
+               
+               // Clear the saved state since we successfully rejoined
+               gameStateManager.clearActiveGameState()
+           } else {
+               Log.w(TAG, "Failed to rejoin saved game: ${savedState.gameId}")
+               // Clear the stale game state and proceed with normal flow
+               gameStateManager.clearActiveGameState()
+               runOnUiThread {
+                   Toast.makeText(this, "Could not reconnect to previous game. Starting new game search.", Toast.LENGTH_SHORT).show()
+               }
+               handleIntentExtras()
+           }
+       }
+   }
+   
+   /**
+    * Show dialog indicating we're trying to reconnect to a previous game
+    */
+   private fun showReconnectingDialog() {
+       if (isFinishing || isDestroyed) {
+           return
+       }
+       
+       waitingDialog = AlertDialog.Builder(this)
+           .setTitle("Reconnecting")
+           .setMessage("Attempting to reconnect to your previous game...")
+           .setCancelable(false)
+           .show()
+   }
 
-  /** Display rematch dialog and send answer */
+   /** Display rematch dialog and send answer */
   private fun showRematchDialog(didWin: Boolean) {
     runOnUiThread {
       if (isFinishing || isDestroyed) {
@@ -812,12 +1084,17 @@ class MainActivity:AppCompatActivity(){
       finish()
   }
 
-  private fun showFirebaseErrorDialog(errorMessage: String) {
+  private fun showFirebaseErrorDialog(message: String) {
+    if (!isFinishing && !isDestroyed) {
       AlertDialog.Builder(this)
-          .setTitle("Firebase Error")
-          .setMessage(errorMessage)
-          .setPositiveButton("OK") { _, _ -> }
-          .show()
+        .setTitle("Error")
+        .setMessage(message)
+        .setPositiveButton("OK") { _, _ -> finish() }
+        .setCancelable(false)
+        .show()
+    } else {
+      Log.w(TAG, "Activity is finishing, cannot show error dialog: $message")
+    }
   }
 }
 

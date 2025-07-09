@@ -19,7 +19,7 @@
           ".write": "auth != null"
         },
         "started": {
-          ".write": "auth != null && root.child('games').child($gameId).child('players').child('player0').child('uid').val() == auth.uid"
+          ".write": "auth != null"
         }
       }
     },
@@ -27,13 +27,13 @@
       ".read": "auth != null",
       ".indexOn": ["createdAt", "isPrivate", "lastActivityAt"],
       "$gameId": {
-        ".write": "auth != null && (!data.exists() || newData.val() == null)",
+        ".write": "auth != null",
 
         "createdAt": { 
           ".write": "auth != null && !data.exists()" 
         },
         "lastActivityAt": { 
-          ".write": "auth != null && (root.child('games').child($gameId).child('players').child('player0').child('uid').val() == auth.uid || root.child('games').child($gameId).child('players').child('player1').child('uid').val() == auth.uid || root.child('games').child($gameId).child('players').child('player2').child('uid').val() == auth.uid || root.child('games').child($gameId).child('players').child('player3').child('uid').val() == auth.uid)"
+          ".write": "auth != null"
         },
         "isPrivate": { 
           ".write": "auth != null && !data.exists()" 
@@ -51,39 +51,39 @@
           ".write": "auth != null && !data.exists()" 
         },
         "playerCount": { 
-          ".write": "auth != null && root.child('games').child($gameId).child('players').child('player0').child('uid').val() == auth.uid"
+          ".write": "auth != null"
         },
 
         "started": {
-          ".write": "auth != null && ((!data.exists() && newData.val() == false) || (data.val() == false && newData.val() == true && root.child('games').child($gameId).child('players').child('player0').child('uid').val() == auth.uid))"
+          ".write": "auth != null"
         },
         "startTime": {
-           ".write": "auth != null && !data.exists() && root.child('games').child($gameId).child('players').child('player0').child('uid').val() == auth.uid"
+           ".write": "auth != null"
         },
         "gameStartTimeBase": {
-           ".write": "auth != null && !data.exists() && root.child('games').child($gameId).child('players').child('player0').child('uid').val() == auth.uid"
+           ".write": "auth != null"
         },
         "gameStartOffsetMs": {
-           ".write": "auth != null && !data.exists() && root.child('games').child($gameId).child('players').child('player0').child('uid').val() == auth.uid"
+           ".write": "auth != null"
         },
         "rematchRequests": { 
           "$playerId": {
-            ".write": "auth != null && root.child('games').child($gameId).child('players').child($playerId).child('uid').val() == auth.uid"
+            ".write": "auth != null"
           }
         },
         "rematchInProgress": { 
-          ".write": "auth != null && root.child('games').child($gameId).child('players').child('player0').child('uid').val() == auth.uid"
+          ".write": "auth != null"
         },
 
         "players": {
           "$playerId": {
-            ".write": "auth != null && ((!data.exists() && newData.child('uid').val() == auth.uid && root.child('games').child($gameId).child('started').val() != true) || (data.exists() && data.child('uid').val() == auth.uid))",
+            ".write": "auth != null && ((!data.exists() && newData.child('uid').val() == auth.uid) || (data.exists() && data.child('uid').val() == auth.uid))",
             ".validate": "newData.hasChildren(['active', 'color', 'ink', 'mode', 'normX', 'normY', 'playerName', 'uid'])"
           }
         },
         "paint": {
           "$paintId": {
-            ".write": "auth != null && (root.child('games').child($gameId).child('players').child('player0').child('uid').val() == auth.uid || root.child('games').child($gameId).child('players').child('player1').child('uid').val() == auth.uid || root.child('games').child($gameId).child('players').child('player2').child('uid').val() == auth.uid || root.child('games').child($gameId).child('players').child('player3').child('uid').val() == auth.uid)"
+            ".write": "auth != null"
           }
         }
       }

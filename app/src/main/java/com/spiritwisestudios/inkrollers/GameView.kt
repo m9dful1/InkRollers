@@ -22,6 +22,11 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.RectF
 import android.view.View
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
     SurfaceView(ctx,attrs),SurfaceHolder.Callback, MultiplayerManager.RemoteUpdateListener { // Implement listener
@@ -43,6 +48,12 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
   private var coverageUpdateFrames = 30 
   private var frameCount = 0
   
+  // Timers for throttling updates
+  private var timeSinceLastHudUpdate = 0f
+  private val hudUpdateInterval = 0.5f // ~2 times per second
+  private var timeSinceLastFirebaseUpdate = 0f
+  private val firebaseUpdateInterval = 0.05f // ~20 times per second
+  
   // Multiplayer specific fields
   private var multiplayerManager: MultiplayerManager? = null
   private var localPlayerId: String? = null
@@ -57,6 +68,19 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
   
   // Background image for the maze (center-cropped)
   private val bgBitmap: Bitmap by lazy { BitmapFactory.decodeResource(context.resources, R.drawable.space_bg) }
+  
+  // Reusable drawing objects to avoid allocation in onDraw
+  private val cornerNamePaint = Paint().apply {
+      color = Color.BLACK
+      textSize = 40f
+      isAntiAlias = true
+      typeface = Typeface.DEFAULT_BOLD
+  }
+  private val backgroundDestRect = RectF()
+  
+  // Coroutine scope for background tasks
+  private val viewJob = Job()
+  private val viewScope = CoroutineScope(Dispatchers.Default + viewJob)
   
   companion object {
       private const val TAG = "GameView"
@@ -83,6 +107,18 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
     for (player in players.values) {
         player.surface = surface
     }
+
+    // Calculate background scaling rectangle
+    val viewW = width.toFloat()
+    val viewH = height.toFloat()
+    val bmpW = bgBitmap.width.toFloat()
+    val bmpH = bgBitmap.height.toFloat()
+    val scale = maxOf(viewW / bmpW, viewH / bmpH)
+    val scaledW = bmpW * scale
+    val scaledH = bmpH * scale
+    val left = (viewW - scaledW) / 2
+    val top = (viewH - scaledH) / 2
+    backgroundDestRect.set(left, top, left + scaledW, top + scaledH)
   }
   
   override fun surfaceDestroyed(h:SurfaceHolder){ 
@@ -92,6 +128,7 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
         savedPaintBitmap = surface.getBitmapCopy()
     }
     stopThread() // Ensure thread is stopped cleanly when surface is destroyed
+    viewJob.cancel() // Cancel all coroutines started by this view
     Log.d(TAG, "Surface destroyed, game thread stopped.")
   }
   override fun surfaceChanged(h:SurfaceHolder,f:Int,w:Int,h2:Int){}
@@ -173,19 +210,24 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
           
           // Convert local player's screen position to normalized coordinates
           val (nx, ny) = (currentLevel as MazeLevel).screenToMazeCoord(localPlayer.x, localPlayer.y)
-          
-          // Send local player state to Firebase using normalized coordinates
-          val currentState = PlayerState(
-              normX = nx,
-              normY = ny,
-              color = localPlayer.getColor(),
-              mode = localPlayer.mode,
-              ink = localPlayer.ink,
-              active = true, // Mark as active
-              playerName = localPlayer.playerName, // Pass player name
-              uid = multiplayerManager?.getCurrentUserUid() ?: "" // Include UID
-          )
-          multiplayerManager?.updateLocalPlayerState(currentState)
+
+          // --- Throttled Firebase Update ---
+          timeSinceLastFirebaseUpdate += deltaTime
+          if (timeSinceLastFirebaseUpdate >= firebaseUpdateInterval) {
+            timeSinceLastFirebaseUpdate = 0f
+            // Send local player state to Firebase using normalized coordinates
+            val currentState = PlayerState(
+                normX = nx,
+                normY = ny,
+                color = localPlayer.getColor(),
+                mode = localPlayer.mode,
+                ink = localPlayer.ink,
+                active = true, // Mark as active
+                playerName = localPlayer.playerName, // Pass player name
+                uid = multiplayerManager?.getCurrentUserUid() ?: "" // Include UID
+            )
+            multiplayerManager?.updateLocalPlayerState(currentState)
+          }
       }
       
       // --- Update Other Game Elements --- 
@@ -226,63 +268,69 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
                 finishMatch("timer_expired")
               } // end !endNotified
             } else {
-              // Match is ongoing, update coverage HUD if applicable
-              when (mgr.mode) {
-                  GameMode.COVERAGE -> {
-                      if (currentLevel is MazeLevel) {
-                          try {
-                              val allStats = (currentLevel as MazeLevel).calculateCoverage(surface)
-                              val activeColors = players.values.map { it.getColor() }.toSet()
-                              val activeStats = allStats.filterKeys { it in activeColors }
+              // --- Throttled HUD Update ---
+              timeSinceLastHudUpdate += deltaTime
+              if (timeSinceLastHudUpdate >= hudUpdateInterval) {
+                timeSinceLastHudUpdate = 0f
 
-                              val leftColor = players["player0"]?.getColor()
-                              val rightColor = players["player1"]?.getColor()
+                // Match is ongoing, update coverage HUD if applicable
+                when (mgr.mode) {
+                    GameMode.COVERAGE -> {
+                        if (currentLevel is MazeLevel) {
+                            try {
+                                val allStats = (currentLevel as MazeLevel).calculateCoverage(surface)
+                                val activeColors = players.values.map { it.getColor() }.toSet()
+                                val activeStats = allStats.filterKeys { it in activeColors }
 
-                              // Move UI updates to main thread to avoid threading exception
-                              Handler(Looper.getMainLooper()).post {
-                                  try {
-                                      coverageHudView?.updateCoverage(activeStats, leftColor, rightColor)
-                                      // Hide zone HUD in coverage mode
-                                      zoneHudView?.visibility = View.GONE
-                                      coverageHudView?.visibility = View.VISIBLE
-                                  } catch (e: Exception) {
-                                      Log.e(TAG, "Error updating coverage HUD on main thread", e)
-                                  }
-                              }
-                          } catch (e: Exception) {
-                              Log.e(TAG, "Error calculating coverage", e)
-                          }
-                      }
-                  }
-                  GameMode.ZONES -> {
-                      if (currentLevel is MazeLevel) {
-                          try {
-                              val zoneOwnership = ZoneOwnershipCalculator.calculateZoneOwnership(
-                                  currentLevel as MazeLevel, 
-                                  surface,
-                                  sampleStep = 10 // Changed from (coverageUpdateFrames / 8).coerceAtLeast(2)
-                              )
+                                val leftColor = players["player0"]?.getColor()
+                                val rightColor = players["player1"]?.getColor()
 
-                              val leftColor = players["player0"]?.getColor()
-                              val rightColor = players["player1"]?.getColor()
+                                // Move UI updates to main thread to avoid threading exception
+                                Handler(Looper.getMainLooper()).post {
+                                    try {
+                                        coverageHudView?.updateCoverage(activeStats, leftColor, rightColor)
+                                        // Hide zone HUD in coverage mode
+                                        zoneHudView?.visibility = View.GONE
+                                        coverageHudView?.visibility = View.VISIBLE
+                                    } catch (e: Exception) {
+                                        Log.e(TAG, "Error updating coverage HUD on main thread", e)
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Error calculating coverage", e)
+                            }
+                        }
+                    }
+                    GameMode.ZONES -> {
+                        if (currentLevel is MazeLevel) {
+                            try {
+                                val zoneOwnership = ZoneOwnershipCalculator.calculateZoneOwnership(
+                                    currentLevel as MazeLevel, 
+                                    surface,
+                                    sampleStep = 10 // Changed from (coverageUpdateFrames / 8).coerceAtLeast(2)
+                                )
 
-                              // Move UI updates to main thread to avoid threading exception
-                              Handler(Looper.getMainLooper()).post {
-                                  try {
-                                      zoneHudView?.updateZones(zoneOwnership, leftColor, rightColor)
-                                      // Hide coverage HUD in zones mode
-                                      coverageHudView?.visibility = View.GONE
-                                      zoneHudView?.visibility = View.VISIBLE
-                                  } catch (e: Exception) {
-                                      Log.e(TAG, "Error updating zone HUD on main thread", e)
-                                  }
-                              }
-                          } catch (e: Exception) {
-                              Log.e(TAG, "Error calculating zone ownership", e)
-                          }
-                      }
-                  }
-              }
+                                val leftColor = players["player0"]?.getColor()
+                                val rightColor = players["player1"]?.getColor()
+
+                                // Move UI updates to main thread to avoid threading exception
+                                Handler(Looper.getMainLooper()).post {
+                                    try {
+                                        zoneHudView?.updateZones(zoneOwnership, leftColor, rightColor)
+                                        // Hide coverage HUD in zones mode
+                                        coverageHudView?.visibility = View.GONE
+                                        zoneHudView?.visibility = View.VISIBLE
+                                    } catch (e: Exception) {
+                                        Log.e(TAG, "Error updating zone HUD on main thread", e)
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Error calculating zone ownership", e)
+                            }
+                        }
+                    }
+                }
+              } // end throttled block
             }
           } // end gameModeManager?.let
       } // end isMatchReady
@@ -292,17 +340,7 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
     // Draw center-cropped background image
     run {
       val bmp = bgBitmap
-      val viewW = width.toFloat()
-      val viewH = height.toFloat()
-      val bmpW = bmp.width.toFloat()
-      val bmpH = bmp.height.toFloat()
-      val scale = maxOf(viewW / bmpW, viewH / bmpH)
-      val scaledW = bmpW * scale
-      val scaledH = bmpH * scale
-      val left = (viewW - scaledW) / 2
-      val top = (viewH - scaledH) / 2
-      val dest = RectF(left, top, left + scaledW, top + scaledH)
-      c.drawBitmap(bmp, null, dest, null)
+      c.drawBitmap(bmp, null, backgroundDestRect, null)
     }
     
     // Log.d(TAG, "GameView.draw() called. Canvas: $c")
@@ -337,20 +375,14 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
 
   /** Draw the names of the players in the screen corners. */
   private fun drawCornerNames(canvas: Canvas) {
-      val textPaint = Paint().apply {
-          color = Color.BLACK
-          textSize = 40f
-          isAntiAlias = true
-          typeface = Typeface.DEFAULT_BOLD
-      }
       val margin = 16f
       players["player0"]?.playerName?.takeIf { it.isNotEmpty() }?.let { name ->
-          textPaint.textAlign = Paint.Align.LEFT
-          canvas.drawText(name, margin, margin + textPaint.textSize, textPaint)
+          cornerNamePaint.textAlign = Paint.Align.LEFT
+          canvas.drawText(name, margin, margin + cornerNamePaint.textSize, cornerNamePaint)
       }
       players["player1"]?.playerName?.takeIf { it.isNotEmpty() }?.let { name ->
-          textPaint.textAlign = Paint.Align.RIGHT
-          canvas.drawText(name, width - margin, height - margin, textPaint)
+          cornerNamePaint.textAlign = Paint.Align.RIGHT
+          canvas.drawText(name, width - margin, height - margin, cornerNamePaint)
       }
   }
   
@@ -798,45 +830,50 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
   // When match finishes, log the reason and handle win/loss
   private fun finishMatch(reason: String = "unknown") {
       Log.i(TAG, "finishMatch called. Reason: $reason")
-      var didWin = false // Default to loss
-      try {
-          if (gameModeManager?.mode == GameMode.COVERAGE && currentLevel is MazeLevel) {
-              val allStats = (currentLevel as MazeLevel).calculateCoverage(surface)
-              val localColor = getLocalPlayer()?.getColor()
-              val activeColors = players.values.map { it.getColor() }.toSet()
-              val activeStats = allStats.filterKeys { it in activeColors }
-              val localFrac = if (localColor != null) activeStats[localColor] ?: 0f else 0f
-              val maxOther = activeStats.filterKeys { it != localColor }.values.maxOrNull() ?: 0f
-              didWin = localFrac >= maxOther // Win includes tie
-          } else if (gameModeManager?.mode == GameMode.ZONES && currentLevel is MazeLevel) {
-              val zoneOwnership = ZoneOwnershipCalculator.calculateZoneOwnership(
-                  currentLevel as MazeLevel,
-                  surface
-              )
-              val localColor = getLocalPlayer()?.getColor()
-              
-              // Count zones controlled by local player vs others
-              var localZones = 0
-              var otherZones = 0
-              
-              for (ownerColor in zoneOwnership.values) {
-                  when (ownerColor) {
-                      localColor -> localZones++
-                      null -> {} // Neutral zone, doesn't count for anyone
-                      else -> otherZones++
+      
+      // Don't calculate winner on the game thread. Launch a coroutine.
+      viewScope.launch {
+          var didWin = false // Default to loss
+          try {
+              if (gameModeManager?.mode == GameMode.COVERAGE && currentLevel is MazeLevel) {
+                  val allStats = (currentLevel as MazeLevel).calculateCoverage(surface)
+                  val localColor = getLocalPlayer()?.getColor()
+                  val activeColors = players.values.map { it.getColor() }.toSet()
+                  val activeStats = allStats.filterKeys { it in activeColors }
+                  val localFrac = if (localColor != null) activeStats[localColor] ?: 0f else 0f
+                  val maxOther = activeStats.filterKeys { it != localColor }.values.maxOrNull() ?: 0f
+                  didWin = localFrac >= maxOther // Win includes tie
+              } else if (gameModeManager?.mode == GameMode.ZONES && currentLevel is MazeLevel) {
+                  val zoneOwnership = ZoneOwnershipCalculator.calculateZoneOwnership(
+                      currentLevel as MazeLevel,
+                      surface
+                  )
+                  val localColor = getLocalPlayer()?.getColor()
+                  
+                  // Count zones controlled by local player vs others
+                  var localZones = 0
+                  var otherZones = 0
+                  
+                  for (ownerColor in zoneOwnership.values) {
+                      when (ownerColor) {
+                          localColor -> localZones++
+                          null -> {} // Neutral zone, doesn't count for anyone
+                          else -> otherZones++
+                      }
                   }
+                  
+                  didWin = localZones >= otherZones // Win includes tie
+                  Log.i(TAG, "finishMatch: Zones mode - Local zones: $localZones, Other zones: $otherZones")
               }
-              
-              didWin = localZones >= otherZones // Win includes tie
-              Log.i(TAG, "finishMatch: Zones mode - Local zones: $localZones, Other zones: $otherZones")
+          } catch (e: Exception) {
+              Log.e(TAG, "Error calculating winner in finishMatch", e)
           }
-      } catch (e: Exception) {
-          Log.e(TAG, "Error calculating winner in finishMatch", e)
-      }
-      Log.i(TAG, "finishMatch: didWin=$didWin, calling onMatchEnd")
-      Handler(Looper.getMainLooper()).post {
-          Log.i(TAG, "onMatchEnd invoked from finishMatch. didWin=$didWin")
-          onMatchEnd?.invoke(didWin)
+
+          // Switch to main thread to call the listener
+          withContext(Dispatchers.Main) {
+              Log.i(TAG, "finishMatch: didWin=$didWin, calling onMatchEnd")
+              onMatchEnd?.invoke(didWin)
+          }
       }
   }
 }
@@ -846,11 +883,17 @@ class GameThread(private val sh:SurfaceHolder,private val gv:GameView):Thread(){
   private val TAG = "GameThread" // Added TAG for logging
   private var lastTimeNanos: Long = System.nanoTime() // For delta time calculation
 
+  // Frame capping
+  private val targetFPS = 60
+  private val targetFrameTimeNanos = 1_000_000_000 / targetFPS
+
   override fun run(){ 
       Log.i(TAG, "run() started. Initial running state: $running")
       lastTimeNanos = System.nanoTime() // Initialize lastTimeNanos before the loop starts
       try {
           while(running){ 
+              val frameStartTimeNanos = System.nanoTime()
+
               // --- SAFETY CHECK: Ensure surface is valid before drawing ---
               if (!sh.surface.isValid) {
                   Log.w(TAG, "Surface is not valid, skipping frame.")
@@ -895,6 +938,19 @@ class GameThread(private val sh:SurfaceHolder,private val gv:GameView):Thread(){
                       }
                   }
               } 
+              
+              // --- Frame Capping ---
+              val frameTimeNanos = System.nanoTime() - frameStartTimeNanos
+              val sleepTimeNanos = targetFrameTimeNanos - frameTimeNanos
+              if (sleepTimeNanos > 0) {
+                  try {
+                      // Convert nanos to millis for Thread.sleep
+                      Thread.sleep(sleepTimeNanos / 1_000_000)
+                  } catch (e: InterruptedException) {
+                      // Interruption is fine, just continue
+                  }
+              }
+
           } 
       } catch (e: Exception) {
           Log.e(TAG, "Exception in GameThread main loop", e)
