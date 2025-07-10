@@ -12,14 +12,17 @@ import com.google.android.material.textfield.TextInputEditText
 import com.spiritwisestudios.inkrollers.R
 import com.spiritwisestudios.inkrollers.model.PlayerColorPalette
 import com.spiritwisestudios.inkrollers.model.PlayerProfile
-import com.spiritwisestudios.inkrollers.repository.ProfileRepository
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.ktx.Firebase
 import com.spiritwisestudios.inkrollers.ui.FriendAdapter
 import com.spiritwisestudios.inkrollers.ui.FriendDisplay
 import android.util.Log
 import android.widget.Toast
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.Observer
+import dagger.hilt.android.AndroidEntryPoint
 
+@AndroidEntryPoint
 class ProfileFragment : Fragment() {
     private lateinit var editPlayerName: TextInputEditText
     private lateinit var editCatchPhrase: TextInputEditText
@@ -33,6 +36,8 @@ class ProfileFragment : Fragment() {
     private lateinit var editAddFriendCode: TextInputEditText
     private lateinit var btnAddFriend: Button
     private lateinit var btnSaveProfile: Button
+
+    private val viewModel: ProfileViewModel by viewModels()
 
     // State
     private var selectedColors = mutableListOf<Int?>(null, null, null)
@@ -94,17 +99,11 @@ class ProfileFragment : Fragment() {
             return // Essential to stop further execution if no user
         }
 
-        ProfileRepository.loadPlayerProfile(uid) { profile ->
-            Log.i("ProfileFragment", "ProfileRepository.loadPlayerProfile callback executed. Profile is null? ${profile == null}")
-            if (profile != null) {
-                Log.d("ProfileFragment", "Existing profile loaded for UID: $uid. FriendCode: ${profile.friendCode}")
-                currentProfile = profile
-                populateProfile(profile)
-            } else {
-                Log.d("ProfileFragment", "No existing profile for UID: $uid. Generating new profile.")
-                generateUniqueFriendCodeAndCreateProfile(uid)
-            }
-        }
+        // Set up observers for ViewModel LiveData
+        setupObservers()
+        
+        // Load profile through ViewModel
+        viewModel.loadProfile(uid)
 
         // Save profile
         btnSaveProfile.setOnClickListener {
@@ -123,7 +122,8 @@ class ProfileFragment : Fragment() {
         btnAddFriend.setOnClickListener {
             val code = editAddFriendCode.text.toString().trim().uppercase()
             if (code.isNotEmpty()) {
-                addFriendByCode(code)
+                viewModel.addFriendByCode(code)
+                editAddFriendCode.text?.clear()
             }
         }
 
@@ -135,9 +135,42 @@ class ProfileFragment : Fragment() {
 
         recyclerFriends.layoutManager = LinearLayoutManager(requireContext())
         friendAdapter = FriendAdapter(friendDisplays) { friend ->
-            removeFriend(friend)
+            viewModel.removeFriend(friend.uid)
         }
         recyclerFriends.adapter = friendAdapter
+    }
+
+    private fun setupObservers() {
+        viewModel.currentProfile.observe(viewLifecycleOwner) { profile ->
+            profile?.let {
+                currentProfile = it
+                populateProfile(it)
+            }
+        }
+        
+        viewModel.friendProfiles.observe(viewLifecycleOwner) { friends ->
+            friendDisplays.clear()
+            friendDisplays.addAll(friends)
+            friendAdapter?.notifyDataSetChanged()
+        }
+        
+        viewModel.isLoading.observe(viewLifecycleOwner) { isLoading ->
+            btnSaveProfile.isEnabled = !isLoading && currentProfile != null
+        }
+        
+        viewModel.errorMessage.observe(viewLifecycleOwner) { error ->
+            error?.let {
+                Toast.makeText(requireContext(), it, Toast.LENGTH_SHORT).show()
+                viewModel.clearError()
+            }
+        }
+        
+        viewModel.saveSuccess.observe(viewLifecycleOwner) { success ->
+            if (success) {
+                Toast.makeText(requireContext(), "Profile saved!", Toast.LENGTH_SHORT).show()
+                viewModel.clearSaveSuccess()
+            }
+        }
     }
 
     private fun populateProfile(profile: PlayerProfile) {
@@ -157,7 +190,6 @@ class ProfileFragment : Fragment() {
             textWinLoss.text = "${profile.winCount} / ${profile.lossCount}"
             selectedColors = profile.favoriteColors.map { it as Int? }.toMutableList()
             while (selectedColors.size < 3) selectedColors.add(null)
-            loadFriends(profile.friends)
             refreshColorPickers()
             // Enable save button once profile is loaded/populated
             Log.d("ProfileFragment", "populateProfile [UI Thread]: Enabling save button.")
@@ -166,115 +198,30 @@ class ProfileFragment : Fragment() {
     }
 
     private fun loadFriends(friendUids: List<String>) {
-        friendDisplays.clear()
-        if (friendUids.isEmpty()) {
-            friendAdapter?.notifyDataSetChanged()
-            return
-        }
-        // Load each friend's profile from Firebase
-        var loadedCount = 0
-        for (uid in friendUids) {
-            ProfileRepository.loadPlayerProfile(uid) { friendProfile ->
-                loadedCount++
-                if (friendProfile != null) {
-                    friendDisplays.add(
-                        FriendDisplay(
-                            uid = friendProfile.uid,
-                            name = friendProfile.playerName,
-                            friendCode = friendProfile.friendCode,
-                            winCount = friendProfile.winCount,
-                            lossCount = friendProfile.lossCount,
-                            isOnline = friendProfile.isOnline
-                        )
-                    )
-                }
-                if (loadedCount == friendUids.size) {
-                    // All loaded
-                    friendDisplays.sortBy { it.name }
-                    friendAdapter?.notifyDataSetChanged()
-                }
-            }
-        }
+        // This method is now handled by the ViewModel through LiveData observers
+        // Keeping it for potential future use but it's no longer called
     }
 
     private fun removeFriend(friend: FriendDisplay) {
-        val profile = currentProfile ?: return
-        val newFriends = profile.friends.filter { it != friend.uid }
-        currentProfile = profile.copy(friends = newFriends)
-        saveProfile()
-        loadFriends(newFriends)
+        // This is now handled by the ViewModel
+        viewModel.removeFriend(friend.uid)
     }
 
     private fun saveProfile() {
-        val uid = Firebase.auth.currentUser?.uid ?: return
         val name = editPlayerName.text?.toString()?.trim() ?: ""
         val phrase = editCatchPhrase.text?.toString()?.trim() ?: ""
-
-        val profileToSave = currentProfile ?: run {
-            Toast.makeText(requireContext(), "Error: Profile data not available to save.", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        if (profileToSave.friendCode.isEmpty()) {
-            Toast.makeText(requireContext(), "Error: Friend code is missing. Cannot save.", Toast.LENGTH_SHORT).show()
-            return 
-        }
-        // The friendCode from profileToSave (which is currentProfile) is used.
-        // It is set either by loading an existing profile or by the unique generation flow.
-
         val colors = selectedColors.filterNotNull()
-        if (colors.size != 3) {
-            Toast.makeText(requireContext(), "Select 3 distinct colors", Toast.LENGTH_SHORT).show()
-            return
-        }
-        if (colors.toSet().size != 3) {
-            Toast.makeText(requireContext(), "Colors must be distinct", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        // Create the updated profile object using data from UI and existing currentProfile fields
-        val updatedProfile = profileToSave.copy(
-            playerName = name,
-            favoriteColors = colors,
-            catchPhrase = phrase
-            // friendCode, friends, winCount, lossCount, isOnline are taken from profileToSave (currentProfile)
-        )
-
-        ProfileRepository.savePlayerProfile(updatedProfile) { success ->
-            if (success) {
-                Toast.makeText(requireContext(), "Profile saved!", Toast.LENGTH_SHORT).show()
-                currentProfile = updatedProfile // Update local currentProfile with the successfully saved version
-            } else {
-                Toast.makeText(requireContext(), "Failed to save profile", Toast.LENGTH_SHORT).show()
-            }
-        }
+        
+        viewModel.saveProfile(name, phrase, colors)
     }
 
     private fun addFriendByCode(code: String) {
-        if (currentProfile == null) return
-        if (code == currentProfile!!.friendCode) {
-            Toast.makeText(requireContext(), "That's your own code!", Toast.LENGTH_SHORT).show()
-            return
-        }
-        ProfileRepository.findProfileByFriendCode(code) { friendProfile ->
-            if (friendProfile != null) {
-                val friends = currentProfile!!.friends.toMutableList()
-                if (friendProfile.uid in friends) {
-                    Toast.makeText(requireContext(), "Already friends!", Toast.LENGTH_SHORT).show()
-                } else {
-                    friends.add(friendProfile.uid)
-                    currentProfile = currentProfile!!.copy(friends = friends)
-                    saveProfile() // Save profile after adding friend
-                    loadFriends(friends)
-                    editAddFriendCode.text?.clear() // Clear input field
-                }
-            } else {
-                Toast.makeText(requireContext(), "No user found with that code", Toast.LENGTH_SHORT).show()
-            }
-        }
+        // This is now handled in the button click listener using ViewModel
+        viewModel.addFriendByCode(code)
     }
 
     private fun generateFriendCodeInternal(uid: String, attempt: Int = 0): String {
+        // This method is now in the ViewModel
         val rawCodeMaterial = (uid.hashCode().toUInt() + attempt.toUInt()).toString(36).uppercase()
         val baseCode = rawCodeMaterial.padStart(6, '0').take(6)
         val filteredCode = baseCode.filter { it.isLetterOrDigit() }
@@ -284,35 +231,7 @@ class ProfileFragment : Fragment() {
     }
 
     private fun generateUniqueFriendCodeAndCreateProfile(uid: String, maxAttempts: Int = 10) {
-        var attempts = 0
-        Log.d("ProfileFragment", "Attempting to generate unique friend code for UID: $uid")
-        fun tryGenerate() {
-            if (attempts >= maxAttempts) {
-                val fallbackCode = generateFriendCodeInternal(uid, attempts)
-                Log.e("ProfileFragment", "Max attempts ($maxAttempts) reached for unique code. Using fallback: '$fallbackCode' for $uid")
-                val newProfile = PlayerProfile(uid = uid, friendCode = fallbackCode, playerName = "New Player") // Add default name
-                currentProfile = newProfile
-                populateProfile(newProfile)
-                saveProfile() // Attempt to save the fallback profile immediately
-                return
-            }
-            attempts++
-            val potentialCode = generateFriendCodeInternal(uid, attempts)
-            Log.i("ProfileFragment", "generateUnique attempt $attempts: potentialCode: '$potentialCode' for $uid")
-            ProfileRepository.isFriendCodeUnique(potentialCode) { isUnique ->
-                if (isUnique) {
-                    Log.i("ProfileFragment", "Unique code found: '$potentialCode' for $uid")
-                    val newProfile = PlayerProfile(uid = uid, friendCode = potentialCode, playerName = "New Player") // Add default name
-                    currentProfile = newProfile
-                    populateProfile(newProfile)
-                    saveProfile() // Save the newly created profile with unique code
-                } else {
-                    Log.w("ProfileFragment", "Code '$potentialCode' not unique. Retrying for $uid")
-                    tryGenerate() // Retry generation
-                }
-            }
-        }
-        tryGenerate() // Start the generation process
+        // This method is now handled by the ViewModel
     }
 
     private fun setupColorPickers() {

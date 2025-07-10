@@ -1,6 +1,8 @@
 plugins { 
     id 'com.android.application'
     id 'kotlin-android' 
+    id 'kotlin-kapt'
+    id 'dagger.hilt.android.plugin'
     id 'com.google.gms.google-services'
     id 'com.google.firebase.crashlytics'
 }
@@ -46,6 +48,16 @@ dependencies {
   implementation 'androidx.appcompat:appcompat:1.7.0'
   implementation 'androidx.constraintlayout:constraintlayout:2.2.1'
   
+  // Hilt for Dependency Injection
+  implementation "com.google.dagger:hilt-android:2.51.1"
+  kapt "com.google.dagger:hilt-compiler:2.51.1"
+
+  // ViewModel and LiveData
+  implementation "androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.3"
+  implementation "androidx.lifecycle:lifecycle-livedata-ktx:2.8.3"
+  implementation "androidx.activity:activity-ktx:1.9.0"
+  implementation "androidx.fragment:fragment-ktx:1.8.1"
+
   // Import the BoM for Firebase platform versions
   implementation platform('com.google.firebase:firebase-bom:33.1.2') // Updated BoM version slightly
   
@@ -75,66 +87,28 @@ dependencies {
     // JSON serialization for game state persistence
     implementation 'com.google.code.gson:gson:2.10.1'
 
-    testImplementation 'junit:junit:4.13.2'
+  // Testing
+  testImplementation 'junit:junit:4.13.2'
   testImplementation "org.jetbrains.kotlin:kotlin-test-junit:$kotlin_version"
+  testImplementation 'org.mockito:mockito-core:5.1.1'
+  testImplementation 'org.mockito:mockito-inline:5.1.1'
+  testImplementation 'androidx.test:core:1.5.0'
+  testImplementation 'androidx.test.ext:junit:1.1.5'
+  testImplementation 'org.robolectric:robolectric:4.10.3'
+  androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+  androidTestImplementation 'androidx.test.espresso:espresso-core:3.6.1'
+  androidTestImplementation 'androidx.test:runner:1.6.1'
+  androidTestImplementation 'androidx.test:rules:1.6.1'
+  androidTestImplementation 'androidx.test.espresso:espresso-contrib:3.6.1'
+  implementation 'androidx.test.espresso:espresso-idling-resource:3.6.1'
+  androidTestImplementation 'androidx.test.uiautomator:uiautomator:2.2.0'
 
-    // Unit Testing - Enhanced per testing plan
-    testImplementation 'org.robolectric:robolectric:4.10.3'
-    testImplementation 'org.mockito:mockito-core:5.1.1'
-    testImplementation 'org.mockito:mockito-inline:5.1.1'
-    testImplementation 'androidx.test:core:1.5.0'
-    testImplementation 'androidx.test.ext:junit:1.1.5'
-    
-    // Integration Testing - Firebase Emulator & ActivityScenario
-    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
-    androidTestImplementation 'androidx.test:runner:1.5.2'
-    androidTestImplementation 'androidx.test:rules:1.5.0'
-    androidTestImplementation 'androidx.test:core:1.5.0'
-    androidTestImplementation 'com.google.firebase:firebase-database:20.3.0'
-    
-    // UI/Instrumentation Testing - Espresso
-    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
-    androidTestImplementation 'androidx.test.espresso:espresso-intents:3.5.1'
-    androidTestImplementation 'androidx.test.espresso:espresso-contrib:3.5.1'
-    androidTestImplementation 'androidx.test.espresso:espresso-idling-resource:3.5.1'
-    
-    // Performance Testing - Macrobenchmark & Microbenchmark
-    androidTestImplementation 'androidx.benchmark:benchmark-macro-junit4:1.2.2'
-    androidTestImplementation 'androidx.benchmark:benchmark-junit4:1.2.2'
-    
-    // UI Testing Support
-    androidTestImplementation 'androidx.test.uiautomator:uiautomator:2.2.0'
-    
-    // Add missing startup provider dependency
-    implementation 'androidx.startup:startup-runtime:1.1.1'
-    androidTestImplementation 'androidx.startup:startup-runtime:1.1.1'
-    
-    // Add WorkManager testing for better activity management
-    androidTestImplementation 'androidx.work:work-testing:2.8.1'
-    
-    // Add concurrent testing support
-    androidTestImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.6.4'
+  // Coroutines
+  implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3'
+  implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+  implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3'
+  testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3'
 
-    // Coroutines
-    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3'
-    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
-
-    // Testing
-    testImplementation 'junit:junit:4.13.2'
-    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
-    androidTestImplementation 'androidx.test.espresso:espresso-core:3.6.1'
-    androidTestImplementation 'androidx.test:runner:1.6.1'
-    androidTestImplementation 'androidx.test:rules:1.6.1'
-    androidTestImplementation 'androidx.test.espresso:espresso-contrib:3.6.1'
-    implementation 'androidx.test.espresso:espresso-idling-resource:3.6.1'
-    
-    // WorkManager Testing
-    androidTestImplementation "androidx.work:work-testing:2.9.0"
-
-    // Coroutines Testing
-    androidTestImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3'
-
-    // App Startup - Ensure it is available for both main app and tests
-    implementation 'androidx.startup:startup-runtime:1.1.1'
-    androidTestImplementation 'androidx.startup:startup-runtime:1.1.1'
+  // App Startup - Ensure it is available for both main app and tests
+  implementation 'androidx.startup:startup-runtime:1.1.1'
 }

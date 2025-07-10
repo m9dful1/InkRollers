@@ -26,6 +26,7 @@ import com.spiritwisestudios.inkrollers.databinding.ActivityHomeBinding
 class HomeActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityHomeBinding
+    private lateinit var audioManager: AudioManager
 
     companion object {
         const val EXTRA_MODE = "com.spiritwisestudios.inkrollers.MODE"
@@ -55,6 +56,10 @@ class HomeActivity : AppCompatActivity() {
         // Enable full screen immersive mode
         enableFullScreenMode()
 
+        // Initialize AudioManager
+        audioManager = AudioManager.getInstance(this)
+        audioManager.initialize()
+
         // Initialize Firebase App Check
         FirebaseApp.initializeApp(this)
         // TODO: Re-enable App Check after proper registration with Firebase Console
@@ -73,6 +78,7 @@ class HomeActivity : AppCompatActivity() {
         */
 
         binding.buttonPlay.setOnClickListener {
+            audioManager.playSound(AudioManager.SoundType.UI_CLICK)
             // Apply the press animation
             val animation = android.view.animation.AnimationUtils.loadAnimation(this, R.anim.button_press)
             binding.buttonPlay.startAnimation(animation)
@@ -84,10 +90,12 @@ class HomeActivity : AppCompatActivity() {
         }
 
         binding.buttonHostGame.setOnClickListener {
+            audioManager.playSound(AudioManager.SoundType.UI_CLICK)
             showMatchSettingsDialog()
         }
 
         binding.buttonJoinGame.setOnClickListener {
+            audioManager.playSound(AudioManager.SoundType.UI_CLICK)
             val gameId = binding.editTextGameId.text.toString().trim()
             if (gameId.isEmpty()) {
                 // Join a random available game
@@ -100,6 +108,7 @@ class HomeActivity : AppCompatActivity() {
         }
 
         binding.buttonProfile.setOnClickListener {
+            audioManager.playSound(AudioManager.SoundType.UI_CLICK)
             val currentUser = Firebase.auth.currentUser
             if (currentUser != null) {
                 // User is signed in, proceed to profile
@@ -145,10 +154,18 @@ class HomeActivity : AppCompatActivity() {
         super.onResume()
         // Re-enable full screen mode when returning to the activity
         enableFullScreenMode()
+        // Resume audio when activity comes back to foreground
+        audioManager.resumeAudio()
         // REMOVE: Set user online when activity resumes
         // Firebase.auth.currentUser?.uid?.let {
         // ProfileRepository.setUserOnlineStatus(it)
         // }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // Pause audio when activity goes to background
+        audioManager.pauseAudio()
     }
 
     private fun showMatchSettingsDialog() {

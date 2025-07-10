@@ -29,7 +29,9 @@ class PlayerTest {
             startY = 100f,
             playerColor = 0, // Dummy color, not relevant for these initial tests
             level = mockLevel, // Pass the mocked level here
-            multiplayerManager = null // Explicitly null for now
+            multiplayerManager = null, // Explicitly null for now
+            playerName = "",
+            audioManager = null // Null for testing
         )
     }
 

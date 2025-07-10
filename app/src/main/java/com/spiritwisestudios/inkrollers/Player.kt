@@ -12,7 +12,8 @@ class Player(
     playerColor: Int,
     private val multiplayerManager: MultiplayerManager? = null,
     private val level: Level? = null,
-    var playerName: String = ""
+    var playerName: String = "",
+    private val audioManager: AudioManager? = null
 ) {
   companion object {
     const val MAX_INK = 100f
@@ -27,7 +28,18 @@ class Player(
   var y = startY
   private val paint=Paint().apply{ color = playerColor }
   var mode=0 //0 paint,1 fill
-  fun toggleMode(){ mode=1-mode }
+  
+  // Audio state tracking
+  private var isPaintSoundPlaying = false
+  private var isRefillSoundPlaying = false
+  
+  fun toggleMode(){ 
+    // Stop all sounds when switching modes
+    stopPaintSound()
+    stopRefillSound()
+    mode=1-mode 
+    audioManager?.playSound(AudioManager.SoundType.MODE_TOGGLE)
+  }
   fun move(dirX: Float, dirY: Float, magnitude: Float, level: Level? = null, deltaTime: Float) {
     // Log.d("Player", "move: Input: dirX=$dirX, dirY=$dirY, mag=$magnitude, deltaTime=$deltaTime")
     if (magnitude == 0f) return
@@ -66,6 +78,9 @@ class Player(
 
         if (mode == 0) {
             if (ink > 0f) {
+                // Start paint sound if not already playing
+                startPaintSound()
+                
                 ink -= PAINT_COST
                 if (ink < 0f) ink = 0f
                 
@@ -96,17 +111,30 @@ class Player(
                     // Fallback to absolute coordinates
                     multiplayerManager?.sendPaintAction(x.toInt(), y.toInt(), paint.color)
                 }
+            } else {
+                // Stop paint sound if out of ink
+                stopPaintSound()
             }
         } else {
             val ix = x.toInt()
             val iy = y.toInt()
             if (ix >= 0 && ix < surface.w && iy >= 0 && iy < surface.h) {
                  if (surface.getPixelColor(ix, iy) == paint.color && ink < MAX_INK) {
+                    // Start refill sound if not already playing
+                    startRefillSound()
+                    
                     ink += REFILL_GAIN
                     if (ink > MAX_INK) ink = MAX_INK
+                } else {
+                    // Stop refill sound if not on correct color
+                    stopRefillSound()
                 }
             }
         }
+    } else {
+        // Player not moving, stop all looping sounds
+        stopPaintSound()
+        stopRefillSound()
     }
     // Log.d("Player", "move: Final position: ($x, $y)")
   }
@@ -137,5 +165,37 @@ class Player(
     val shadowRadius = radius * 0.9f
     c.drawCircle(x + radius * 0.2f, y + radius * 0.2f, shadowRadius, shadowPaint)
 
+  }
+  
+  /** Starts the looping paint sound if not already playing. */
+  private fun startPaintSound() {
+    if (!isPaintSoundPlaying) {
+      audioManager?.startLoopingSound(AudioManager.SoundType.PAINT, 0.3f)
+      isPaintSoundPlaying = true
+    }
+  }
+
+  /** Stops the looping paint sound if playing. */
+  private fun stopPaintSound() {
+    if (isPaintSoundPlaying) {
+      audioManager?.stopLoopingSound(AudioManager.SoundType.PAINT)
+      isPaintSoundPlaying = false
+    }
+  }
+
+  /** Starts the looping refill sound if not already playing. */
+  private fun startRefillSound() {
+    if (!isRefillSoundPlaying) {
+      audioManager?.startLoopingSound(AudioManager.SoundType.REFILL, 0.5f)
+      isRefillSoundPlaying = true
+    }
+  }
+
+  /** Stops the looping refill sound if playing. */
+  private fun stopRefillSound() {
+    if (isRefillSoundPlaying) {
+      audioManager?.stopLoopingSound(AudioManager.SoundType.REFILL)
+      isRefillSoundPlaying = false
+    }
   }
 }

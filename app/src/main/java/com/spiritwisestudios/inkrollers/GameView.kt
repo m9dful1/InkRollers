@@ -18,15 +18,15 @@ import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
 import com.spiritwisestudios.inkrollers.TimerHudView
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.RectF
+
 import android.view.View
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.spiritwisestudios.inkrollers.rendering.GameRenderer
+import com.spiritwisestudios.inkrollers.updates.GameUpdateManager
 
 class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
     SurfaceView(ctx,attrs),SurfaceHolder.Callback, MultiplayerManager.RemoteUpdateListener { // Implement listener
@@ -43,40 +43,20 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
   // Use var and lateinit for the thread to allow recreation
   private lateinit var thread: GameThread 
   
-  private var currentLevel: Level? = null 
-  private var coverageStats: Map<Int, Float> = emptyMap()
-  private var coverageUpdateFrames = 30 
-  private var frameCount = 0
+  private var currentLevel: Level? = null
   
-  // Timers for throttling updates
-  private var timeSinceLastHudUpdate = 0f
-  private val hudUpdateInterval = 0.5f // ~2 times per second
-  private var timeSinceLastFirebaseUpdate = 0f
-  private val firebaseUpdateInterval = 0.05f // ~20 times per second
+    // Rendering component
+  private lateinit var gameRenderer: GameRenderer
+  
+  // Update management component
+  private lateinit var gameUpdateManager: GameUpdateManager
   
   // Multiplayer specific fields
   private var multiplayerManager: MultiplayerManager? = null
   private var localPlayerId: String? = null
   
-  // New state flag to prevent premature end-check
-  private var isMatchReady: Boolean = false
-  
   // New field for match end listener
   var onMatchEnd: ((Boolean) -> Unit)? = null
-  // Flag to prevent multiple match end notifications
-  private var endNotified: Boolean = false
-  
-  // Background image for the maze (center-cropped)
-  private val bgBitmap: Bitmap by lazy { BitmapFactory.decodeResource(context.resources, R.drawable.space_bg) }
-  
-  // Reusable drawing objects to avoid allocation in onDraw
-  private val cornerNamePaint = Paint().apply {
-      color = Color.BLACK
-      textSize = 40f
-      isAntiAlias = true
-      typeface = Typeface.DEFAULT_BOLD
-  }
-  private val backgroundDestRect = RectF()
   
   // Coroutine scope for background tasks
   private val viewJob = Job()
@@ -87,11 +67,28 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
       var savedPaintBitmap: android.graphics.Bitmap? = null // For paint persistence
   }
   
+  // Audio manager for sound effects
+  private val audioManager = AudioManager.getInstance(ctx)
+  
   init {
     holder.addCallback(this)
     isFocusable = true
     holder.setFormat(PixelFormat.TRANSLUCENT)
     setZOrderMediaOverlay(true)
+    
+    // Initialize components
+    gameRenderer = GameRenderer(ctx)
+    gameUpdateManager = GameUpdateManager()
+    
+    // Set up GameUpdateManager callbacks
+    gameUpdateManager.onMatchEnd = { reason ->
+        onMatchEnd?.invoke(reason == "player_won")
+    }
+    gameUpdateManager.onStopGameLoop = {
+        if (::thread.isInitialized) {
+            thread.running = false
+        }
+    }
   }
   
   override fun surfaceCreated(h:SurfaceHolder){
@@ -108,17 +105,8 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
         player.surface = surface
     }
 
-    // Calculate background scaling rectangle
-    val viewW = width.toFloat()
-    val viewH = height.toFloat()
-    val bmpW = bgBitmap.width.toFloat()
-    val bmpH = bgBitmap.height.toFloat()
-    val scale = maxOf(viewW / bmpW, viewH / bmpH)
-    val scaledW = bmpW * scale
-    val scaledH = bmpH * scale
-    val left = (viewW - scaledW) / 2
-    val top = (viewH - scaledH) / 2
-    backgroundDestRect.set(left, top, left + scaledW, top + scaledH)
+    // Initialize GameRenderer with surface dimensions
+    gameRenderer.initialize(width, height)
   }
   
   override fun surfaceDestroyed(h:SurfaceHolder){ 
@@ -194,197 +182,41 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
   }
 
   fun update(deltaTime: Float){
+      // Get local player and joystick for efficiency
       val localPlayer = getLocalPlayer()
       val localJoystick = if (localPlayerId != null) joysticks[localPlayerId] else null
 
-      // Added Log
-      // if (localJoystick != null) {
-      //      Log.d(TAG, "update: Joystick state: dirX=${localJoystick.directionX}, dirY=${localJoystick.directionY}, mag=${localJoystick.magnitude}")
-      // } else {
-      //      Log.d(TAG, "update: Local joystick is null")
-      // }
-
-      // --- Update Local Player --- 
-      if (localPlayer != null && localJoystick != null && currentLevel is MazeLevel) { // Ensure level is MazeLevel
-          localPlayer.move(localJoystick.directionX, localJoystick.directionY, localJoystick.magnitude, currentLevel, deltaTime)
-          
-          // Convert local player's screen position to normalized coordinates
-          val (nx, ny) = (currentLevel as MazeLevel).screenToMazeCoord(localPlayer.x, localPlayer.y)
-
-          // --- Throttled Firebase Update ---
-          timeSinceLastFirebaseUpdate += deltaTime
-          if (timeSinceLastFirebaseUpdate >= firebaseUpdateInterval) {
-            timeSinceLastFirebaseUpdate = 0f
-            // Send local player state to Firebase using normalized coordinates
-            val currentState = PlayerState(
-                normX = nx,
-                normY = ny,
-                color = localPlayer.getColor(),
-                mode = localPlayer.mode,
-                ink = localPlayer.ink,
-                active = true, // Mark as active
-                playerName = localPlayer.playerName, // Pass player name
-                uid = multiplayerManager?.getCurrentUserUid() ?: "" // Include UID
-            )
-            multiplayerManager?.updateLocalPlayerState(currentState)
-          }
-      }
-      
-      // --- Update Other Game Elements --- 
-      currentLevel?.update()
-      
-      // Periodically update coverage stats
-      frameCount++
-      if (frameCount >= coverageUpdateFrames) {
-          frameCount = 0
-          currentLevel?.let { level ->
-              // Ensure surface is initialized before calculating coverage
-              if (::surface.isInitialized) {
-                  coverageStats = level.calculateCoverage(surface)
-              } else {
-                  Log.w(TAG, "Surface not initialized, skipping coverage calculation")
-              }
-              // Log coverage stats (remove in production)
-              // ... (logging code can remain or be adapted)
-          }
-      }
-      
-      // Update HUD based on local player
-      localPlayer?.let { 
-          inkHudView?.updateHud(it.getInkPercent(), it.getModeText()) 
-      }
-      // Handle game mode updates and coverage HUD
-      if (isMatchReady) { // Only check if match is flagged as ready
-          gameModeManager?.let { mgr ->
-            // Update countdown timer
-            timerHudView?.updateTime(mgr.timeRemainingMs())
-            mgr.update() // Update the manager's internal state (timer)
-
-            // Check if finished *after* updating the manager
-            if (mgr.isFinished()) {
-              if (!endNotified) {
-                endNotified = true
-                thread.running = false // Stop the game loop
-                finishMatch("timer_expired")
-              } // end !endNotified
-            } else {
-              // --- Throttled HUD Update ---
-              timeSinceLastHudUpdate += deltaTime
-              if (timeSinceLastHudUpdate >= hudUpdateInterval) {
-                timeSinceLastHudUpdate = 0f
-
-                // Match is ongoing, update coverage HUD if applicable
-                when (mgr.mode) {
-                    GameMode.COVERAGE -> {
-                        if (currentLevel is MazeLevel) {
-                            try {
-                                val allStats = (currentLevel as MazeLevel).calculateCoverage(surface)
-                                val activeColors = players.values.map { it.getColor() }.toSet()
-                                val activeStats = allStats.filterKeys { it in activeColors }
-
-                                val leftColor = players["player0"]?.getColor()
-                                val rightColor = players["player1"]?.getColor()
-
-                                // Move UI updates to main thread to avoid threading exception
-                                Handler(Looper.getMainLooper()).post {
-                                    try {
-                                        coverageHudView?.updateCoverage(activeStats, leftColor, rightColor)
-                                        // Hide zone HUD in coverage mode
-                                        zoneHudView?.visibility = View.GONE
-                                        coverageHudView?.visibility = View.VISIBLE
-                                    } catch (e: Exception) {
-                                        Log.e(TAG, "Error updating coverage HUD on main thread", e)
-                                    }
-                                }
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Error calculating coverage", e)
-                            }
-                        }
-                    }
-                    GameMode.ZONES -> {
-                        if (currentLevel is MazeLevel) {
-                            try {
-                                val zoneOwnership = ZoneOwnershipCalculator.calculateZoneOwnership(
-                                    currentLevel as MazeLevel, 
-                                    surface,
-                                    sampleStep = 10 // Changed from (coverageUpdateFrames / 8).coerceAtLeast(2)
-                                )
-
-                                val leftColor = players["player0"]?.getColor()
-                                val rightColor = players["player1"]?.getColor()
-
-                                // Move UI updates to main thread to avoid threading exception
-                                Handler(Looper.getMainLooper()).post {
-                                    try {
-                                        zoneHudView?.updateZones(zoneOwnership, leftColor, rightColor)
-                                        // Hide coverage HUD in zones mode
-                                        coverageHudView?.visibility = View.GONE
-                                        zoneHudView?.visibility = View.VISIBLE
-                                    } catch (e: Exception) {
-                                        Log.e(TAG, "Error updating zone HUD on main thread", e)
-                                    }
-                                }
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Error calculating zone ownership", e)
-                            }
-                        }
-                    }
-                }
-              } // end throttled block
-            }
-          } // end gameModeManager?.let
-      } // end isMatchReady
+      // Delegate all update logic to GameUpdateManager
+      gameUpdateManager.update(
+          deltaTime = deltaTime,
+          localPlayer = localPlayer,
+          localJoystick = localJoystick,
+          currentLevel = currentLevel,
+          surface = surface,
+          players = players,
+          multiplayerManager = multiplayerManager,
+          gameModeManager = gameModeManager,
+          inkHudView = inkHudView,
+          coverageHudView = coverageHudView,
+          zoneHudView = zoneHudView,
+          timerHudView = timerHudView,
+          localPlayerId = localPlayerId
+      )
   }
   
   override fun draw(c:Canvas){
-    // Draw center-cropped background image
-    run {
-      val bmp = bgBitmap
-      c.drawBitmap(bmp, null, backgroundDestRect, null)
-    }
-    
-    // Log.d(TAG, "GameView.draw() called. Canvas: $c")
-    // background image covers the canvas; remove white fill
-    
-    // Log.d(TAG, "GameView.draw() - Before surface.drawTo(c)")
-    if(::surface.isInitialized) { // Add this check for safety, though it should be by now
-        surface.drawTo(c)
-        // Log.d(TAG, "GameView.draw() - After surface.drawTo(c)")
-    } else {
-        // Log.w(TAG, "GameView.draw() - Surface not initialized, skipping surface.drawTo(c)")
-    }
-    
-    // Log.d(TAG, "GameView.draw() - Before currentLevel?.draw(c). currentLevel is null: ${currentLevel == null}")
-    currentLevel?.draw(c)
-    // Log.d(TAG, "GameView.draw() - After currentLevel?.draw(c)")
-
-    // Draw all players (local and remote)
-    // Log.d(TAG, "GameView.draw() - Drawing ${players.size} players.")
-    for ((id, player) in players) { // Changed to iterate with ID for better logging
-        // Log.d(TAG, "GameView.draw() - Drawing player $id")
-        player.draw(c)
-    }
-
-    // Draw local joystick only
-    // Log.d(TAG, "GameView.draw() - Before localPlayerId?.let for joystick. localPlayerId: $localPlayerId")
-    localPlayerId?.let { joysticks[it]?.draw(c) }
-    // Log.d(TAG, "GameView.draw() - After joystick draw.")
-
-    drawCornerNames(c)
+    // Delegate all rendering to GameRenderer
+    gameRenderer.render(
+        canvas = c,
+        surface = if (::surface.isInitialized) surface else null,
+        currentLevel = currentLevel,
+        players = players,
+        joysticks = joysticks,
+        localPlayerId = localPlayerId
+    )
   }
 
-  /** Draw the names of the players in the screen corners. */
-  private fun drawCornerNames(canvas: Canvas) {
-      val margin = 16f
-      players["player0"]?.playerName?.takeIf { it.isNotEmpty() }?.let { name ->
-          cornerNamePaint.textAlign = Paint.Align.LEFT
-          canvas.drawText(name, margin, margin + cornerNamePaint.textSize, cornerNamePaint)
-      }
-      players["player1"]?.playerName?.takeIf { it.isNotEmpty() }?.let { name ->
-          cornerNamePaint.textAlign = Paint.Align.RIGHT
-          canvas.drawText(name, width - margin, height - margin, cornerNamePaint)
-      }
-  }
+
   
   override fun onTouchEvent(e:MotionEvent):Boolean{
       // Only handle touch events for the local player's joystick
@@ -466,7 +298,8 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
                        playerColor,
                        multiplayerManager,
                        currentLevel, // Pass level reference
-                       playerName // Pass the provided player name
+                       playerName, // Pass the provided player name
+                       audioManager // Pass AudioManager for sound effects
                    )
                    players[id] = localPlayer
                } else {
@@ -527,7 +360,8 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
               newState.color,
               multiplayerManager,
               currentLevel,
-              newState.playerName // Pass player name from newState
+              newState.playerName, // Pass player name from newState
+              audioManager // Pass AudioManager for sound effects
           )
           players[playerId] = player
       } else {
@@ -748,7 +582,7 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
     }
     
     // Ensure match isn't considered ready until startGameMode is called
-    isMatchReady = false
+    gameUpdateManager.setMatchReady(false)
     
     // Create a new thread instance for the new game/match
     thread = GameThread(holder, this)
@@ -786,7 +620,7 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
         GameModeManager(mode, durationMs)
     }
     gameModeManager?.start()
-    isMatchReady = true
+    gameUpdateManager.setMatchReady(true)
 
     // Ensure correct HUD visibility and initial state when mode is set
     Handler(Looper.getMainLooper()).post {
@@ -819,7 +653,7 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
   /** Clears the paint surface (removes all painted areas) */
   fun clearPaintSurface() {
     if (::surface.isInitialized) surface.clear()
-    endNotified = false
+    gameUpdateManager.reset()
   }
 
   /** Assign the timer HUD for showing match countdown. */
