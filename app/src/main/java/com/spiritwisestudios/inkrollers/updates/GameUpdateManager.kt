@@ -18,6 +18,7 @@ import com.spiritwisestudios.inkrollers.CoverageHudView
 import com.spiritwisestudios.inkrollers.ZoneHudView
 import com.spiritwisestudios.inkrollers.TimerHudView
 import com.spiritwisestudios.inkrollers.ZoneOwnershipCalculator
+import com.spiritwisestudios.inkrollers.effects.ParticleManager
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -80,11 +81,13 @@ class GameUpdateManager {
         coverageHudView: CoverageHudView?,
         zoneHudView: ZoneHudView?,
         timerHudView: TimerHudView?,
-        localPlayerId: String?
+        localPlayerId: String?,
+        particleManager: ParticleManager? = null
     ) {
         // Update different game systems
         updateLocalPlayer(deltaTime, localPlayer, localJoystick, currentLevel, multiplayerManager)
         updateGameElements(deltaTime, currentLevel, surface)
+        updateParticles(deltaTime, particleManager)
         updateHUDs(deltaTime, localPlayer, inkHudView)
         updateGameMode(deltaTime, gameModeManager, currentLevel, surface, players, coverageHudView, zoneHudView, timerHudView)
     }
@@ -145,6 +148,13 @@ class GameUpdateManager {
                 }
             }
         }
+    }
+    
+    /**
+     * Update particle effects
+     */
+    private fun updateParticles(deltaTime: Float, particleManager: ParticleManager?) {
+        particleManager?.update(deltaTime)
     }
     
     /**

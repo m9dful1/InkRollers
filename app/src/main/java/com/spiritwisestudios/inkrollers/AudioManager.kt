@@ -60,7 +60,16 @@ class AudioManager private constructor(private val context: Context) {
         MATCH_END_LOSE("match_end_lose.wav"),
         PLAYER_JOIN("player_join.wav"),
         COUNTDOWN_TICK("countdown_tick.wav"),
-        COUNTDOWN_GO("countdown_go.wav")
+        COUNTDOWN_GO("countdown_go.wav"),
+        
+        // Campaign-specific sound effects
+        COLOR_SHIFT("color_shift.wav"),
+        ROBOT_CONVERSION("robot_conversion.wav"),
+        SECURITY_DEVICE_ACTIVATE("security_device_activate.wav"),
+        SECURITY_DEVICE_DEACTIVATE("security_device_deactivate.wav"),
+        HARDENED_PAINT_DISSOLVE("hardened_paint_dissolve.wav"),
+        LEVEL_COMPLETE("level_complete.wav"),
+        CAMPAIGN_MUSIC("campaign_bg.wav")
     }
 
     /**

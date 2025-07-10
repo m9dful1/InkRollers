@@ -14,6 +14,7 @@ import com.spiritwisestudios.inkrollers.Player
 import com.spiritwisestudios.inkrollers.Level
 import com.spiritwisestudios.inkrollers.PaintSurface
 import com.spiritwisestudios.inkrollers.VirtualJoystick
+import com.spiritwisestudios.inkrollers.effects.ParticleManager
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -87,6 +88,7 @@ class GameRenderer(private val context: Context) {
      * @param players Map of all players
      * @param joysticks Map of joysticks
      * @param localPlayerId ID of the local player (for joystick rendering)
+     * @param particleManager Particle manager for visual effects
      */
     fun render(
         canvas: Canvas,
@@ -94,7 +96,8 @@ class GameRenderer(private val context: Context) {
         currentLevel: Level?,
         players: ConcurrentHashMap<String, Player>,
         joysticks: ConcurrentHashMap<String, VirtualJoystick>,
-        localPlayerId: String?
+        localPlayerId: String?,
+        particleManager: ParticleManager? = null
     ) {
         try {
             // 1. Draw background
@@ -109,10 +112,13 @@ class GameRenderer(private val context: Context) {
             // 4. Draw all players
             drawPlayers(canvas, players)
             
-            // 5. Draw local joystick
+            // 5. Draw particles (on top of players for better visibility)
+            particleManager?.let { drawParticles(canvas, it) }
+            
+            // 6. Draw local joystick
             drawLocalJoystick(canvas, joysticks, localPlayerId)
             
-            // 6. Draw corner names
+            // 7. Draw corner names
             drawCornerNames(canvas, players)
             
         } catch (e: Exception) {
@@ -139,6 +145,17 @@ class GameRenderer(private val context: Context) {
      */
     private fun drawLevel(canvas: Canvas, level: Level) {
         level.draw(canvas)
+    }
+    
+    /**
+     * Draw particle effects
+     */
+    private fun drawParticles(canvas: Canvas, particleManager: ParticleManager) {
+        try {
+            particleManager.draw(canvas)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error drawing particles", e)
+        }
     }
     
     /**

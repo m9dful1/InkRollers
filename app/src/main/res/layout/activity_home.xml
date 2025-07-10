@@ -104,6 +104,13 @@
             android:layout_marginTop="8dp"
             android:text="Join Game" />
 
+        <Button
+            android:id="@+id/button_campaign"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Single Player Campaign" />
+
     </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout> 

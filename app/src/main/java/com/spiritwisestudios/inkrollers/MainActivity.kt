@@ -60,6 +60,7 @@ class MainActivity : AppCompatActivity() {
       private const val TAG = "MainActivity"
       private val NEON_GREEN = Color.parseColor("#39FF14")
       private val NEON_BLUE = Color.parseColor("#1F51FF")
+      const val EXTRA_CAMPAIGN_LEVEL = "com.spiritwisestudios.inkrollers.CAMPAIGN_LEVEL"
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -243,15 +244,28 @@ class MainActivity : AppCompatActivity() {
 
   private fun handleIntentExtras() {
       val mode = intent.getStringExtra(HomeActivity.EXTRA_MODE)
-      val gameId = intent.getStringExtra(HomeActivity.EXTRA_GAME_ID)
-      val timeLimit = if (mode == HomeActivity.MODE_HOST) intent.getIntExtra(HomeActivity.EXTRA_TIME_LIMIT_MINUTES, 3) else null
-      val complexity = intent.getStringExtra(HomeActivity.EXTRA_MAZE_COMPLEXITY)
-      val gameMode = intent.getStringExtra(HomeActivity.EXTRA_GAME_MODE)
-      val isPrivate = if (mode == HomeActivity.MODE_HOST) intent.getBooleanExtra(HomeActivity.EXTRA_IS_PRIVATE_MATCH, false) else null
       
-      Log.d(TAG, "Received mode: $mode")
-      
-      gameSetupController.handleGameSetup(mode, gameId, timeLimit, complexity, gameMode, isPrivate)
+      when (mode) {
+          HomeActivity.MODE_CAMPAIGN -> {
+              val campaignLevelId = intent.getStringExtra(EXTRA_CAMPAIGN_LEVEL)
+              Log.d(TAG, "Starting campaign level: $campaignLevelId")
+              // TODO: Initialize campaign level
+              // For now, just show a message
+              Toast.makeText(this, "Campaign mode coming soon!", Toast.LENGTH_SHORT).show()
+              finish()
+          }
+          else -> {
+              val gameId = intent.getStringExtra(HomeActivity.EXTRA_GAME_ID)
+              val timeLimit = if (mode == HomeActivity.MODE_HOST) intent.getIntExtra(HomeActivity.EXTRA_TIME_LIMIT_MINUTES, 3) else null
+              val complexity = intent.getStringExtra(HomeActivity.EXTRA_MAZE_COMPLEXITY)
+              val gameMode = intent.getStringExtra(HomeActivity.EXTRA_GAME_MODE)
+              val isPrivate = if (mode == HomeActivity.MODE_HOST) intent.getBooleanExtra(HomeActivity.EXTRA_IS_PRIVATE_MATCH, false) else null
+              
+              Log.d(TAG, "Received mode: $mode")
+              
+              gameSetupController.handleGameSetup(mode, gameId, timeLimit, complexity, gameMode, isPrivate)
+          }
+      }
   }
 
   

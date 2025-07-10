@@ -13,6 +13,7 @@ import android.os.Build
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import com.spiritwisestudios.inkrollers.campaign.CampaignActivity
 import com.spiritwisestudios.inkrollers.ui.ProfileFragment
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.ktx.Firebase
@@ -35,8 +36,10 @@ class HomeActivity : AppCompatActivity() {
         const val EXTRA_MAZE_COMPLEXITY = "com.spiritwisestudios.inkrollers.MAZE_COMPLEXITY"
         const val EXTRA_GAME_MODE = "com.spiritwisestudios.inkrollers.GAME_MODE"
         const val EXTRA_IS_PRIVATE_MATCH = "com.spiritwisestudios.inkrollers.EXTRA_IS_PRIVATE_MATCH"
+        const val EXTRA_CAMPAIGN_LEVEL = "com.spiritwisestudios.inkrollers.CAMPAIGN_LEVEL"
         const val MODE_HOST = "HOST"
         const val MODE_JOIN = "JOIN"
+        const val MODE_CAMPAIGN = "CAMPAIGN"
 
         // Maze Complexity Levels
         const val COMPLEXITY_LOW = "LOW"
@@ -105,6 +108,11 @@ class HomeActivity : AppCompatActivity() {
             } else {
                 Toast.makeText(this, "Please enter a valid 6-character Game ID or leave blank to join random game", Toast.LENGTH_SHORT).show()
             }
+        }
+
+        binding.buttonCampaign.setOnClickListener {
+            audioManager.playSound(AudioManager.SoundType.UI_CLICK)
+            startCampaignActivity()
         }
 
         binding.buttonProfile.setOnClickListener {
@@ -243,6 +251,12 @@ class HomeActivity : AppCompatActivity() {
                 putExtra(EXTRA_IS_PRIVATE_MATCH, isPrivate)
             }
         }
+        startActivity(intent)
+    }
+
+    private fun startCampaignActivity() {
+        android.util.Log.d("HomeActivity", "Starting CampaignActivity")
+        val intent = Intent(this, CampaignActivity::class.java)
         startActivity(intent)
     }
 

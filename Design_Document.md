@@ -34,6 +34,7 @@
 | **FPS**      | Frames Per Second                                                          |
 | **TTL**      | Time To Live (used in game cleanup logic)                                  |
 | **BaaS**     | Backend as a Service                                                       |
+| **NPC**      | Non-Player Character                                                       |
 
 ### 0.3 Document Overview
 
@@ -64,10 +65,11 @@ Ink Rollers is an Android mobile game application with a client-server architect
 *(Placeholder for a High-Level Context Diagram showing User -> Android App -> Firebase RTDB interactions)*
 
 **Key Architectural Components:**
-*   **Game Client (Android App):** Handles user interface, game logic, rendering, local input, and communication with Firebase.
+*   **Game Client (Android App):** Handles user interface, game logic, rendering, local input, and communication with Firebase. Supports both multiplayer and single-player campaign modes.
 *   **Firebase Realtime Database:** Stores and synchronizes shared game state (player positions, paint data, match status, game settings), player profiles, and facilitates matchmaking.
 *   **Firebase Authentication:** Used for anonymous user sign-in to uniquely identify users for profile and game association.
 *   **Firebase App Check:** Provides an additional layer of security by verifying that requests to Firebase services originate from authentic app instances.
+*   **Campaign System:** Local single-player campaign mode with persistent level progression, story-driven missions, and specialized gameplay mechanics.
 
 ### 1.2 Subsystems and Responsibilities
 
@@ -104,6 +106,17 @@ Ink Rollers is an Android mobile game application with a client-server architect
     *   **Technology:** Android `SoundPool` for sound effects, `MediaPlayer` for background music, integrated with activity lifecycle
     *   **Integration:** Audio calls in `HomeActivity`, `MainActivity`, `Player`, `GameSetupController`, `DialogManager`, `RematchCoordinator`
     *   **Resources:** Audio files (.wav) in `/res/raw/` directory with readme documentation
+*   **Campaign Subsystem:** *(PARTIALLY IMPLEMENTED)*
+    *   **Status:** Phase 1 implementation complete with core infrastructure in place.
+    *   **Implemented Features:**
+        *   **Campaign Management:** `CampaignManager` singleton for level progression and save/load functionality
+        *   **Level Data:** `CampaignLevelData` with 5 campaign levels including branching paths (level_4a/level_4b)
+        *   **UI Components:** `CampaignActivity` with mission selection, `MissionAdapter` for level display
+        *   **Integration:** Campaign button in home screen, proper activity registration
+        *   **Progression System:** Unlock dependencies, completion tracking, persistent storage via SharedPreferences
+    *   **Technology:** Android Activities/RecyclerView, SharedPreferences for persistence, Gson for serialization
+    *   **Integration:** Launched from `HomeActivity`, integrated with existing game architecture
+    *   **Key Classes:** `CampaignActivity`, `CampaignManager`, `CampaignLevelData`, `MissionAdapter`
 
 ---
 
@@ -389,6 +402,10 @@ Data Payloads are primarily Kotlin data classes like `PlayerState` and `PlayerPr
 | **`GameRenderer.kt`** | Extracted all drawing and rendering logic from `GameView`. Handles background rendering, level drawing, player/joystick rendering, and UI overlays with proper resource management and scaling. Clean separation between game logic and rendering. | `initialize()`, `render()`, `drawBackground()`, `drawLevelAndSurface()`, `drawPlayers()`, `drawJoysticks()`, `drawCornerNames()`. |
 | **`GameUpdateManager.kt`** | Extracted game state update logic from `GameView`. Coordinates different update cycles including local player movement, game elements, HUD updates, and game mode management with proper timing and throttling. Manages match state and end-game detection. | `initialize()`, `update()`, `updateLocalPlayer()`, `updateGameElements()`, `updateHUDs()`, `updateGameMode()`, `updateModeSpecificHUD()`, `setMatchReady()`, `reset()`, `getCoverageStats()`, `isMatchReady()`, `hasEndBeenNotified()`. |
 | **`AudioManager.kt`** | **Singleton class for comprehensive audio management.** Handles sound effects using `SoundPool` for low-latency playback and `MediaPlayer` for background music. Manages audio lifecycle, volume controls, and resource cleanup with efficient looping sound support for paint/refill actions. | `getInstance()`, `initialize()`, `playSound()`, `startLoopingSound()`, `stopLoopingSound()`, `startBackgroundMusic()`, `stopBackgroundMusic()`, `pauseAudio()`, `resumeAudio()`, `release()`, `setMasterVolume()`, `SoundType` enum with 8 sound categories. |
+| **`CampaignActivity.kt`** | **Campaign map screen for single-player mode.** Displays mission list with RecyclerView, manages campaign progression, and launches selected levels. Shows mission status (available, completed, locked) with appropriate visual indicators. | `onCreate()`, `loadCampaignData()`, `updateMissionList()`, `onMissionSelected()`. Campaign navigation and mission selection UI. |
+| **`CampaignManager.kt`** | **Singleton for campaign state management.** Handles level progression, unlock dependencies, completion tracking, and persistent storage of campaign progress. Manages save/load functionality using SharedPreferences with Gson serialization. | `getInstance()`, `getCampaignProgress()`, `saveCampaignProgress()`, `isLevelUnlocked()`, `completeLevel()`, `getLevelData()`, `initializeDefaultProgress()`. Campaign data persistence and progression logic. |
+| **`CampaignLevelData.kt`** | **Data structures for campaign levels.** Defines campaign level configuration including metadata, dependencies, story elements, and specialized gameplay parameters. Contains data classes for level progression and branching campaign paths. | Data classes: `CampaignLevel`, `CampaignProgress`, `LevelCompletion`. Defines 5 campaign levels with branching paths (level_4a/level_4b) and unlock dependencies. |
+| **`MissionAdapter.kt`** | **RecyclerView adapter for campaign mission list.** Displays mission items with status indicators (available, completed, locked), handles mission selection clicks, and manages visual state (icons, colors, button states) based on progression. | `onCreateViewHolder()`, `onBindViewHolder()`, `getItemCount()`. `MissionItem` data class for mission display data. Mission list UI management. |
 
 ### 7.3 Abstract Interfaces & Inheritance
 *   **`Level` Interface:** Defines core contract (`update`, `draw`, `checkCollision`, `getPlayerStartPosition`, `calculateCoverage`, `getZones`).
@@ -584,14 +601,28 @@ A multi-layered testing approach will be used:
 | **M‑12 Zones Mode**   | ✅ **Done** | Defined zones in `Level`/`MazeLevel`. Implemented `ZoneOwnershipCalculator`. Created `ZoneHudView`. Integrated into `GameModeManager`, `GameView`, `MainActivity`, `HomeActivity`. Added game mode selection to host settings and Firebase sync. Addressed performance issues and paint persistence. HUD positioning refined. | New game mode fully integrated. |
 | **M‑12.5 Game Persistence** | ✅ **Done** | Implemented comprehensive game persistence system to maintain active sessions when app goes to background. Added `GameStateManager` for persistent storage, smart exit detection in `MainActivity`, and `rejoinGame()` functionality in `MultiplayerManager`. Includes mid-game rejoin support and state validation. | Addresses core UX issue where players were disconnected from matches when backgrounding app. |
 | **M‑13 Audio / FX**   | ✅ **Done** | **Complete audio subsystem implementation** with `AudioManager` singleton using `SoundPool` for low-latency effects and `MediaPlayer` for background music. Includes comprehensive sound effects: painting/refill sounds, UI clicks, mode toggles, match events (start/end/player join), and background music. Audio files added to `/res/raw/` directory with volume controls and lifecycle management. | **Full Implementation Complete:** All game actions have corresponding audio feedback. Paint/refill use looping sounds, match events trigger appropriate audio, and background music plays during gameplay. Audio preferences integrated with activity lifecycle (pause/resume/destroy). |
+| **M‑13.5 Single-Player Campaign** | ✅ **Phase 1 Done** | **Campaign infrastructure implementation** with core single-player framework. Includes `CampaignActivity` for mission selection, `CampaignManager` for progression management, campaign level data with 5 levels including branching paths, mission adapter for UI display, and persistent storage system. Campaign button integrated in home screen. | **Phase 1 Complete (70%):** Core campaign infrastructure in place. Campaign button functional, mission list displays correctly, level progression system implemented, save/load functionality working. Ready for Phase 2 implementation (specialized gameplay mechanics). |
 | **M‑14 Polish/Release**| ☐          | Icons, onboarding, Google Play bundle, privacy policy.                                                                                                                    |                                                                                |
 
-### 10.3 Detailed Upcoming Tasks (Post M-12)
+### 10.3 Detailed Upcoming Tasks (Post M-13.5)
 1.  **Performance & Memory Optimization:**
     *   Implement frame rate capping in `GameThread` (e.g., target 60 FPS).
     *   Further review and optimize `ZoneOwnershipCalculator` sampling if performance issues arise on target devices.
     *   Monitor `PaintSurface` bitmap memory usage, especially during active gameplay and on lower-end devices.
-2.  **Audio / FX Integration (M-13) - ✅ COMPLETED:**
+2.  **Single-Player Campaign Phase 2 (M-13.6):**
+    *   **Color Shift Module:** Implement player ability to change paint color during gameplay
+        *   Add UI controls for color selection in campaign mode
+        *   Integrate color switching mechanics into existing paint system
+        *   Add strategic color-based puzzles and challenges
+    *   **Color Suppressor Robots:** Implement NPC enemies that remove player paint
+        *   Create robot AI for patrol patterns and paint removal behavior
+        *   Add collision detection and robot-player interactions
+        *   Implement robot spawning and movement systems
+    *   **Environmental Puzzles:** Add interactive puzzle elements
+        *   Implement pressure plates that require specific paint colors
+        *   Add switches and doors that respond to coverage conditions
+        *   Create puzzle validation and completion logic
+3.  **Audio / FX Integration (M-13) - ✅ COMPLETED:**
     *   **✅ Phase 1: Audio Infrastructure (Complete)**
         *   ✅ Created `/res/raw/` directory with audio assets
         *   ✅ Implemented `AudioManager` singleton class using `SoundPool` and `MediaPlayer`
@@ -608,14 +639,14 @@ A multi-layered testing approach will be used:
     *   **Future Enhancement Opportunities:**
         *   Simple particle effects for paint splats (if performance allows)
         *   Dynamic audio mixing based on game intensity
-3.  **Polish & Release Preparations (M-14):**
+4.  **Polish & Release Preparations (M-14):**
     *   Create app icons and promotional graphics.
     *   Develop a simple onboarding experience for new users (e.g., brief tutorial pop-ups).
     *   Thorough QA testing on various devices and Android versions.
     *   Write and include a Privacy Policy.
     *   Prepare and test Android App Bundle for Google Play Store submission.
     *   Address any outstanding bugs or minor UI/UX issues.
-4.  **(Deferred) `RoomSequenceLevel` / `LevelManager`:**
+5.  **(Deferred) `RoomSequenceLevel` / `LevelManager`:**
     *   If pursued, implement a new `Level` type for sequenced rooms.
     *   Create a `LevelManager` to control the sequence of levels loaded during a match.
 
@@ -723,6 +754,11 @@ app/
     │   ├─ TimerHudView.kt
     │   ├─ ZoneOwnershipCalculator.kt
     │   └─ ZoneHudView.kt
+    ├─ campaign
+    │   ├─ CampaignActivity.kt
+    │   ├─ CampaignLevelData.kt
+    │   ├─ CampaignManager.kt
+    │   └─ MissionAdapter.kt
     ├─ model
     │   └─ PlayerProfile.kt
     ├─ repository
@@ -732,13 +768,15 @@ app/
     │   ├─ GameSetupController.kt
     │   ├─ FriendAdapter.kt
     │   └─ ProfileFragment.kt
-    └─ res/
-        ├─ layout/
-        │   ├─ activity_main.xml
-        │   ├─ activity_home.xml
-        │   ├─ fragment_profile.xml
-        │   └─ dialog_color_picker.xml
-        └─ ... (drawable, values, mipmap, etc.)
+            └─ res/
+            ├─ layout/
+            │   ├─ activity_main.xml
+            │   ├─ activity_home.xml
+            │   ├─ activity_campaign.xml
+            │   ├─ item_mission.xml
+            │   ├─ fragment_profile.xml
+            │   └─ dialog_color_picker.xml
+            └─ ... (drawable, values, mipmap, etc.)
 
 build.gradle (Project level)
 app/build.gradle (App level)
@@ -758,6 +796,16 @@ AndroidManifest.xml
 
 ### 13.3 Change Log
 **2025-12-19**
+- **✅ M-13.5 Single-Player Campaign Phase 1 COMPLETED:**
+    - **Campaign Infrastructure Implementation:** Created comprehensive single-player campaign system with core framework and UI components.
+    - **Campaign Management:** Implemented `CampaignManager` singleton for level progression, unlock dependencies, completion tracking, and persistent storage using SharedPreferences with Gson serialization.
+    - **Level Data Structure:** Created `CampaignLevelData` with 5 campaign levels including branching paths (level_4a/level_4b), unlock dependencies, and metadata for story-driven missions.
+    - **UI Components:** Added `CampaignActivity` for mission selection screen with RecyclerView display, `MissionAdapter` for mission list management with status indicators (available, completed, locked).
+    - **Integration:** Campaign button added to home screen submenu, proper activity registration in AndroidManifest, campaign mode constants added to HomeActivity.
+    - **Mission Display:** Visual indicators using Android system drawables (info icon for completed, compass for available, lock for locked missions), proper color coding and button states.
+    - **Build Verification:** Successful debug and release builds, campaign button functional in home screen, CampaignActivity launches correctly with mission list display.
+    - **Documentation:** Created `Single_Player_Implementation_Plan.md` with comprehensive 6-phase implementation plan, updated Design Document with campaign subsystem details.
+
 - **✅ M-13 Audio/FX Implementation COMPLETED:**
     - **Full Audio System Implementation:** Created comprehensive `AudioManager` singleton using `SoundPool` for effects and `MediaPlayer` for background music.
     - **Sound Effects Integration:** Added 8 sound categories (paint, refill, mode toggle, UI clicks, match start/end, player join) integrated across all activities and game components.

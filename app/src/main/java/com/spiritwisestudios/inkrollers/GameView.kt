@@ -27,6 +27,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.spiritwisestudios.inkrollers.rendering.GameRenderer
 import com.spiritwisestudios.inkrollers.updates.GameUpdateManager
+import com.spiritwisestudios.inkrollers.effects.ParticleManager
 
 class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
     SurfaceView(ctx,attrs),SurfaceHolder.Callback, MultiplayerManager.RemoteUpdateListener { // Implement listener
@@ -50,6 +51,9 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
   
   // Update management component
   private lateinit var gameUpdateManager: GameUpdateManager
+  
+  // Particle effects system
+  private val particleManager = ParticleManager()
   
   // Multiplayer specific fields
   private var multiplayerManager: MultiplayerManager? = null
@@ -200,7 +204,8 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
           coverageHudView = coverageHudView,
           zoneHudView = zoneHudView,
           timerHudView = timerHudView,
-          localPlayerId = localPlayerId
+          localPlayerId = localPlayerId,
+          particleManager = particleManager
       )
   }
   
@@ -212,7 +217,8 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
         currentLevel = currentLevel,
         players = players,
         joysticks = joysticks,
-        localPlayerId = localPlayerId
+        localPlayerId = localPlayerId,
+        particleManager = particleManager
     )
   }
 
@@ -299,7 +305,8 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
                        multiplayerManager,
                        currentLevel, // Pass level reference
                        playerName, // Pass the provided player name
-                       audioManager // Pass AudioManager for sound effects
+                       audioManager, // Pass AudioManager for sound effects
+                       particleManager // Pass ParticleManager for effects
                    )
                    players[id] = localPlayer
                } else {
@@ -361,7 +368,8 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
               multiplayerManager,
               currentLevel,
               newState.playerName, // Pass player name from newState
-              audioManager // Pass AudioManager for sound effects
+              audioManager, // Pass AudioManager for sound effects
+              particleManager // Pass ParticleManager for effects
           )
           players[playerId] = player
       } else {
@@ -435,6 +443,8 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
               if (screenCoords.first >= 0 && screenCoords.first < surface.w.toFloat() &&
                   screenCoords.second >= 0 && screenCoords.second < surface.h.toFloat()) {
                   surface.paintAt(screenCoords.first, screenCoords.second, color)
+                  // Create particle effect for remote paint
+                  particleManager.createPaintSplat(screenCoords.first, screenCoords.second, color)
               } else {
                   Log.w(TAG, "Remote paint coordinates out of bounds: (${screenCoords.first}, ${screenCoords.second})")
               }
@@ -443,6 +453,8 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
               if (x >= 0 && x < surface.w && y >= 0 && y < surface.h) {
                   Log.d(TAG, "Applying remote paint at ($x,$y) with color #${color.toString(16)}")
                   surface.paintAt(x.toFloat(), y.toFloat(), color)
+                  // Create particle effect for remote paint (fallback)
+                  particleManager.createPaintSplat(x.toFloat(), y.toFloat(), color)
               }
           }
       } catch (e: Exception) {
@@ -538,6 +550,9 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
     
     // Clear paint surface to ensure fresh start
     clearPaintSurface()
+    
+    // Clear particle effects for fresh start
+    particleManager.clear()
     
     val seed = multiplayerManager?.mazeSeed ?: System.currentTimeMillis()
 

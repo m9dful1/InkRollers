@@ -4,6 +4,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.util.Log
 import android.graphics.Typeface
+import com.spiritwisestudios.inkrollers.campaign.ColorFrequency
 
 class Player(
     var surface: PaintSurface,
@@ -13,7 +14,9 @@ class Player(
     private val multiplayerManager: MultiplayerManager? = null,
     private val level: Level? = null,
     var playerName: String = "",
-    private val audioManager: AudioManager? = null
+    private val audioManager: AudioManager? = null,
+    private val particleManager: com.spiritwisestudios.inkrollers.effects.ParticleManager? = null,
+    private val isCampaignMode: Boolean = false
 ) {
   companion object {
     const val MAX_INK = 100f
@@ -33,6 +36,26 @@ class Player(
   private var isPaintSoundPlaying = false
   private var isRefillSoundPlaying = false
   
+  // Color shift functionality for campaign mode
+  private var currentFrequency: ColorFrequency = ColorFrequency.RED
+  private val frequencyColors = mapOf(
+      ColorFrequency.RED to Color.RED,
+      ColorFrequency.BLUE to Color.BLUE,
+      ColorFrequency.GREEN to Color.GREEN,
+      ColorFrequency.YELLOW to Color.YELLOW
+  )
+  
+  // Initialize paint color based on mode
+  init {
+      if (isCampaignMode) {
+          // In campaign mode, start with red frequency
+          paint.color = frequencyColors[ColorFrequency.RED] ?: Color.RED
+      } else {
+          // In multiplayer mode, use the provided player color
+          paint.color = playerColor
+      }
+  }
+  
   fun toggleMode(){ 
     // Stop all sounds when switching modes
     stopPaintSound()
@@ -40,6 +63,43 @@ class Player(
     mode=1-mode 
     audioManager?.playSound(AudioManager.SoundType.MODE_TOGGLE)
   }
+  
+  /**
+   * Toggle the color frequency for campaign mode
+   */
+  fun toggleColorShift() {
+      if (!isCampaignMode) return
+      
+      currentFrequency = when (currentFrequency) {
+          ColorFrequency.RED -> ColorFrequency.BLUE
+          ColorFrequency.BLUE -> ColorFrequency.GREEN
+          ColorFrequency.GREEN -> ColorFrequency.YELLOW
+          ColorFrequency.YELLOW -> ColorFrequency.RED
+      }
+      
+      // Update paint color to match new frequency
+      paint.color = frequencyColors[currentFrequency] ?: Color.RED
+      
+      // Play color shift sound effect
+      audioManager?.playSound(AudioManager.SoundType.COLOR_SHIFT)
+      
+      Log.d(TAG, "Color frequency shifted to: $currentFrequency")
+  }
+  
+  /**
+   * Get current color frequency (campaign mode)
+   */
+  fun getCurrentFrequency(): ColorFrequency = currentFrequency
+  
+  /**
+   * Get the color corresponding to current frequency (campaign mode)
+   */
+  fun getFrequencyColor(): Int = frequencyColors[currentFrequency] ?: Color.RED
+  
+  /**
+   * Check if player is in campaign mode
+   */
+  fun isCampaignMode(): Boolean = isCampaignMode
   fun move(dirX: Float, dirY: Float, magnitude: Float, level: Level? = null, deltaTime: Float) {
     // Log.d("Player", "move: Input: dirX=$dirX, dirY=$dirY, mag=$magnitude, deltaTime=$deltaTime")
     if (magnitude == 0f) return
@@ -86,6 +146,9 @@ class Player(
                 
                 // Paint locally
                 surface.paintAt(x, y, paint.color)
+                
+                // Create paint splat particle effect
+                particleManager?.createPaintSplat(x, y, paint.color)
                 
                 try {
                     // Get the current level - either from parameter or member variable

@@ -28,5 +28,11 @@
         <!-- Removed LAUNCHER intent filter -->
     </activity>
 
+    <!-- CampaignActivity for single-player campaign -->
+    <activity
+        android:name=".campaign.CampaignActivity"
+        android:exported="false"
+        android:screenOrientation="sensorLandscape" />
+
   </application>
 </manifest>
