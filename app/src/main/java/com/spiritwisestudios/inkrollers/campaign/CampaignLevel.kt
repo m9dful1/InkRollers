@@ -140,12 +140,12 @@ class CampaignLevel(
      * Update all campaign elements
      */
     private fun updateCampaignElements() {
-        // Update robots
+        // Update robots with level for collision detection and AI
         robots.forEach { robot ->
             // Note: deltaTime would need to be passed from GameView
             // For now, use a fixed deltaTime of 1/60 second
             getPaintSurface()?.let { paintSurface ->
-                robot.update(1f / 60f, paintSurface)
+                robot.update(1f / 60f, paintSurface, this)
             }
         }
         
