@@ -58,6 +58,17 @@ class MissionAdapter(
                 if (mission.grade != null) {
                     holder.missionGrade.text = "Grade: ${mission.grade}"
                     holder.missionGrade.visibility = View.VISIBLE
+                    
+                    // Set grade color based on performance
+                    val gradeColor = when (mission.grade) {
+                        "A" -> android.graphics.Color.rgb(0, 200, 0) // Green
+                        "B" -> android.graphics.Color.rgb(0, 150, 255) // Blue
+                        "C" -> android.graphics.Color.rgb(255, 200, 0) // Yellow
+                        "D" -> android.graphics.Color.rgb(255, 150, 0) // Orange
+                        "F" -> android.graphics.Color.rgb(255, 0, 0) // Red
+                        else -> android.graphics.Color.GRAY
+                    }
+                    holder.missionGrade.setTextColor(gradeColor)
                 } else {
                     holder.missionGrade.visibility = View.GONE
                 }

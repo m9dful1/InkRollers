@@ -12,6 +12,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.spiritwisestudios.inkrollers.AudioManager
 import com.spiritwisestudios.inkrollers.MainActivity
 import com.spiritwisestudios.inkrollers.databinding.ActivityCampaignBinding
+import com.spiritwisestudios.inkrollers.R
 import androidx.recyclerview.widget.LinearLayoutManager
 
 class CampaignActivity : AppCompatActivity() {
@@ -31,10 +32,16 @@ class CampaignActivity : AppCompatActivity() {
 
         // Enable full screen immersive mode
         enableFullScreenMode()
+        
+        // Override activity transitions
+        overridePendingTransition(R.anim.campaign_enter, R.anim.campaign_exit)
 
         // Initialize AudioManager
         audioManager = AudioManager.getInstance(this)
         audioManager.initialize()
+        
+        // Start campaign music
+        audioManager.startCampaignMusic()
 
         // Initialize CampaignManager
         campaignManager = CampaignManager.getInstance(this)
@@ -47,6 +54,8 @@ class CampaignActivity : AppCompatActivity() {
         binding.buttonBack.setOnClickListener {
             audioManager.playSound(AudioManager.SoundType.UI_CLICK)
             finish()
+            // Use custom transition
+            overridePendingTransition(R.anim.campaign_enter, R.anim.campaign_exit)
         }
 
         // Setup mission list
@@ -96,11 +105,12 @@ class CampaignActivity : AppCompatActivity() {
 
     private fun startCampaignLevel(levelId: String) {
         Log.d(TAG, "Starting campaign level: $levelId")
-        val intent = Intent(this, MainActivity::class.java).apply {
-            putExtra(com.spiritwisestudios.inkrollers.HomeActivity.EXTRA_MODE, com.spiritwisestudios.inkrollers.HomeActivity.MODE_CAMPAIGN)
-            putExtra(com.spiritwisestudios.inkrollers.MainActivity.EXTRA_CAMPAIGN_LEVEL, levelId)
+        val intent = Intent(this, CampaignLevelActivity::class.java).apply {
+            putExtra(CampaignLevelActivity.EXTRA_LEVEL_ID, levelId)
         }
         startActivity(intent)
+        // Use custom transition
+        overridePendingTransition(R.anim.campaign_enter, R.anim.campaign_exit)
     }
 
     override fun onResume() {
@@ -117,6 +127,12 @@ class CampaignActivity : AppCompatActivity() {
         super.onPause()
         // Pause audio when activity goes to background
         audioManager.pauseAudio()
+    }
+    
+    override fun onDestroy() {
+        super.onDestroy()
+        // Stop campaign music when activity is destroyed
+        audioManager.stopCampaignMusic()
     }
 
     /**

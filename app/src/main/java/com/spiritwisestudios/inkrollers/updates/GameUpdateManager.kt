@@ -102,29 +102,38 @@ class GameUpdateManager {
         currentLevel: Level?,
         multiplayerManager: MultiplayerManager?
     ) {
-        if (localPlayer != null && localJoystick != null && currentLevel is MazeLevel) {
+        if (localPlayer != null && localJoystick != null && currentLevel != null) {
             // Move local player
             localPlayer.move(localJoystick.directionX, localJoystick.directionY, localJoystick.magnitude, currentLevel, deltaTime)
             
-            // Convert local player's screen position to normalized coordinates
-            val (nx, ny) = currentLevel.screenToMazeCoord(localPlayer.x, localPlayer.y)
+            // Handle campaign-specific interactions
+            if (currentLevel is com.spiritwisestudios.inkrollers.campaign.CampaignLevel && localPlayer.isCampaignMode()) {
+                val paintSurface = localPlayer.surface
+                currentLevel.handlePlayerInteraction(localPlayer, paintSurface)
+            }
+            
+            // Firebase sync only for multiplayer mode
+            if (multiplayerManager != null && currentLevel is MazeLevel) {
+                // Convert local player's screen position to normalized coordinates
+                val (nx, ny) = currentLevel.screenToMazeCoord(localPlayer.x, localPlayer.y)
 
-            // Throttled Firebase Update
-            timeSinceLastFirebaseUpdate += deltaTime
-            if (timeSinceLastFirebaseUpdate >= firebaseUpdateInterval) {
-                timeSinceLastFirebaseUpdate = 0f
-                // Send local player state to Firebase using normalized coordinates
-                val currentState = PlayerState(
-                    normX = nx,
-                    normY = ny,
-                    color = localPlayer.getColor(),
-                    mode = localPlayer.mode,
-                    ink = localPlayer.ink,
-                    active = true, // Mark as active
-                    playerName = localPlayer.playerName, // Pass player name
-                    uid = multiplayerManager?.getCurrentUserUid() ?: "" // Include UID
-                )
-                multiplayerManager?.updateLocalPlayerState(currentState)
+                // Throttled Firebase Update
+                timeSinceLastFirebaseUpdate += deltaTime
+                if (timeSinceLastFirebaseUpdate >= firebaseUpdateInterval) {
+                    timeSinceLastFirebaseUpdate = 0f
+                    // Send local player state to Firebase using normalized coordinates
+                    val currentState = PlayerState(
+                        normX = nx,
+                        normY = ny,
+                        color = localPlayer.getColor(),
+                        mode = localPlayer.mode,
+                        ink = localPlayer.ink,
+                        active = true, // Mark as active
+                        playerName = localPlayer.playerName, // Pass player name
+                        uid = multiplayerManager.getCurrentUserUid() ?: "" // Include UID
+                    )
+                    multiplayerManager.updateLocalPlayerState(currentState)
+                }
             }
         }
     }

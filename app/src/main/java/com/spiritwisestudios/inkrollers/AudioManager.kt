@@ -39,6 +39,7 @@ class AudioManager private constructor(private val context: Context) {
 
     private var soundPool: SoundPool? = null
     private var backgroundMusicPlayer: MediaPlayer? = null
+    private var campaignMusicPlayer: MediaPlayer? = null
     private val soundIds = mutableMapOf<SoundType, Int>()
     private var isInitialized = false
     private var masterVolume = 0.7f
@@ -46,6 +47,7 @@ class AudioManager private constructor(private val context: Context) {
     private var musicEnabled = true
     private var musicVolume = 0.5f
     private var isMusicSupposedToPlay = false
+    private var isCampaignMusicSupposedToPlay = false
 
     // For tracking looping sounds
     private val loopingStreams = mutableMapOf<SoundType, Int>()
@@ -105,26 +107,60 @@ class AudioManager private constructor(private val context: Context) {
      * Initializes the MediaPlayer for background music.
      */
     private fun initializeBackgroundMusic() {
+        // Initialize background music
         try {
             val resourceId = context.resources.getIdentifier("bg", "raw", context.packageName)
             if (resourceId != 0) {
                 backgroundMusicPlayer = MediaPlayer.create(context, resourceId)
-                backgroundMusicPlayer?.apply {
-                    isLooping = true
-                    setAudioAttributes(
-                        AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_GAME)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                            .build()
-                    )
-                    setVolume(musicVolume, musicVolume)
+                if (backgroundMusicPlayer != null) {
+                    backgroundMusicPlayer?.apply {
+                        isLooping = true
+                        setAudioAttributes(
+                            AudioAttributes.Builder()
+                                .setUsage(AudioAttributes.USAGE_GAME)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                                .build()
+                        )
+                        setVolume(musicVolume, musicVolume)
+                    }
+                    Log.d(TAG, "Background music initialized")
+                } else {
+                    Log.w(TAG, "Background music MediaPlayer creation failed - invalid audio file")
                 }
-                Log.d(TAG, "Background music initialized")
             } else {
                 Log.w(TAG, "Background music file (bg.wav) not found")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize background music", e)
+            backgroundMusicPlayer = null
+        }
+        
+        // Initialize campaign music
+        try {
+            val campaignResourceId = context.resources.getIdentifier("campaign_bg", "raw", context.packageName)
+            if (campaignResourceId != 0) {
+                campaignMusicPlayer = MediaPlayer.create(context, campaignResourceId)
+                if (campaignMusicPlayer != null) {
+                    campaignMusicPlayer?.apply {
+                        isLooping = true
+                        setAudioAttributes(
+                            AudioAttributes.Builder()
+                                .setUsage(AudioAttributes.USAGE_GAME)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                                .build()
+                        )
+                        setVolume(musicVolume * 0.7f, musicVolume * 0.7f) // Slightly quieter than regular music
+                    }
+                    Log.d(TAG, "Campaign music initialized")
+                } else {
+                    Log.w(TAG, "Campaign music MediaPlayer creation failed - likely placeholder file")
+                }
+            } else {
+                Log.w(TAG, "Campaign music file (campaign_bg.wav) not found")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to initialize campaign music", e)
+            campaignMusicPlayer = null
         }
     }
 
@@ -165,6 +201,46 @@ class AudioManager private constructor(private val context: Context) {
     }
 
     /**
+     * Starts playing campaign background music.
+     */
+    fun startCampaignMusic() {
+        if (!musicEnabled || !isInitialized) return
+        isCampaignMusicSupposedToPlay = true
+        try {
+            campaignMusicPlayer?.let { player ->
+                if (!player.isPlaying) {
+                    player.start()
+                    Log.d(TAG, "Campaign music started")
+                }
+            } ?: run {
+                Log.d(TAG, "Campaign music not available (likely placeholder file)")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start campaign music", e)
+        }
+    }
+
+    /**
+     * Stops campaign background music.
+     */
+    fun stopCampaignMusic() {
+        isCampaignMusicSupposedToPlay = false
+        try {
+            campaignMusicPlayer?.let { player ->
+                if (player.isPlaying) {
+                    player.pause()
+                    player.seekTo(0) // Reset to beginning
+                    Log.d(TAG, "Campaign music stopped")
+                }
+            } ?: run {
+                Log.d(TAG, "Campaign music not available to stop")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to stop campaign music", e)
+        }
+    }
+
+    /**
      * Pauses background music (maintains current position).
      */
     private fun pauseBackgroundMusic() {
@@ -177,6 +253,22 @@ class AudioManager private constructor(private val context: Context) {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to pause background music", e)
+        }
+    }
+
+    /**
+     * Pauses campaign music (maintains current position).
+     */
+    private fun pauseCampaignMusic() {
+        try {
+            campaignMusicPlayer?.let { player ->
+                if (player.isPlaying) {
+                    player.pause()
+                    Log.d(TAG, "Campaign music paused")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to pause campaign music", e)
         }
     }
 
@@ -199,11 +291,30 @@ class AudioManager private constructor(private val context: Context) {
     }
 
     /**
+     * Resumes campaign music from current position.
+     */
+    private fun resumeCampaignMusic() {
+        if (!musicEnabled || !isInitialized || !isCampaignMusicSupposedToPlay) return
+
+        try {
+            campaignMusicPlayer?.let { player ->
+                if (!player.isPlaying) {
+                    player.start()
+                    Log.d(TAG, "Campaign music resumed")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to resume campaign music", e)
+        }
+    }
+
+    /**
      * Sets the music volume (0.0 - 1.0).
      */
     fun setMusicVolume(volume: Float) {
         musicVolume = volume.coerceIn(0f, 1f)
         backgroundMusicPlayer?.setVolume(musicVolume, musicVolume)
+        campaignMusicPlayer?.setVolume(musicVolume * 0.7f, musicVolume * 0.7f)
         Log.d(TAG, "Music volume set to: $musicVolume")
         saveSetting(PREF_MUSIC_VOLUME, musicVolume)
     }
@@ -396,14 +507,18 @@ class AudioManager private constructor(private val context: Context) {
         try {
             stopAllLoopingSounds()
             stopBackgroundMusic()
+            stopCampaignMusic()
             soundPool?.release()
             backgroundMusicPlayer?.release()
+            campaignMusicPlayer?.release()
             soundPool = null
             backgroundMusicPlayer = null
+            campaignMusicPlayer = null
             soundIds.clear()
             loopingStreams.clear()
             isInitialized = false
             isMusicSupposedToPlay = false
+            isCampaignMusicSupposedToPlay = false
             Log.d(TAG, "AudioManager released")
         } catch (e: Exception) {
             Log.e(TAG, "Error releasing AudioManager", e)
@@ -416,6 +531,7 @@ class AudioManager private constructor(private val context: Context) {
     fun pauseAudio() {
         soundPool?.autoPause()
         pauseBackgroundMusic()
+        pauseCampaignMusic()
     }
 
     /**
@@ -424,5 +540,6 @@ class AudioManager private constructor(private val context: Context) {
     fun resumeAudio() {
         soundPool?.autoResume()
         resumeBackgroundMusic()
+        resumeCampaignMusic()
     }
 } 

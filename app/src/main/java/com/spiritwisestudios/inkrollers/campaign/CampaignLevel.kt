@@ -4,6 +4,7 @@ import android.graphics.Canvas
 import android.graphics.RectF
 import android.util.Log
 import com.spiritwisestudios.inkrollers.*
+import com.spiritwisestudios.inkrollers.campaign.effects.CampaignEffects
 
 /**
  * CampaignLevel class for single-player campaign mode.
@@ -28,9 +29,15 @@ class CampaignLevel(
     private val robots = mutableListOf<Robot>()
     private val securityDevices = mutableListOf<SecurityDevice>()
     private val hardenedPaintAreas = mutableListOf<HardenedPaint>()
+    private val secretAreas = mutableListOf<SecretArea>()
+    
+    // Visual effects
+    private val campaignEffects = CampaignEffects()
     
     // Level state
     private var isLevelComplete = false
+    private var discoveredSecrets = 0
+    private var totalSecrets = 0
     
     init {
         // Create base maze with campaign level settings
@@ -60,10 +67,34 @@ class CampaignLevel(
      * Initialize campaign elements from level data
      */
     private fun setupCampaignElements() {
-        // Initialize robots
+        // Initialize robots with proper coordinate transformation
         levelData.robotPositions.forEach { robotData ->
-            val robot = Robot(robotData.x, robotData.y, robotData)
+            // Convert maze cell coordinates to screen coordinates
+            // Treat robot coordinates as relative positions within the maze (0.0-1.0)
+            val (screenX, screenY) = mazeLevel.mazeToScreenCoord(
+                robotData.x / 1000f, // Convert from 0-1000 range to 0-1 normalized
+                robotData.y / 1000f
+            )
+            
+            // Transform patrol path coordinates as well
+            val transformedPatrolPath = robotData.patrolPath.map { (pathX, pathY) ->
+                val (transformedX, transformedY) = mazeLevel.mazeToScreenCoord(
+                    pathX / 1000f,
+                    pathY / 1000f
+                )
+                transformedX to transformedY
+            }
+            
+            // Create robot data with transformed coordinates
+            val transformedRobotData = robotData.copy(
+                x = screenX,
+                y = screenY,
+                patrolPath = transformedPatrolPath
+            )
+            
+            val robot = Robot(screenX, screenY, transformedRobotData)
             robots.add(robot)
+            Log.d(TAG, "Created robot at screen position ($screenX, $screenY) from data (${robotData.x}, ${robotData.y})")
         }
         
         // Initialize security devices
@@ -78,7 +109,15 @@ class CampaignLevel(
             hardenedPaintAreas.add(hardenedPaint)
         }
         
-        Log.d(TAG, "Setup campaign elements: ${robots.size} robots, ${securityDevices.size} devices, ${hardenedPaintAreas.size} hardened areas")
+        // Initialize secret areas
+        levelData.secretAreas.forEach { secretData ->
+            val secretArea = SecretArea(secretData, audioManager)
+            secretAreas.add(secretArea)
+        }
+        
+        totalSecrets = secretAreas.size
+        
+        Log.d(TAG, "Setup campaign elements: ${robots.size} robots, ${securityDevices.size} devices, ${hardenedPaintAreas.size} hardened areas, ${secretAreas.size} secrets")
     }
     
     /**
@@ -105,7 +144,9 @@ class CampaignLevel(
         robots.forEach { robot ->
             // Note: deltaTime would need to be passed from GameView
             // For now, use a fixed deltaTime of 1/60 second
-            robot.update(1f / 60f, getPaintSurface())
+            getPaintSurface()?.let { paintSurface ->
+                robot.update(1f / 60f, paintSurface)
+            }
         }
         
         // Update security devices
@@ -117,6 +158,14 @@ class CampaignLevel(
         hardenedPaintAreas.forEach { hardenedPaint ->
             hardenedPaint.update(1f / 60f)
         }
+        
+        // Update secret areas
+        secretAreas.forEach { secretArea ->
+            secretArea.update(1f / 60f)
+        }
+        
+        // Update visual effects
+        campaignEffects.update(1f / 60f)
     }
     
     /**
@@ -151,6 +200,11 @@ class CampaignLevel(
             hardenedPaint.draw(canvas)
         }
         
+        // Draw secret areas (subtle hints)
+        secretAreas.forEach { secretArea ->
+            secretArea.draw(canvas)
+        }
+        
         // Draw security devices
         securityDevices.forEach { device ->
             device.draw(canvas)
@@ -160,6 +214,9 @@ class CampaignLevel(
         robots.forEach { robot ->
             robot.draw(canvas)
         }
+        
+        // Draw visual effects (on top of everything)
+        campaignEffects.drawEffects(canvas)
     }
     
     /**
@@ -219,6 +276,10 @@ class CampaignLevel(
         val playerY = player.y
         val currentFrequency = player.getCurrentFrequency()
         
+        // Trigger color shift effect when player changes frequency
+        // This will be called from Player.toggleColorShift()
+        campaignEffects.triggerColorShiftEffect(player)
+        
         // Check robot interactions (painting robots for conversion)
         robots.forEach { robot ->
             val robotBounds = robot.getBounds()
@@ -226,6 +287,7 @@ class CampaignLevel(
                 if (robot.paintRobot(player.getColor(), paintSurface)) {
                     // Robot was successfully converted
                     audioManager?.playSound(AudioManager.SoundType.ROBOT_CONVERSION)
+                    campaignEffects.triggerRobotConversionEffect(robot)
                 }
             }
         }
@@ -235,6 +297,7 @@ class CampaignLevel(
             if (device.interactWithControlPanel(currentFrequency, playerX, playerY)) {
                 // Device was successfully disabled
                 audioManager?.playSound(AudioManager.SoundType.SECURITY_DEVICE_DEACTIVATE)
+                campaignEffects.triggerBloomEffect(Pair(playerX, playerY))
             }
         }
         
@@ -243,6 +306,15 @@ class CampaignLevel(
             if (hardenedPaint.attemptDissolution(currentFrequency, playerX, playerY)) {
                 // Hardened paint was dissolved
                 audioManager?.playSound(AudioManager.SoundType.HARDENED_PAINT_DISSOLVE)
+                campaignEffects.triggerAreaCompletionEffect(hardenedPaint.getArea())
+            }
+        }
+        
+        // Check secret area interactions
+        secretAreas.forEach { secretArea ->
+            if (secretArea.attemptDiscovery(playerX, playerY)) {
+                discoveredSecrets++
+                campaignEffects.triggerBloomEffect(Pair(playerX, playerY))
             }
         }
     }
@@ -278,9 +350,39 @@ class CampaignLevel(
     fun getRequiredCoverage(): Float = levelData.requiredCoverage
     
     /**
+     * Get campaign effects for external triggering
+     */
+    fun getCampaignEffects(): CampaignEffects = campaignEffects
+    
+    /**
      * Get time limit for this level (if any)
      */
     fun getTimeLimit(): Long? = levelData.timeLimit
+    
+    /**
+     * Get grading statistics for level completion
+     */
+    fun getGradingStats(): Map<String, Any> {
+        val convertedRobots = robots.count { it.isFullyConverted() }
+        val totalRobots = robots.size
+        
+        return mapOf(
+            "robotsConverted" to convertedRobots,
+            "totalRobots" to totalRobots,
+            "secretsFound" to discoveredSecrets,
+            "totalSecrets" to totalSecrets
+        )
+    }
+    
+    /**
+     * Get discovered secrets count
+     */
+    fun getDiscoveredSecrets(): Int = discoveredSecrets
+    
+    /**
+     * Get total secrets count
+     */
+    fun getTotalSecrets(): Int = totalSecrets
     
     /**
      * Convert screen coordinates to maze coordinates (for consistency)

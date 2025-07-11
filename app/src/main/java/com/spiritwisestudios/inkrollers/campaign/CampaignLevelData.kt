@@ -11,6 +11,7 @@ data class CampaignLevelData(
     val robotPositions: List<RobotData> = emptyList(),
     val securityDevices: List<SecurityDeviceData> = emptyList(),
     val hardenedPaintAreas: List<HardenedPaintData> = emptyList(),
+    val secretAreas: List<SecretAreaData> = emptyList(),
     val requiredCoverage: Float = 1.0f,
     val timeLimit: Long? = null,
     val mazeComplexity: String = "MEDIUM"
@@ -46,6 +47,15 @@ data class HardenedPaintData(
 )
 
 /**
+ * Data class for secret area configuration
+ */
+data class SecretAreaData(
+    val area: RectF,
+    val secretType: SecretType,
+    val description: String
+)
+
+/**
  * Enum for device types
  */
 enum class DeviceType {
@@ -59,6 +69,16 @@ enum class DeviceType {
  */
 enum class ColorFrequency {
     RED, BLUE, GREEN, YELLOW
+}
+
+/**
+ * Enum for secret types
+ */
+enum class SecretType {
+    HIDDEN_PASSAGE,
+    BONUS_POWERUP,
+    STORY_FRAGMENT,
+    ACHIEVEMENT
 }
 
 /**
@@ -93,18 +113,25 @@ object CampaignLevels {
         levelName = "The Awakening",
         robotPositions = listOf(
             RobotData(
-                x = 100f,
-                y = 100f,
+                x = 400f,
+                y = 300f,
                 patrolPath = listOf(
-                    100f to 100f,
-                    200f to 100f,
-                    200f to 200f,
-                    100f to 200f
+                    400f to 300f,
+                    600f to 300f,
+                    600f to 500f,
+                    400f to 500f
                 )
             )
         ),
         securityDevices = emptyList(),
         hardenedPaintAreas = emptyList(),
+        secretAreas = listOf(
+            SecretAreaData(
+                area = RectF(50f, 50f, 80f, 80f),
+                secretType = SecretType.STORY_FRAGMENT,
+                description = "Hidden Reclamation Corps message"
+            )
+        ),
         requiredCoverage = 0.8f,
         timeLimit = null,
         mazeComplexity = "LOW"
@@ -145,6 +172,13 @@ object CampaignLevels {
             HardenedPaintData(
                 area = RectF(100f, 100f, 150f, 150f),
                 requiredFrequency = ColorFrequency.RED
+            )
+        ),
+        secretAreas = listOf(
+            SecretAreaData(
+                area = RectF(350f, 350f, 380f, 380f),
+                secretType = SecretType.BONUS_POWERUP,
+                description = "Enhanced paint capacity"
             )
         ),
         requiredCoverage = 0.9f,
@@ -200,6 +234,18 @@ object CampaignLevels {
             HardenedPaintData(
                 area = RectF(260f, 260f, 320f, 320f),
                 requiredFrequency = ColorFrequency.BLUE
+            )
+        ),
+        secretAreas = listOf(
+            SecretAreaData(
+                area = RectF(400f, 400f, 430f, 430f),
+                secretType = SecretType.HIDDEN_PASSAGE,
+                description = "Secret Ministry access tunnel"
+            ),
+            SecretAreaData(
+                area = RectF(60f, 60f, 90f, 90f),
+                secretType = SecretType.STORY_FRAGMENT,
+                description = "Classified Ministry document"
             )
         ),
         requiredCoverage = 0.95f,
@@ -265,6 +311,13 @@ object CampaignLevels {
                 requiredFrequency = ColorFrequency.YELLOW
             )
         ),
+        secretAreas = listOf(
+            SecretAreaData(
+                area = RectF(450f, 450f, 480f, 480f),
+                secretType = SecretType.ACHIEVEMENT,
+                description = "Power Plant Master achievement"
+            )
+        ),
         requiredCoverage = 1.0f,
         timeLimit = 240000L, // 4 minutes
         mazeComplexity = "HIGH"
@@ -318,6 +371,18 @@ object CampaignLevels {
             HardenedPaintData(
                 area = RectF(240f, 240f, 320f, 320f),
                 requiredFrequency = ColorFrequency.GREEN
+            )
+        ),
+        secretAreas = listOf(
+            SecretAreaData(
+                area = RectF(400f, 400f, 430f, 430f),
+                secretType = SecretType.STORY_FRAGMENT,
+                description = "Data Hub access codes"
+            ),
+            SecretAreaData(
+                area = RectF(50f, 50f, 80f, 80f),
+                secretType = SecretType.BONUS_POWERUP,
+                description = "Temporary invincibility"
             )
         ),
         requiredCoverage = 1.0f,

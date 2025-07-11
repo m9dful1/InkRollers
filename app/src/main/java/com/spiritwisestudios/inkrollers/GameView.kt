@@ -59,6 +59,11 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
   private var multiplayerManager: MultiplayerManager? = null
   private var localPlayerId: String? = null
   
+  // Campaign mode fields
+  private var isCampaignMode: Boolean = false
+  private var campaignLevel: com.spiritwisestudios.inkrollers.campaign.CampaignLevel? = null
+  private var campaignPerformanceMonitor: com.spiritwisestudios.inkrollers.campaign.PerformanceMonitor? = null
+  
   // New field for match end listener
   var onMatchEnd: ((Boolean) -> Unit)? = null
   
@@ -104,9 +109,16 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
         PaintSurface(width, height)
     }
     savedPaintBitmap = null
+    
     // Update all players to use the new surface
     for (player in players.values) {
         player.surface = surface
+    }
+
+    // Set paint surface for campaign level if it exists but wasn't set before
+    if (isCampaignMode && campaignLevel != null) {
+        campaignLevel!!.setPaintSurface(surface)
+        Log.d(TAG, "Campaign level paint surface set in surfaceCreated")
     }
 
     // Initialize GameRenderer with surface dimensions
@@ -156,11 +168,14 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
   fun startGameLoop() {
       synchronized(this) {
           Log.d(TAG, "startGameLoop: Called. Thread initialized: ${if (::thread.isInitialized) "yes" else "no"}, Thread state: ${if (::thread.isInitialized) thread.state else "not initialized"}")
+          
           if (!::thread.isInitialized) {
               Log.e(TAG, "Cannot start game loop: thread not initialized.")
               return
           }
+          
           Log.d(TAG, "startGameLoop: Thread state before start: ${thread.state}")
+          
           if (!thread.isAlive) {
               try {
                  if (thread.state == Thread.State.NEW) {
@@ -177,7 +192,18 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
                      Log.d(TAG, "Game thread re-initialized and started.")
                  }
               } catch(e: IllegalThreadStateException) {
-                  Log.e(TAG, "Failed to start game thread", e)
+                  Log.e(TAG, "Failed to start game thread: ${e.message}")
+                  // Try to recover by creating a new thread
+                  try {
+                      thread = GameThread(holder, this)
+                      thread.running = true
+                      thread.start()
+                      Log.d(TAG, "Recovery successful: new thread created and started.")
+                  } catch (recoveryException: Exception) {
+                      Log.e(TAG, "Failed to recover game thread", recoveryException)
+                  }
+              } catch(e: Exception) {
+                  Log.e(TAG, "Unexpected error starting game thread", e)
               }
           } else {
               Log.d(TAG, "startGameLoop called but thread already running.")
@@ -186,6 +212,11 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
   }
 
   fun update(deltaTime: Float){
+      // Performance monitoring for campaign mode
+      if (isCampaignMode) {
+          campaignPerformanceMonitor?.onFrameStart()
+      }
+      
       // Get local player and joystick for efficiency
       val localPlayer = getLocalPlayer()
       val localJoystick = if (localPlayerId != null) joysticks[localPlayerId] else null
@@ -674,6 +705,122 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
   /** Assign the timer HUD for showing match countdown. */
   fun setTimerHudView(view: TimerHudView) {
     this.timerHudView = view
+  }
+  
+  /**
+   * Set campaign mode and initialize campaign level
+   */
+  fun setCampaignMode(enabled: Boolean) {
+    this.isCampaignMode = enabled
+    Log.d(TAG, "Campaign mode set to: $enabled")
+  }
+  
+  /**
+   * Set the campaign level for campaign mode
+   */
+  fun setCampaignLevel(level: com.spiritwisestudios.inkrollers.campaign.CampaignLevel) {
+    this.campaignLevel = level
+    this.currentLevel = level
+    
+    // Only set paint surface if surface is initialized
+    if (::surface.isInitialized) {
+        level.setPaintSurface(surface)
+        Log.d(TAG, "Campaign level set with surface: ${level.getLevelData().levelName}")
+    } else {
+        Log.d(TAG, "Campaign level set, but surface not yet initialized: ${level.getLevelData().levelName}")
+    }
+  }
+  
+  /**
+   * Set up campaign player and controls
+   */
+  fun setCampaignPlayer(player: Player) {
+    // Set up as local player with campaign ID
+    val campaignPlayerId = "campaign_player"
+    this.localPlayerId = campaignPlayerId
+    
+    // Add player to the players map so it gets rendered
+    players[campaignPlayerId] = player
+    
+    // Create joystick for campaign player
+    joysticks[campaignPlayerId] = VirtualJoystick()
+    
+    Log.d(TAG, "Campaign player set up with ID: $campaignPlayerId")
+  }
+  
+  /**
+   * Get the campaign player (convenience method)
+   */
+  fun getCampaignPlayer(): Player? {
+    return players["campaign_player"]
+  }
+  
+  /**
+   * Get the particle manager for creating campaign players with effects
+   */
+  fun getParticleManager(): ParticleManager = particleManager
+  
+  /**
+   * Set the game mode manager for campaign mode
+   */
+  fun setGameModeManager(manager: GameModeManager) {
+    this.gameModeManager = manager
+    // Set match as ready for campaign mode
+    gameUpdateManager.setMatchReady(true)
+    Log.d(TAG, "Game mode manager set for campaign mode")
+  }
+  
+  /**
+   * Set the performance monitor for campaign mode
+   */
+  fun setCampaignPerformanceMonitor(monitor: com.spiritwisestudios.inkrollers.campaign.PerformanceMonitor) {
+    this.campaignPerformanceMonitor = monitor
+    Log.d(TAG, "Campaign performance monitor set")
+  }
+  
+  /**
+   * Initialize game for campaign mode
+   */
+  fun initCampaignGame(levelId: String) {
+    Log.d(TAG, "Initializing campaign game for level: $levelId")
+    
+    // Stop any running thread before initializing
+    stopThread()
+    Log.d(TAG, "Thread stopped")
+    
+    // Initialize surface if not already done
+    if (!::surface.isInitialized) {
+        Log.d(TAG, "Surface not initialized, creating new surface")
+        surface = PaintSurface(width, height)
+    } else {
+        Log.d(TAG, "Surface already initialized")
+    }
+    
+    // Clear paint surface to ensure fresh start
+    clearPaintSurface()
+    Log.d(TAG, "Paint surface cleared")
+    
+    // Clear particle effects for fresh start
+    particleManager.clear()
+    Log.d(TAG, "Particle manager cleared")
+    
+    // Clear previous game objects for a fresh start
+    players.clear()
+    joysticks.clear()
+    Log.d(TAG, "Players and joysticks cleared")
+    
+    // Create a new thread instance for the campaign game
+    thread = GameThread(holder, this)
+    Log.d(TAG, "New GameThread instance created for campaign mode")
+    
+    Log.d(TAG, "initCampaignGame completed successfully")
+  }
+  
+  /**
+   * Get the paint surface for campaign mode
+   */
+  fun getPaintSurface(): PaintSurface? {
+    return if (::surface.isInitialized) surface else null
   }
 
   // When match finishes, log the reason and handle win/loss

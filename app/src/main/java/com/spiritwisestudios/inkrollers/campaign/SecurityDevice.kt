@@ -119,7 +119,7 @@ class SecurityDevice(
     /**
      * Check if device is disabled
      */
-    fun isDisabled(): Boolean = isDisabled
+    fun isDisabled(): Boolean = this.isDisabled
     
     /**
      * Get required frequency for this device
@@ -205,7 +205,7 @@ class SecurityDevice(
             val barrelPaint = Paint().apply {
                 color = Color.BLACK
                 strokeWidth = 8f
-                alpha = alpha
+                this.alpha = alpha
             }
             
             canvas.drawLine(deviceData.x, deviceData.y, barrelEndX, barrelEndY, barrelPaint)
@@ -214,7 +214,7 @@ class SecurityDevice(
         // Draw status light
         val lightPaint = Paint().apply {
             color = if (isDisabled) Color.GREEN else Color.RED
-            alpha = alpha
+            this.alpha = alpha
         }
         canvas.drawCircle(deviceData.x, deviceData.y - 15f, 5f, lightPaint)
     }

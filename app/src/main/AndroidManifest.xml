@@ -34,5 +34,11 @@
         android:exported="false"
         android:screenOrientation="sensorLandscape" />
 
+    <!-- CampaignLevelActivity for campaign gameplay -->
+    <activity
+        android:name=".campaign.CampaignLevelActivity"
+        android:exported="false"
+        android:screenOrientation="sensorLandscape" />
+
   </application>
 </manifest>
