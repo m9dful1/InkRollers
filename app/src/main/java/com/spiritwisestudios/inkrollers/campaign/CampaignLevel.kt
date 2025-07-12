@@ -125,7 +125,7 @@ class CampaignLevel(
      */
     override fun update(): Boolean {
         // Update base maze
-        val baseLevelComplete = mazeLevel.update()
+        mazeLevel.update()
         
         // Update campaign elements
         updateCampaignElements()
@@ -312,7 +312,7 @@ class CampaignLevel(
         
         // Check secret area interactions
         secretAreas.forEach { secretArea ->
-            if (secretArea.attemptDiscovery(playerX, playerY)) {
+            if (secretArea.attemptDiscovery(playerX, playerY, currentFrequency)) {
                 discoveredSecrets++
                 campaignEffects.triggerBloomEffect(Pair(playerX, playerY))
             }

@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.View
 
@@ -16,8 +17,12 @@ class InkHudView @JvmOverloads constructor(
 
     private val barPaint = Paint().apply { color = Color.BLUE; style = Paint.Style.FILL }
     private val barBackgroundPaint = Paint().apply { color = Color.LTGRAY; style = Paint.Style.FILL }
-    private val borderPaint = Paint().apply { color = Color.BLACK; style = Paint.Style.STROKE; strokeWidth = 4f }
+    private val borderPaint = Paint().apply { color = Color.BLACK; style = Paint.Style.STROKE; strokeWidth = 3f }
+    private val dividerPaint = Paint().apply { color = Color.WHITE; style = Paint.Style.STROKE; strokeWidth = 2f }
     private val textPaint = Paint().apply { color = Color.BLACK; textSize = 40f; textAlign = Paint.Align.CENTER }
+
+    private val pillRect = RectF()
+    private val inkRect = RectF()
 
     fun updateHud(inkPercent: Float, modeText: String) {
         this.inkPercent = inkPercent.coerceIn(0f, 1f)
@@ -33,15 +38,40 @@ class InkHudView @JvmOverloads constructor(
         val barLeft = (width - barWidth) / 2f
         val barTop = height * 0.1f
         val barBottom = barTop + barHeight
+        val cornerRadius = barWidth / 2f // Makes it pill-shaped
 
-        // Draw background and border
-        canvas.drawRect(barLeft, barTop, barLeft + barWidth, barBottom, barBackgroundPaint)
-        canvas.drawRect(barLeft, barTop, barLeft + barWidth, barBottom, borderPaint)
+        // Set up pill rectangle
+        pillRect.set(barLeft, barTop, barLeft + barWidth, barBottom)
+
+        // Draw pill background
+        canvas.drawRoundRect(pillRect, cornerRadius, cornerRadius, barBackgroundPaint)
 
         // Draw ink level
         val inkHeight = barHeight * inkPercent
         val inkTop = barBottom - inkHeight
-        canvas.drawRect(barLeft, inkTop, barLeft + barWidth, barBottom, barPaint)
+        
+        // Create clipped ink rectangle that follows pill shape
+        inkRect.set(barLeft, inkTop, barLeft + barWidth, barBottom)
+        
+        // Save canvas state for clipping
+        val saveCount = canvas.save()
+        
+        // Clip to pill shape
+        canvas.clipRect(pillRect)
+        canvas.drawRoundRect(inkRect, cornerRadius, cornerRadius, barPaint)
+        
+        // Restore canvas state
+        canvas.restoreToCount(saveCount)
+
+        // Draw 3 white divider lines to create 4 sections
+        val sectionHeight = barHeight / 4f
+        for (i in 1..3) {
+            val dividerY = barTop + (i * sectionHeight)
+            canvas.drawLine(barLeft + 4f, dividerY, barLeft + barWidth - 4f, dividerY, dividerPaint)
+        }
+
+        // Draw pill border
+        canvas.drawRoundRect(pillRect, cornerRadius, cornerRadius, borderPaint)
 
         // Draw mode text
         val textX = width / 2f

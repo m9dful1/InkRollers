@@ -52,8 +52,21 @@ data class HardenedPaintData(
 data class SecretAreaData(
     val area: RectF,
     val secretType: SecretType,
-    val description: String
+    val description: String,
+    val requiredFrequency: ColorFrequency? = null, // New: frequency requirement for discovery
+    val unlockCondition: SecretUnlockCondition? = null // New: additional unlock requirements
 )
+
+/**
+ * Enum for secret unlock conditions
+ */
+enum class SecretUnlockCondition {
+    PROXIMITY_ONLY,      // Discovered just by being nearby
+    FREQUENCY_MATCH,     // Requires correct frequency to be active
+    PAINT_REQUIRED,      // Requires painting the area with correct color
+    TIME_THRESHOLD,      // Only appears after certain time
+    ROBOT_ASSISTED       // Requires converted robot nearby
+}
 
 /**
  * Enum for device types
@@ -129,7 +142,9 @@ object CampaignLevels {
             SecretAreaData(
                 area = RectF(50f, 50f, 80f, 80f),
                 secretType = SecretType.STORY_FRAGMENT,
-                description = "Hidden Reclamation Corps message"
+                description = "Hidden Reclamation Corps message",
+                requiredFrequency = ColorFrequency.RED,
+                unlockCondition = SecretUnlockCondition.FREQUENCY_MATCH
             )
         ),
         requiredCoverage = 0.8f,
@@ -178,7 +193,9 @@ object CampaignLevels {
             SecretAreaData(
                 area = RectF(350f, 350f, 380f, 380f),
                 secretType = SecretType.BONUS_POWERUP,
-                description = "Enhanced paint capacity"
+                description = "Enhanced paint capacity",
+                requiredFrequency = ColorFrequency.BLUE,
+                unlockCondition = SecretUnlockCondition.PAINT_REQUIRED
             )
         ),
         requiredCoverage = 0.9f,
@@ -240,12 +257,16 @@ object CampaignLevels {
             SecretAreaData(
                 area = RectF(400f, 400f, 430f, 430f),
                 secretType = SecretType.HIDDEN_PASSAGE,
-                description = "Secret Ministry access tunnel"
+                description = "Secret Ministry access tunnel",
+                requiredFrequency = ColorFrequency.GREEN,
+                unlockCondition = SecretUnlockCondition.FREQUENCY_MATCH
             ),
             SecretAreaData(
                 area = RectF(60f, 60f, 90f, 90f),
                 secretType = SecretType.STORY_FRAGMENT,
-                description = "Classified Ministry document"
+                description = "Classified Ministry document",
+                requiredFrequency = ColorFrequency.YELLOW,
+                unlockCondition = SecretUnlockCondition.TIME_THRESHOLD
             )
         ),
         requiredCoverage = 0.95f,
@@ -315,7 +336,9 @@ object CampaignLevels {
             SecretAreaData(
                 area = RectF(450f, 450f, 480f, 480f),
                 secretType = SecretType.ACHIEVEMENT,
-                description = "Power Plant Master achievement"
+                description = "Power Plant Master achievement",
+                requiredFrequency = null,
+                unlockCondition = SecretUnlockCondition.ROBOT_ASSISTED
             )
         ),
         requiredCoverage = 1.0f,
@@ -377,12 +400,16 @@ object CampaignLevels {
             SecretAreaData(
                 area = RectF(400f, 400f, 430f, 430f),
                 secretType = SecretType.STORY_FRAGMENT,
-                description = "Data Hub access codes"
+                description = "Data Hub access codes",
+                requiredFrequency = ColorFrequency.BLUE,
+                unlockCondition = SecretUnlockCondition.FREQUENCY_MATCH
             ),
             SecretAreaData(
                 area = RectF(50f, 50f, 80f, 80f),
                 secretType = SecretType.BONUS_POWERUP,
-                description = "Temporary invincibility"
+                description = "Temporary invincibility",
+                requiredFrequency = ColorFrequency.RED,
+                unlockCondition = SecretUnlockCondition.PAINT_REQUIRED
             )
         ),
         requiredCoverage = 1.0f,

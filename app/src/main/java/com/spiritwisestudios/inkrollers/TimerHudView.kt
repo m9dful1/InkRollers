@@ -19,13 +19,14 @@ class TimerHudView @JvmOverloads constructor(
     private var remainingMs: Long = 0L
     private val textPaint = Paint().apply {
         color = Color.WHITE
-        textSize = 48f * resources.displayMetrics.density
+        textSize = 32f * resources.displayMetrics.density
         isAntiAlias = true
-        textAlign = Paint.Align.RIGHT
+        textAlign = Paint.Align.CENTER
     }
 
     /**
      * Update the countdown (in milliseconds) and redraw.
+     * Pass -1L for infinite time (no time limit).
      */
     fun updateTime(ms: Long) {
         remainingMs = ms
@@ -34,14 +35,20 @@ class TimerHudView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        // Format mm:ss
-        val totalSec = (remainingMs / 1000).coerceAtLeast(0L)
-        val minutes = totalSec / 60
-        val seconds = totalSec % 60
-        val timeText = String.format("%02d:%02d", minutes, seconds)
-        // Draw text aligned to the right, near top
-        val x = width.toFloat()
-        val y = textPaint.textSize + 8f * resources.displayMetrics.density
+        
+        val timeText = if (remainingMs < 0) {
+            "∞" // Infinite time
+        } else {
+            // Format mm:ss
+            val totalSec = (remainingMs / 1000).coerceAtLeast(0L)
+            val minutes = totalSec / 60
+            val seconds = totalSec % 60
+            String.format("%02d:%02d", minutes, seconds)
+        }
+        
+        // Draw text centered in the view
+        val x = width / 2f
+        val y = height / 2f + textPaint.textSize / 3f // Vertically center the text
         canvas.drawText(timeText, x, y, textPaint)
     }
 } 

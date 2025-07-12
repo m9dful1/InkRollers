@@ -38,9 +38,12 @@ class CampaignLevelActivity : AppCompatActivity() {
     // Performance monitoring
     private val performanceMonitor = PerformanceMonitor()
 
+    private var timerUpdateHandler: android.os.Handler? = null
+    private var timerRunnable: Runnable? = null
+
     companion object {
         private const val TAG = "CampaignLevelActivity"
-        const val EXTRA_LEVEL_ID = "com.spiritwisestudios.inklers.CAMPAIGN_LEVEL_ID"
+        const val EXTRA_LEVEL_ID = "com.spiritwisestudios.inkrollers.CAMPAIGN_LEVEL_ID"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -83,6 +86,13 @@ class CampaignLevelActivity : AppCompatActivity() {
         inkHudView = binding.inkHudView
         coverageHudView = binding.coverageHudView
         timerHudView = binding.timerHudView
+
+        // Hide coverage HUD in campaign mode (not needed)
+        coverageHudView.visibility = android.view.View.GONE
+
+        // Connect HUDs to GameView
+        gameView.setHudView(inkHudView)
+        gameView.setTimerHudView(timerHudView)
 
         // Setup color shift button
         binding.buttonColorShift.setOnClickListener {
@@ -212,13 +222,13 @@ class CampaignLevelActivity : AppCompatActivity() {
 
         // Wait a brief moment for thread initialization before starting game loop
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-            Log.d(TAG, "About to call startGameLoop")
             gameView.startGameLoop()
-            Log.d(TAG, "startGameLoop completed")
-        }, 50) // Small delay to ensure thread is ready
-        
+        }, 50)
+
         // Start progress updates
         startProgressUpdates()
+        // Start timer updates
+        startTimerUpdates(levelData)
         
         // Record level start time
         levelStartTime = System.currentTimeMillis()
@@ -235,6 +245,28 @@ class CampaignLevelActivity : AppCompatActivity() {
 
         Log.d(TAG, "Campaign level initialized: ${levelData.levelName}")
     }
+
+    private fun startTimerUpdates(levelData: CampaignLevelData) {
+        timerUpdateHandler = android.os.Handler(android.os.Looper.getMainLooper())
+        timerRunnable = object : Runnable {
+            override fun run() {
+                updateTimerDisplay(levelData)
+                timerUpdateHandler?.postDelayed(this, 250)
+            }
+        }
+        timerUpdateHandler?.post(timerRunnable!!)
+    }
+
+    private fun updateTimerDisplay(levelData: CampaignLevelData) {
+        if (levelData.timeLimit == null) {
+            // No time limit: show ∞
+            timerHudView.updateTime(-1L)
+        } else {
+            // Use gameModeManager's time remaining if available
+            val ms = gameModeManager?.timeRemainingMs() ?: levelData.timeLimit
+            timerHudView.updateTime(ms)
+        }
+    }
     
     private fun startProgressUpdates() {
         // Create a handler to update progress periodically
@@ -242,10 +274,17 @@ class CampaignLevelActivity : AppCompatActivity() {
         val progressRunnable = object : Runnable {
             override fun run() {
                 updateProgressDisplay()
+                updateInkHudDisplay()
                 handler.postDelayed(this, progressUpdateInterval)
             }
         }
         handler.post(progressRunnable)
+    }
+
+    private fun updateInkHudDisplay() {
+        localPlayer?.let { player ->
+            inkHudView.updateHud(player.getInkPercent(), player.getModeText())
+        }
     }
 
     private fun updateFrequencyDisplay() {
@@ -270,7 +309,7 @@ class CampaignLevelActivity : AppCompatActivity() {
     
     private fun updateObjectivesDisplay(levelData: CampaignLevelData) {
         // Update level name
-        binding.textLevelName.text = "Mission: ${levelData.levelName}"
+        binding.textLevelName.text = levelData.levelName
         
         // Update coverage objective
         val coveragePercent = (levelData.requiredCoverage * 100).toInt()
@@ -446,6 +485,13 @@ class CampaignLevelActivity : AppCompatActivity() {
     }
 
     private fun enableFullScreenMode() {
+        // Allow content to extend into display cutout areas on Android P and above
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val lp = window.attributes
+            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            window.attributes = lp
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             // Android 11+ (API 30+)
             window.setDecorFitsSystemWindows(false)
@@ -493,6 +539,7 @@ class CampaignLevelActivity : AppCompatActivity() {
         try {
             audioManager.stopCampaignMusic()
             gameView.stopThread()
+            timerUpdateHandler?.removeCallbacksAndMessages(null)
             // Note: Don't call audioManager.release() here as it's a singleton
         } catch (e: Exception) {
             Log.e(TAG, "Error during onDestroy", e)

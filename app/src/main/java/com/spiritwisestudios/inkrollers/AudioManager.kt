@@ -71,6 +71,7 @@ class AudioManager private constructor(private val context: Context) {
         SECURITY_DEVICE_DEACTIVATE("security_device_deactivate.wav"),
         HARDENED_PAINT_DISSOLVE("hardened_paint_dissolve.wav"),
         LEVEL_COMPLETE("level_complete.wav"),
+        WRONG_FREQUENCY("wrong_frequency.wav"),
         CAMPAIGN_MUSIC("campaign_bg.wav")
     }
 

@@ -2,8 +2,7 @@
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="@android:color/black">
+    android:layout_height="match_parent">
 
     <!-- Game View -->
     <com.spiritwisestudios.inkrollers.GameView
@@ -15,31 +14,34 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
-    <!-- Campaign HUD Elements -->
-    
-    <!-- Mission Objectives Panel -->
+    <!-- Mission Objectives Panel (Top Left) -->
     <LinearLayout
         android:id="@+id/objectives_panel"
-        android:layout_width="wrap_content"
+        android:layout_width="0dp"
+        android:maxWidth="200dp"
         android:layout_height="wrap_content"
         android:layout_marginStart="16dp"
         android:layout_marginTop="16dp"
+        android:layout_marginEnd="8dp"
         android:orientation="vertical"
-        android:background="@android:color/black"
-        android:alpha="0.8"
+        android:background="#CC000000"
         android:padding="12dp"
         app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toStartOf="@+id/maze_guideline"
         app:layout_constraintTop_toTopOf="parent">
-        
         <TextView
             android:id="@+id/text_level_name"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Mission: The Awakening"
+            android:text="The Awakening"
             android:textColor="@android:color/white"
-            android:textSize="16sp"
+            android:textSize="14sp"
+            android:autoSizeTextType="uniform"
+            android:autoSizeMinTextSize="10sp"
+            android:autoSizeMaxTextSize="16sp"
+            android:maxLines="2"
+            android:ellipsize="end"
             android:textStyle="bold" />
-            
         <TextView
             android:id="@+id/text_objectives_title"
             android:layout_width="wrap_content"
@@ -47,125 +49,116 @@
             android:layout_marginTop="4dp"
             android:text="Objectives:"
             android:textColor="@android:color/white"
-            android:textSize="12sp"
+            android:textSize="11sp"
+            android:autoSizeTextType="uniform"
+            android:autoSizeMinTextSize="8sp"
+            android:autoSizeMaxTextSize="12sp"
             android:textStyle="bold" />
-            
         <TextView
             android:id="@+id/text_coverage_objective"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="• Paint 70% of the area"
             android:textColor="@android:color/white"
-            android:textSize="10sp" />
-            
+            android:textSize="9sp"
+            android:autoSizeTextType="uniform"
+            android:autoSizeMinTextSize="7sp"
+            android:autoSizeMaxTextSize="10sp" />
         <TextView
             android:id="@+id/text_robots_objective"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="• Convert 1 robot"
             android:textColor="@android:color/white"
-            android:textSize="10sp" />
-            
+            android:textSize="9sp"
+            android:autoSizeTextType="uniform"
+            android:autoSizeMinTextSize="7sp"
+            android:autoSizeMaxTextSize="10sp" />
         <TextView
             android:id="@+id/text_secrets_objective"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="• Find 1 secret area"
             android:textColor="@android:color/white"
-            android:textSize="10sp" />
+            android:textSize="9sp"
+            android:autoSizeTextType="uniform"
+            android:autoSizeMinTextSize="7sp"
+            android:autoSizeMaxTextSize="10sp" />
     </LinearLayout>
-    
-    <!-- Coverage HUD -->
-    <com.spiritwisestudios.inkrollers.CoverageHudView
-        android:id="@+id/coverage_hud_view"
-        android:layout_width="200dp"
-        android:layout_height="60dp"
-        android:layout_marginTop="16dp"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/objectives_panel" />
 
-    <!-- Timer HUD -->
+    <!-- Guideline to mark where maze starts (25% from left) -->
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/maze_guideline"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        app:layout_constraintGuide_percent="0.18" />
+
+    <!-- Timer HUD (Top Center) -->
+
+    <!-- Frequency Display (Top Right) -->
+
+    <!-- Coverage HUD (Hidden in Campaign Mode) -->
     <com.spiritwisestudios.inkrollers.TimerHudView
         android:id="@+id/timer_hud_view"
-        android:layout_width="120dp"
-        android:layout_height="40dp"
-        android:layout_marginTop="32dp"
-        android:layout_marginEnd="16dp"
+        android:layout_width="140dp"
+        android:layout_height="48dp"
+        android:layout_marginTop="16dp"
         app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.978"
+        app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
-    <!-- Ink HUD -->
-    <com.spiritwisestudios.inkrollers.InkHudView
-        android:id="@+id/ink_hud_view"
-        android:layout_width="150dp"
-        android:layout_height="40dp"
-        android:layout_marginStart="16dp"
-        android:layout_marginBottom="16dp"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
-
-    <!-- Campaign Controls -->
-    
-    <!-- Frequency Display -->
     <TextView
         android:id="@+id/text_frequency"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_marginTop="84dp"
         android:layout_marginEnd="16dp"
-        android:layout_marginBottom="16dp"
+        android:background="@drawable/frequency_display_background"
+        android:padding="8dp"
         android:text="Frequency: RED"
         android:textColor="@android:color/white"
         android:textSize="16sp"
         android:textStyle="bold"
-        android:background="@drawable/frequency_display_background"
-        android:padding="8dp"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
 
-    <!-- Color Shift Button -->
-    <Button
-        android:id="@+id/button_color_shift"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginEnd="16dp"
-        android:layout_marginBottom="140dp"
-        android:text="Color Shift"
-        android:textSize="14sp"
-        android:background="@drawable/color_shift_button_background"
-        android:textColor="@android:color/white"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
-        
-    <!-- Mode Toggle Button -->
-    <Button
-        android:id="@+id/button_mode_toggle"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginEnd="16dp"
-        android:layout_marginBottom="80dp"
-        android:text="PAINT"
-        android:textSize="14sp"
-        android:background="@drawable/color_shift_button_background"
-        android:textColor="@android:color/white"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
-        
-    <!-- Level Progress Indicator -->
+    <com.spiritwisestudios.inkrollers.CoverageHudView
+        android:id="@+id/coverage_hud_view"
+        android:layout_width="1dp"
+        android:layout_height="1dp"
+        android:visibility="gone"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- Level Progress Indicator (Bottom Left, above Ink HUD) -->
+
+    <!-- Ink HUD (Bottom Left, larger, above Back button) -->
     <TextView
         android:id="@+id/text_level_progress"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginStart="16dp"
-        android:layout_marginBottom="16dp"
+        android:layout_marginStart="24dp"
+        android:layout_marginBottom="220dp"
+        android:background="@drawable/progress_display_background"
+        android:padding="6dp"
         android:text="Progress: 0%"
         android:textColor="@android:color/white"
         android:textSize="14sp"
-        android:background="@drawable/progress_display_background"
-        android:padding="6dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent" />
 
-    <!-- Back Button -->
+    <com.spiritwisestudios.inkrollers.InkHudView
+        android:id="@+id/ink_hud_view"
+        android:layout_width="80dp"
+        android:layout_height="150dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginBottom="56dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <!-- Back Button (Bottom Left, below Ink HUD) -->
     <Button
         android:id="@+id/button_back"
         android:layout_width="wrap_content"
@@ -176,5 +169,35 @@
         android:textSize="14sp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent" />
+
+    <!-- Campaign Controls (Bottom Right, stacked) -->
+    <LinearLayout
+        android:id="@+id/campaign_controls_panel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="end"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="16dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+        <Button
+            android:id="@+id/button_color_shift"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="COLOR SHIFT"
+            android:textSize="13sp"
+            android:background="@drawable/color_shift_button_background"
+            android:textColor="@android:color/white"
+            android:layout_marginBottom="12dp" />
+        <Button
+            android:id="@+id/button_mode_toggle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="PAINT"
+            android:textSize="13sp"
+            android:background="@drawable/color_shift_button_background"
+            android:textColor="@android:color/white" />
+    </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout> 
