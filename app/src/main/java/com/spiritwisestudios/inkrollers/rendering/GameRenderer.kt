@@ -15,6 +15,7 @@ import com.spiritwisestudios.inkrollers.Level
 import com.spiritwisestudios.inkrollers.PaintSurface
 import com.spiritwisestudios.inkrollers.VirtualJoystick
 import com.spiritwisestudios.inkrollers.effects.ParticleManager
+import com.spiritwisestudios.inkrollers.items.ItemManager
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -89,6 +90,7 @@ class GameRenderer(private val context: Context) {
      * @param joysticks Map of joysticks
      * @param localPlayerId ID of the local player (for joystick rendering)
      * @param particleManager Particle manager for visual effects
+     * @param itemManager Item manager for rendering items
      */
     fun render(
         canvas: Canvas,
@@ -97,7 +99,8 @@ class GameRenderer(private val context: Context) {
         players: ConcurrentHashMap<String, Player>,
         joysticks: ConcurrentHashMap<String, VirtualJoystick>,
         localPlayerId: String?,
-        particleManager: ParticleManager? = null
+        particleManager: ParticleManager? = null,
+        itemManager: ItemManager? = null
     ) {
         try {
             // 1. Draw background
@@ -112,13 +115,16 @@ class GameRenderer(private val context: Context) {
             // 4. Draw all players
             drawPlayers(canvas, players)
             
-            // 5. Draw particles (on top of players for better visibility)
+            // 5. Draw items (on top of players but below particles)
+            itemManager?.let { drawItems(canvas, it) }
+            
+            // 6. Draw particles (on top of items for better visibility)
             particleManager?.let { drawParticles(canvas, it) }
             
-            // 6. Draw local joystick
+            // 7. Draw local joystick
             drawLocalJoystick(canvas, joysticks, localPlayerId)
             
-            // 7. Draw corner names
+            // 8. Draw corner names
             drawCornerNames(canvas, players)
             
         } catch (e: Exception) {
@@ -217,6 +223,13 @@ class GameRenderer(private val context: Context) {
         viewHeight = height
         calculateBackgroundRect()
         Log.d(TAG, "GameRenderer size changed to: ${width}x${height}")
+    }
+    
+    /**
+     * Draw all active items
+     */
+    private fun drawItems(canvas: Canvas, itemManager: ItemManager) {
+        itemManager.draw(canvas)
     }
     
     /**

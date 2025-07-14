@@ -11,6 +11,8 @@ import androidx.appcompat.app.AppCompatActivity
 import com.spiritwisestudios.inkrollers.*
 import com.spiritwisestudios.inkrollers.databinding.ActivityCampaignLevelBinding
 import com.spiritwisestudios.inkrollers.R
+import com.spiritwisestudios.inkrollers.items.ItemConfig
+import com.spiritwisestudios.inkrollers.items.ItemType
 
 class CampaignLevelActivity : AppCompatActivity() {
 
@@ -152,10 +154,13 @@ class CampaignLevelActivity : AppCompatActivity() {
                     audioManager = audioManager
                 )
 
-                // Initialize game view for campaign mode
-                gameView.setCampaignMode(true)
-                gameView.setCampaignLevel(campaignLevel!!)
-                gameView.setCampaignPerformanceMonitor(performanceMonitor)
+                        // Initialize game view for campaign mode
+        gameView.setCampaignMode(true)
+        gameView.setCampaignLevel(campaignLevel!!)
+        gameView.setCampaignPerformanceMonitor(performanceMonitor)
+        
+        // Set up item configuration for campaign mode
+        setupCampaignItemConfiguration(levelData)
 
                 // Wait for surface to be ready before proceeding
                 initializeWithSurface(levelData)
@@ -486,6 +491,42 @@ class CampaignLevelActivity : AppCompatActivity() {
             }
             .setCancelable(false)
             .show()
+    }
+
+    private fun setupCampaignItemConfiguration(levelData: CampaignLevelData) {
+        // Create item configuration based on campaign level
+        val itemConfig = when (levelData.levelId) {
+            "level_1" -> {
+                // Level 1: Basic ink refills only
+                ItemConfig.createWithItems(listOf(ItemType.INK_REFILL))
+            }
+            "level_2" -> {
+                // Level 2: Ink refills + speed boost
+                ItemConfig.createWithItems(listOf(
+                    ItemType.INK_REFILL,
+                    ItemType.SPEED_BOOST
+                ))
+            }
+            "level_3", "level_4a", "level_4b" -> {
+                // Later levels: More item types
+                ItemConfig.createWithItems(listOf(
+                    ItemType.INK_REFILL,
+                    ItemType.SPEED_BOOST,
+                    ItemType.PAINT_MULTIPLIER,
+                    ItemType.SHIELD,
+                    ItemType.FREEZE
+                    // Note: Teleport excluded for campaign balance
+                ))
+            }
+            else -> {
+                // Default: Ink refills only
+                ItemConfig.createWithItems(listOf(ItemType.INK_REFILL))
+            }
+        }
+        
+        // Apply configuration to game view
+        gameView.setItemConfig(itemConfig)
+        Log.d(TAG, "Set up item configuration for ${levelData.levelId}: ${itemConfig.getEnabledItems()}")
     }
 
     private fun enableFullScreenMode() {

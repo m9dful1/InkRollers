@@ -19,6 +19,7 @@ import com.spiritwisestudios.inkrollers.ZoneHudView
 import com.spiritwisestudios.inkrollers.TimerHudView
 import com.spiritwisestudios.inkrollers.ZoneOwnershipCalculator
 import com.spiritwisestudios.inkrollers.effects.ParticleManager
+import com.spiritwisestudios.inkrollers.items.ItemManager
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -82,12 +83,14 @@ class GameUpdateManager {
         zoneHudView: ZoneHudView?,
         timerHudView: TimerHudView?,
         localPlayerId: String?,
-        particleManager: ParticleManager? = null
+        particleManager: ParticleManager? = null,
+        itemManager: ItemManager? = null
     ) {
         // Update different game systems
         updateLocalPlayer(deltaTime, localPlayer, localJoystick, currentLevel, multiplayerManager)
         updateGameElements(deltaTime, currentLevel, surface)
         updateParticles(deltaTime, particleManager)
+        updateItems(deltaTime, itemManager, currentLevel, players, surface)
         updateHUDs(deltaTime, localPlayer, inkHudView)
         updateGameMode(deltaTime, gameModeManager, currentLevel, surface, players, coverageHudView, zoneHudView, timerHudView)
     }
@@ -164,6 +167,13 @@ class GameUpdateManager {
      */
     private fun updateParticles(deltaTime: Float, particleManager: ParticleManager?) {
         particleManager?.update(deltaTime)
+    }
+    
+    /**
+     * Update item system
+     */
+    private fun updateItems(deltaTime: Float, itemManager: ItemManager?, currentLevel: Level?, players: ConcurrentHashMap<String, Player>, surface: PaintSurface) {
+        itemManager?.update(deltaTime, currentLevel, players.values.toList(), surface)
     }
     
     /**

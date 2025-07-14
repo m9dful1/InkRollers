@@ -28,6 +28,9 @@ import kotlinx.coroutines.withContext
 import com.spiritwisestudios.inkrollers.rendering.GameRenderer
 import com.spiritwisestudios.inkrollers.updates.GameUpdateManager
 import com.spiritwisestudios.inkrollers.effects.ParticleManager
+import com.spiritwisestudios.inkrollers.items.ItemManager
+import com.spiritwisestudios.inkrollers.items.ItemConfig
+import com.spiritwisestudios.inkrollers.items.GameViewPlayerManager
 
 class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
     SurfaceView(ctx,attrs),SurfaceHolder.Callback, MultiplayerManager.RemoteUpdateListener { // Implement listener
@@ -54,6 +57,11 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
   
   // Particle effects system
   private val particleManager = ParticleManager()
+  
+  // Item system
+  private var itemManager: ItemManager? = null
+  private var itemConfig: ItemConfig = ItemConfig.createDefault()
+  private var gameViewPlayerManager: GameViewPlayerManager? = null
   
   // Multiplayer specific fields
   private var multiplayerManager: MultiplayerManager? = null
@@ -88,6 +96,10 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
     // Initialize components
     gameRenderer = GameRenderer(ctx)
     gameUpdateManager = GameUpdateManager()
+    
+    // Initialize item system
+    gameViewPlayerManager = GameViewPlayerManager(players)
+    itemManager = ItemManager(itemConfig, gameViewPlayerManager)
     
     // Set up GameUpdateManager callbacks
     gameUpdateManager.onMatchEnd = { reason ->
@@ -236,7 +248,8 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
           zoneHudView = zoneHudView,
           timerHudView = timerHudView,
           localPlayerId = localPlayerId,
-          particleManager = particleManager
+          particleManager = particleManager,
+          itemManager = itemManager
       )
   }
   
@@ -249,7 +262,8 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
         players = players,
         joysticks = joysticks,
         localPlayerId = localPlayerId,
-        particleManager = particleManager
+        particleManager = particleManager,
+        itemManager = itemManager
     )
   }
 
@@ -585,6 +599,9 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
     // Clear particle effects for fresh start
     particleManager.clear()
     
+    // Clear item system for fresh start
+    itemManager?.clearAllItems()
+    
     val seed = multiplayerManager?.mazeSeed ?: System.currentTimeMillis()
 
     // Determine the height of the coverage HUD to avoid drawing the maze beneath it
@@ -804,6 +821,10 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
     particleManager.clear()
     Log.d(TAG, "Particle manager cleared")
     
+    // Clear item system for fresh start
+    itemManager?.clearAllItems()
+    Log.d(TAG, "Item manager cleared")
+    
     // Clear previous game objects for a fresh start
     players.clear()
     joysticks.clear()
@@ -821,6 +842,40 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
    */
   fun getPaintSurface(): PaintSurface? {
     return if (::surface.isInitialized) surface else null
+  }
+  
+  /**
+   * Set the item configuration for the game
+   */
+  fun setItemConfig(config: ItemConfig) {
+    itemConfig = config
+    itemManager = ItemManager(itemConfig, gameViewPlayerManager)
+  }
+  
+  /**
+   * Get the current item configuration
+   */
+  fun getItemConfig(): ItemConfig = itemConfig
+  
+  /**
+   * Spawn an item at a specific location (useful for testing)
+   */
+  fun spawnItem(itemType: com.spiritwisestudios.inkrollers.items.ItemType, x: Float, y: Float): com.spiritwisestudios.inkrollers.items.Item? {
+    return itemManager?.spawnItem(itemType, x, y)
+  }
+  
+  /**
+   * Force spawn an item ignoring cooldowns (useful for testing)
+   */
+  fun forceSpawnItem(itemType: com.spiritwisestudios.inkrollers.items.ItemType, x: Float, y: Float): com.spiritwisestudios.inkrollers.items.Item? {
+    return itemManager?.forceSpawnItem(itemType, x, y)
+  }
+  
+  /**
+   * Get all active items
+   */
+  fun getActiveItems(): List<com.spiritwisestudios.inkrollers.items.Item> {
+    return itemManager?.getActiveItems() ?: emptyList()
   }
 
   // When match finishes, log the reason and handle win/loss
