@@ -25,8 +25,10 @@ class Robot(
         private const val UNPAINT_RADIUS = 40f // Radius around robot that gets unpainted
         private const val PAINT_FREQUENCY = 5f // How often robot removes/paints (per second) - more frequent
         private const val SCAN_RADIUS = 150f // How far robot can detect player paint
+        private const val EXTENDED_SCAN_RADIUS = 300f // Extended scan when stuck
         private const val TARGET_UPDATE_INTERVAL = 500L // Update target every 0.5 seconds - more responsive
         private const val PAINT_SPOT_SIZE = 8f // Small paint spots for strategic painting
+        private const val PATHFINDING_STEP_SIZE = 15f // Step size for pathfinding
     }
     
     // Robot state
@@ -42,18 +44,26 @@ class Robot(
     private var lastTargetUpdate: Long = 0
     private var isFollowingPatrol: Boolean = true
     
+    // Enhanced pathfinding system
+    private var pathToTarget: MutableList<Pair<Float, Float>> = mutableListOf()
+    private var currentPathIndex: Int = 0
+    private var isFollowingPath: Boolean = false
+    private var lastPathfindingAttempt: Long = 0
+    
     // Timing for paint removal/addition
     private var lastPaintActionTime: Long = 0
     private var isActivelyRemoving: Boolean = false
     
-    // Stuck detection and escape system
+    // Enhanced stuck detection and escape system
     private var lastPosition: Pair<Float, Float> = Pair(startX, startY)
     private var stuckCounter: Int = 0
     private var lastStuckCheck: Long = 0
     private var isEscaping: Boolean = false
     private var escapeDirection: Float = 0f // Angle in radians
     private var escapeDistance: Float = 0f
-    private var maxEscapeAttempts: Int = 8 // Try 8 different directions
+    private var maxEscapeAttempts: Int = 12 // Try more directions
+    private var isInCorner: Boolean = false
+    private var cornerEscapeAttempts: Int = 0
     
     // Visual state
     private val robotPaint = Paint().apply {
@@ -111,23 +121,37 @@ class Robot(
     private fun updateUnconvertedAI(deltaTime: Float, paintSurface: PaintSurface, level: com.spiritwisestudios.inkrollers.Level?) {
         val currentTime = System.currentTimeMillis()
         
-        // Update target periodically
-        if (currentTime - lastTargetUpdate > TARGET_UPDATE_INTERVAL) {
-            val nearestPaint = findNearestPlayerPaint(paintSurface)
+        // Update target periodically or when path is complete
+        if (currentTime - lastTargetUpdate > TARGET_UPDATE_INTERVAL || 
+            (!isFollowingPath && currentTarget == null)) {
+            
+            val scanRadius = if (isEscaping || stuckCounter > 0) EXTENDED_SCAN_RADIUS else SCAN_RADIUS
+            val nearestPaint = findNearestPlayerPaintWithPathfinding(paintSurface, level, scanRadius)
+            
             if (nearestPaint != null) {
                 currentTarget = nearestPaint
                 isFollowingPatrol = false
+                
+                // Generate path to target
+                if (currentTime - lastPathfindingAttempt > 1000L) { // Don't spam pathfinding
+                    generatePathToTarget(nearestPaint, paintSurface, level)
+                    lastPathfindingAttempt = currentTime
+                }
+                
                 Log.d(TAG, "Robot targeting player paint at (${nearestPaint.first}, ${nearestPaint.second})")
             } else {
                 // No paint found, return to patrol
                 currentTarget = null
                 isFollowingPatrol = true
+                clearPath()
             }
             lastTargetUpdate = currentTime
         }
         
         // Move based on current strategy
-        if (!isFollowingPatrol && currentTarget != null) {
+        if (isFollowingPath && pathToTarget.isNotEmpty()) {
+            followPath(deltaTime, level)
+        } else if (!isFollowingPatrol && currentTarget != null) {
             moveTowardsTarget(currentTarget!!, deltaTime, level)
         } else {
             updatePatrol(deltaTime, level)
@@ -140,23 +164,37 @@ class Robot(
     private fun updateConvertedAI(deltaTime: Float, paintSurface: PaintSurface, level: com.spiritwisestudios.inkrollers.Level?) {
         val currentTime = System.currentTimeMillis()
         
-        // Update target periodically to find unpainted areas
-        if (currentTime - lastTargetUpdate > TARGET_UPDATE_INTERVAL) {
-            val nearestUnpainted = findNearestUnpaintedArea(paintSurface, level)
+        // Update target periodically or when path is complete
+        if (currentTime - lastTargetUpdate > TARGET_UPDATE_INTERVAL || 
+            (!isFollowingPath && currentTarget == null)) {
+            
+            val scanRadius = if (isEscaping || stuckCounter > 0) EXTENDED_SCAN_RADIUS else SCAN_RADIUS
+            val nearestUnpainted = findNearestUnpaintedAreaWithPathfinding(paintSurface, level, scanRadius)
+            
             if (nearestUnpainted != null) {
                 currentTarget = nearestUnpainted
                 isFollowingPatrol = false
+                
+                // Generate path to target
+                if (currentTime - lastPathfindingAttempt > 1000L) { // Don't spam pathfinding
+                    generatePathToTarget(nearestUnpainted, paintSurface, level)
+                    lastPathfindingAttempt = currentTime
+                }
+                
                 Log.d(TAG, "Converted robot targeting unpainted area at (${nearestUnpainted.first}, ${nearestUnpainted.second})")
             } else {
                 // No unpainted areas nearby, return to patrol
                 currentTarget = null
                 isFollowingPatrol = true
+                clearPath()
             }
             lastTargetUpdate = currentTime
         }
         
         // Move based on current strategy
-        if (!isFollowingPatrol && currentTarget != null) {
+        if (isFollowingPath && pathToTarget.isNotEmpty()) {
+            followPath(deltaTime, level)
+        } else if (!isFollowingPatrol && currentTarget != null) {
             moveTowardsTarget(currentTarget!!, deltaTime, level)
         } else {
             updatePatrol(deltaTime, level)
@@ -164,78 +202,318 @@ class Robot(
     }
     
     /**
-     * Find nearest player paint within scan radius
+     * Enhanced pathfinding system - finds nearest player paint using breadth-first search
      */
-    private fun findNearestPlayerPaint(paintSurface: PaintSurface): Pair<Float, Float>? {
-        var nearestDistance = Float.MAX_VALUE
-        var nearestPaint: Pair<Float, Float>? = null
+    private fun findNearestPlayerPaintWithPathfinding(
+        paintSurface: PaintSurface, 
+        level: com.spiritwisestudios.inkrollers.Level?,
+        scanRadius: Float
+    ): Pair<Float, Float>? {
+        val visited = mutableSetOf<Pair<Int, Int>>()
+        val queue = mutableListOf<Triple<Int, Int, Float>>() // x, y, distance
         
-        val scanArea = SCAN_RADIUS.toInt()
-        val stepSize = 8 // Sample every 8 pixels for performance
+        // Start from robot position
+        val startX = x.toInt()
+        val startY = y.toInt()
+        queue.add(Triple(startX, startY, 0f))
+        visited.add(Pair(startX, startY))
         
-        for (dx in -scanArea..scanArea step stepSize) {
-            for (dy in -scanArea..scanArea step stepSize) {
-                val checkX = (x + dx).toInt()
-                val checkY = (y + dy).toInt()
+        val stepSize = PATHFINDING_STEP_SIZE.toInt()
+        val maxDistance = scanRadius
+        
+        while (queue.isNotEmpty()) {
+            val (currentX, currentY, distance) = queue.removeAt(0)
+            
+            // Check if we've exceeded our search radius
+            if (distance > maxDistance) continue
+            
+            // Check if this position has player paint
+            if (currentX >= 0 && currentX < paintSurface.w && 
+                currentY >= 0 && currentY < paintSurface.h) {
                 
-                if (checkX >= 0 && checkX < paintSurface.w && checkY >= 0 && checkY < paintSurface.h) {
-                    val pixelColor = paintSurface.getPixelColor(checkX, checkY)
+                val pixelColor = paintSurface.getPixelColor(currentX, currentY)
+                
+                // Found player paint (not transparent, not green robot paint)
+                if (pixelColor != Color.TRANSPARENT && 
+                    Color.alpha(pixelColor) > 0 && 
+                    pixelColor != Color.GREEN) {
                     
-                    // Check if this pixel has player paint (not transparent, not green)
-                    if (pixelColor != Color.TRANSPARENT && 
-                        Color.alpha(pixelColor) > 0 && 
-                        pixelColor != Color.GREEN) { // Green is converted robot paint
-                        
-                        val distance = sqrt(dx.toFloat().pow(2) + dy.toFloat().pow(2))
-                        if (distance < nearestDistance) {
-                            nearestDistance = distance
-                            nearestPaint = Pair(checkX.toFloat(), checkY.toFloat())
-                        }
-                    }
+                    return Pair(currentX.toFloat(), currentY.toFloat())
+                }
+            }
+            
+            // Add neighboring positions to search
+            val directions = listOf(
+                Pair(0, stepSize), Pair(stepSize, 0), Pair(0, -stepSize), Pair(-stepSize, 0),
+                Pair(stepSize, stepSize), Pair(stepSize, -stepSize), 
+                Pair(-stepSize, stepSize), Pair(-stepSize, -stepSize)
+            )
+            
+            for ((dx, dy) in directions) {
+                val newX = currentX + dx
+                val newY = currentY + dy
+                val newDistance = distance + sqrt(dx.toFloat().pow(2) + dy.toFloat().pow(2))
+                
+                val pos = Pair(newX, newY)
+                
+                if (!visited.contains(pos) && 
+                    newX >= 0 && newX < paintSurface.w && 
+                    newY >= 0 && newY < paintSurface.h &&
+                    level?.checkCollision(newX.toFloat(), newY.toFloat()) != true) {
+                    
+                    visited.add(pos)
+                    queue.add(Triple(newX, newY, newDistance))
                 }
             }
         }
         
-        return nearestPaint
+        return null
     }
     
     /**
-     * Find nearest unpainted area for converted robots to target
-     * Considers green robot paint as "painted" so robot doesn't avoid its own work
+     * Enhanced pathfinding system - finds nearest unpainted area using breadth-first search
      */
-    private fun findNearestUnpaintedArea(paintSurface: PaintSurface, level: com.spiritwisestudios.inkrollers.Level?): Pair<Float, Float>? {
-        var nearestDistance = Float.MAX_VALUE
-        var nearestUnpainted: Pair<Float, Float>? = null
+    private fun findNearestUnpaintedAreaWithPathfinding(
+        paintSurface: PaintSurface, 
+        level: com.spiritwisestudios.inkrollers.Level?,
+        scanRadius: Float
+    ): Pair<Float, Float>? {
+        val visited = mutableSetOf<Pair<Int, Int>>()
+        val queue = mutableListOf<Triple<Int, Int, Float>>() // x, y, distance
         
-        val scanArea = SCAN_RADIUS.toInt()
-        val stepSize = 15 // Larger step for better performance and broader search
+        // Start from robot position
+        val startX = x.toInt()
+        val startY = y.toInt()
+        queue.add(Triple(startX, startY, 0f))
+        visited.add(Pair(startX, startY))
         
-        for (dx in -scanArea..scanArea step stepSize) {
-            for (dy in -scanArea..scanArea step stepSize) {
-                val checkX = x + dx
-                val checkY = y + dy
+        val stepSize = PATHFINDING_STEP_SIZE.toInt()
+        val maxDistance = scanRadius
+        
+        while (queue.isNotEmpty()) {
+            val (currentX, currentY, distance) = queue.removeAt(0)
+            
+            // Check if we've exceeded our search radius
+            if (distance > maxDistance) continue
+            
+            // Check if this position is unpainted
+            if (currentX >= 0 && currentX < paintSurface.w && 
+                currentY >= 0 && currentY < paintSurface.h) {
                 
-                // Ensure coordinates are within bounds
-                if (checkX >= 0 && checkX < paintSurface.w && checkY >= 0 && checkY < paintSurface.h) {
-                    // Skip walls
-                    if (level?.checkCollision(checkX, checkY) == true) continue
+                val pixelColor = paintSurface.getPixelColor(currentX, currentY)
+                
+                // Found unpainted area (transparent and not a wall)
+                if ((pixelColor == Color.TRANSPARENT || Color.alpha(pixelColor) == 0) &&
+                    level?.checkCollision(currentX.toFloat(), currentY.toFloat()) != true) {
                     
-                    val pixelColor = paintSurface.getPixelColor(checkX.toInt(), checkY.toInt())
+                    return Pair(currentX.toFloat(), currentY.toFloat())
+                }
+            }
+            
+            // Add neighboring positions to search
+            val directions = listOf(
+                Pair(0, stepSize), Pair(stepSize, 0), Pair(0, -stepSize), Pair(-stepSize, 0),
+                Pair(stepSize, stepSize), Pair(stepSize, -stepSize), 
+                Pair(-stepSize, stepSize), Pair(-stepSize, -stepSize)
+            )
+            
+            for ((dx, dy) in directions) {
+                val newX = currentX + dx
+                val newY = currentY + dy
+                val newDistance = distance + sqrt(dx.toFloat().pow(2) + dy.toFloat().pow(2))
+                
+                val pos = Pair(newX, newY)
+                
+                if (!visited.contains(pos) && 
+                    newX >= 0 && newX < paintSurface.w && 
+                    newY >= 0 && newY < paintSurface.h &&
+                    level?.checkCollision(newX.toFloat(), newY.toFloat()) != true) {
                     
-                    // Check if this area needs painting: transparent/unpainted AND not green (robot paint)
-                    // This means robot will seek areas that haven't been painted by anyone yet
-                    if ((pixelColor == Color.TRANSPARENT || Color.alpha(pixelColor) == 0)) {
-                        val distance = sqrt(dx.toFloat().pow(2) + dy.toFloat().pow(2))
-                        if (distance < nearestDistance) {
-                            nearestDistance = distance
-                            nearestUnpainted = Pair(checkX, checkY)
-                        }
-                    }
+                    visited.add(pos)
+                    queue.add(Triple(newX, newY, newDistance))
                 }
             }
         }
         
-        return nearestUnpainted
+        return null
+    }
+    
+    /**
+     * Generate a path to the target using A* pathfinding
+     */
+    private fun generatePathToTarget(target: Pair<Float, Float>, paintSurface: PaintSurface, level: com.spiritwisestudios.inkrollers.Level?) {
+        val path = findPathAStar(
+            Pair(x, y), 
+            target, 
+            level, 
+            paintSurface.w.toFloat(), 
+            paintSurface.h.toFloat()
+        )
+        
+        if (path.isNotEmpty()) {
+            pathToTarget = path.toMutableList()
+            currentPathIndex = 0
+            isFollowingPath = true
+            Log.d(TAG, "Generated path with ${path.size} waypoints to target ${target}")
+        } else {
+            Log.d(TAG, "No path found to target ${target}")
+            clearPath()
+        }
+    }
+    
+    /**
+     * Simple A* pathfinding implementation
+     */
+    private fun findPathAStar(
+        start: Pair<Float, Float>, 
+        goal: Pair<Float, Float>, 
+        level: com.spiritwisestudios.inkrollers.Level?,
+        worldWidth: Float,
+        worldHeight: Float
+    ): List<Pair<Float, Float>> {
+        val openSet = mutableListOf<PathNode>()
+        val closedSet = mutableSetOf<Pair<Int, Int>>()
+        val cameFrom = mutableMapOf<Pair<Int, Int>, Pair<Int, Int>>()
+        
+        val stepSize = PATHFINDING_STEP_SIZE.toInt()
+        val startNode = PathNode(
+            start.first.toInt(), 
+            start.second.toInt(), 
+            0f, 
+            heuristic(start.first, start.second, goal.first, goal.second)
+        )
+        
+        openSet.add(startNode)
+        
+        while (openSet.isNotEmpty()) {
+            // Get node with lowest f score
+            val current = openSet.minByOrNull { it.fScore } ?: break
+            openSet.remove(current)
+            
+            val currentPos = Pair(current.x, current.y)
+            closedSet.add(currentPos)
+            
+            // Check if we reached the goal
+            if (sqrt((current.x - goal.first).pow(2) + (current.y - goal.second).pow(2)) < stepSize) {
+                // Reconstruct path
+                return reconstructPath(cameFrom, currentPos, Pair(start.first.toInt(), start.second.toInt()))
+            }
+            
+            // Check all neighbors
+            val directions = listOf(
+                Pair(0, stepSize), Pair(stepSize, 0), Pair(0, -stepSize), Pair(-stepSize, 0),
+                Pair(stepSize, stepSize), Pair(stepSize, -stepSize), 
+                Pair(-stepSize, stepSize), Pair(-stepSize, -stepSize)
+            )
+            
+            for ((dx, dy) in directions) {
+                val neighborX = current.x + dx
+                val neighborY = current.y + dy
+                val neighborPos = Pair(neighborX, neighborY)
+                
+                // Skip if out of bounds or wall or already processed
+                if (neighborX < 0 || neighborX >= worldWidth || 
+                    neighborY < 0 || neighborY >= worldHeight ||
+                    level?.checkCollision(neighborX.toFloat(), neighborY.toFloat()) == true ||
+                    closedSet.contains(neighborPos)) {
+                    continue
+                }
+                
+                val moveCost = sqrt(dx.toFloat().pow(2) + dy.toFloat().pow(2))
+                val tentativeGScore = current.gScore + moveCost
+                
+                val existingNode = openSet.find { it.x == neighborX && it.y == neighborY }
+                
+                if (existingNode == null) {
+                    val hScore = heuristic(neighborX.toFloat(), neighborY.toFloat(), goal.first, goal.second)
+                    openSet.add(PathNode(neighborX, neighborY, tentativeGScore, hScore))
+                    cameFrom[neighborPos] = currentPos
+                } else if (tentativeGScore < existingNode.gScore) {
+                    existingNode.gScore = tentativeGScore
+                    cameFrom[neighborPos] = currentPos
+                }
+            }
+        }
+        
+        return emptyList() // No path found
+    }
+    
+    /**
+     * Reconstruct path from A* search
+     */
+    private fun reconstructPath(
+        cameFrom: Map<Pair<Int, Int>, Pair<Int, Int>>, 
+        current: Pair<Int, Int>, 
+        start: Pair<Int, Int>
+    ): List<Pair<Float, Float>> {
+        val path = mutableListOf<Pair<Float, Float>>()
+        var currentNode = current
+        
+        while (currentNode != start) {
+            path.add(0, Pair(currentNode.first.toFloat(), currentNode.second.toFloat()))
+            currentNode = cameFrom[currentNode] ?: break
+        }
+        
+        return path
+    }
+    
+    /**
+     * Heuristic function for A* (Manhattan distance)
+     */
+    private fun heuristic(x1: Float, y1: Float, x2: Float, y2: Float): Float {
+        return abs(x1 - x2) + abs(y1 - y2)
+    }
+    
+    /**
+     * Follow the generated path
+     */
+    private fun followPath(deltaTime: Float, level: com.spiritwisestudios.inkrollers.Level?) {
+        if (currentPathIndex >= pathToTarget.size) {
+            // Reached end of path
+            clearPath()
+            return
+        }
+        
+        val currentWaypoint = pathToTarget[currentPathIndex]
+        val dx = currentWaypoint.first - x
+        val dy = currentWaypoint.second - y
+        val distance = sqrt(dx.pow(2) + dy.pow(2))
+        
+        if (distance < 10f) {
+            // Reached current waypoint, move to next
+            currentPathIndex++
+            if (currentPathIndex >= pathToTarget.size) {
+                clearPath()
+            }
+            return
+        }
+        
+        // Move towards current waypoint
+        val moveAmount = MOVE_SPEED * deltaTime
+        val normalizedDx = dx / distance
+        val normalizedDy = dy / distance
+        
+        val newX = x + normalizedDx * moveAmount
+        val newY = y + normalizedDy * moveAmount
+        
+        // Check collision
+        if (level?.checkCollision(newX, newY) != true) {
+            x = newX
+            y = newY
+        } else {
+            // Path blocked, clear path and find new one
+            Log.d(TAG, "Path blocked at waypoint $currentPathIndex, clearing path")
+            clearPath()
+        }
+    }
+    
+    /**
+     * Clear the current path
+     */
+    private fun clearPath() {
+        pathToTarget.clear()
+        currentPathIndex = 0
+        isFollowingPath = false
     }
     
     /**
@@ -686,6 +964,32 @@ class Robot(
     }
     
     /**
+     * Detect if robot is in a corner
+     */
+    private fun detectCornerSituation(level: com.spiritwisestudios.inkrollers.Level?): Boolean {
+        val checkDistance = ROBOT_RADIUS + 10f
+        val directions = listOf(
+            Pair(0f, checkDistance), Pair(checkDistance, 0f), 
+            Pair(0f, -checkDistance), Pair(-checkDistance, 0f),
+            Pair(checkDistance, checkDistance), Pair(checkDistance, -checkDistance),
+            Pair(-checkDistance, checkDistance), Pair(-checkDistance, -checkDistance)
+        )
+        
+        var blockedDirections = 0
+        for ((dx, dy) in directions) {
+            val checkX = x + dx
+            val checkY = y + dy
+            
+            if (level?.checkCollision(checkX, checkY) == true) {
+                blockedDirections++
+            }
+        }
+        
+        // Consider it a corner if more than 5 out of 8 directions are blocked
+        return blockedDirections >= 5
+    }
+    
+    /**
      * Detect if robot is stuck and initiate escape behavior
      */
     private fun updateStuckDetection(deltaTime: Float, level: com.spiritwisestudios.inkrollers.Level?) {
@@ -696,18 +1000,22 @@ class Robot(
             val currentPosition = Pair(x, y)
             val distanceMoved = sqrt((x - lastPosition.first).pow(2) + (y - lastPosition.second).pow(2))
             
+            // Check if robot is in a corner
+            isInCorner = detectCornerSituation(level)
+            
             // If robot hasn't moved more than 5 pixels in 1 second, it's likely stuck
             if (distanceMoved < 5f) {
                 stuckCounter++
-                Log.d(TAG, "Robot potentially stuck. Counter: $stuckCounter, distance moved: $distanceMoved")
+                Log.d(TAG, "Robot potentially stuck. Counter: $stuckCounter, distance moved: $distanceMoved, in corner: $isInCorner")
                 
-                // If stuck for 2 consecutive checks (2 seconds), initiate escape
-                if (stuckCounter >= 2 && !isEscaping) {
-                    initiateEscape()
+                // If stuck for 2 consecutive checks (2 seconds), or in corner for 1 check, initiate escape
+                if ((stuckCounter >= 2 || isInCorner) && !isEscaping) {
+                    initiateIntelligentEscape(level)
                 }
             } else {
                 // Robot is moving, reset stuck counter and exit escape mode if active
                 stuckCounter = 0
+                cornerEscapeAttempts = 0
                 if (isEscaping) {
                     exitEscapeMode()
                 }
@@ -719,16 +1027,48 @@ class Robot(
     }
     
     /**
-     * Initiate escape behavior when robot is stuck
+     * Initiate intelligent escape behavior that finds the best direction to escape
      */
-    private fun initiateEscape() {
+    private fun initiateIntelligentEscape(level: com.spiritwisestudios.inkrollers.Level?) {
         isEscaping = true
-        val possibleDirections = listOf(0, 45, 90, 135, 180, 225, 270, 315)
-        escapeDirection = possibleDirections.random() * PI.toFloat() / 180f // Random direction in 45-degree increments
-        escapeDistance = 50f + (0..50).toList().random() // Random escape distance 50-100 pixels
-        stuckCounter = 0 // Reset counter to prevent immediate re-triggering
         
-        Log.d(TAG, "Robot initiating escape! Direction: ${(escapeDirection * 180 / PI).toInt()}°, Distance: $escapeDistance")
+        // Find the best escape direction by checking multiple directions
+        val possibleDirections = listOf(0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330)
+        var bestDirection = 0f
+        var bestDistance = 0f
+        
+        for (angle in possibleDirections) {
+            val radians = angle * PI.toFloat() / 180f
+            var distance = 0f
+            
+            // Test how far we can go in this direction
+            for (testDistance in 10..100 step 5) {
+                val testX = x + cos(radians) * testDistance
+                val testY = y + sin(radians) * testDistance
+                
+                if (level?.checkCollision(testX, testY) != true) {
+                    distance = testDistance.toFloat()
+                } else {
+                    break
+                }
+            }
+            
+            if (distance > bestDistance) {
+                bestDistance = distance
+                bestDirection = radians
+            }
+        }
+        
+        escapeDirection = bestDirection
+        escapeDistance = minOf(bestDistance, 80f) // Don't escape too far
+        stuckCounter = 0
+        
+        if (isInCorner) {
+            cornerEscapeAttempts++
+            escapeDistance = minOf(escapeDistance * 1.5f, 120f) // Escape further from corners
+        }
+        
+        Log.d(TAG, "Robot initiating intelligent escape! Direction: ${(escapeDirection * 180 / PI).toInt()}°, Distance: $escapeDistance, Corner: $isInCorner")
     }
     
     /**
@@ -841,5 +1181,17 @@ class Robot(
         if (areasPainted > 0) {
             Log.v(TAG, "Converted robot painted $areasPainted strategic spots at ($x, $y)")
         }
+    }
+
+    /**
+     * Data class for A* pathfinding nodes
+     */
+    private data class PathNode(
+        val x: Int,
+        val y: Int,
+        var gScore: Float,
+        val hScore: Float
+    ) {
+        val fScore: Float get() = gScore + hScore
     }
 } 
