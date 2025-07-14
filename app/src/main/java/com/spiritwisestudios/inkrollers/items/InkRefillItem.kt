@@ -15,7 +15,7 @@ import kotlin.math.sin
 class InkRefillItem(
     x: Float,
     y: Float,
-    private val refillAmount: Float = Player.MAX_INK * 0.5f, // Default to 50% refill
+    private val refillAmount: Float = Player.MAX_INK, // Default to 100% refill
     private val playerManager: PlayerManager? = null
 ) : BaseItem(ItemType.INK_REFILL, x, y, 25f) {
     
@@ -116,21 +116,28 @@ class InkRefillItem(
     }
     
     override fun onItemCollected(playerId: String): Boolean {
-        Log.d(TAG, "Ink refill item collected by player: $playerId")
+        Log.d(TAG, "🧪 Ink refill item collection attempt by player: $playerId")
+        Log.d(TAG, "🧪 PlayerManager available: ${playerManager != null}")
         
         // Get the player and refill their ink
         val player = playerManager?.getPlayer(playerId)
+        Log.d(TAG, "🧪 Found player object: ${player != null}")
+        
         if (player != null) {
             val oldInk = player.ink
             player.ink = (player.ink + refillAmount).coerceAtMost(Player.MAX_INK)
             val actualRefill = player.ink - oldInk
             
-            Log.d(TAG, "Player $playerId ink refilled by $actualRefill (from $oldInk to ${player.ink})")
+            Log.d(TAG, "✅ Player $playerId ink refilled by $actualRefill (from $oldInk to ${player.ink})")
             
             // Could trigger sound effect or visual feedback here
             return true
         } else {
-            Log.w(TAG, "Could not find player $playerId to refill ink")
+            Log.w(TAG, "❌ Could not find player $playerId to refill ink - available players: ${playerManager?.getAllPlayers()?.size ?: 0}")
+            if (playerManager is GameViewPlayerManager) {
+                val allEntries = playerManager.getAllPlayerEntries()
+                Log.w(TAG, "❌ Available player IDs: ${allEntries.map { it.key }}")
+            }
             return false
         }
     }

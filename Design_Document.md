@@ -141,10 +141,10 @@ Ink Rollers is an Android mobile game application with a client-server architect
         *   **Modular Architecture:** `Item` interface, `BaseItem` abstract class, and `ItemType` enum for 6 item types (INK_REFILL, SPEED_BOOST, PAINT_MULTIPLIER, SHIELD, FREEZE, TELEPORT)
         *   **Item Management:** `ItemManager` for spawning, updating, rendering, and collection with intelligent spawning logic
         *   **Campaign Integration:** `ItemConfig` for campaign-level item toggling and configuration per level
-        *   **Ink Refill Implementation:** Animated blue ink bottle with floating droplets, pulsing effects, and 50% ink restoration
-        *   **Maze-Aware Spawning:** Three-tier spawning strategy using walkable maze cells, normalized coordinates, and screen-based fallback
+        *   **Ink Refill Implementation:** Animated blue ink bottle with floating droplets, pulsing effects, and full (100%) ink restoration
+        *   **Maze-Aware Spawning:** Precise spawning strictly within walkable maze cell rectangles (no out-of-bounds fallback), leveraging the same cell data used by coverage calculations
         *   **Collision System:** Enhanced collision detection with multiple point testing and configurable radius
-        *   **Smart Spawning:** Intelligent placement avoiding walls and players with 100px+ distances and 5-second cooldowns
+        *   **Smart Spawning:** Intelligent placement avoiding walls, players, and other items with 100px+ distances and 5-second cooldowns
         *   **Visual Effects:** Proper rendering between players and particles with lifecycle management
         *   **Performance Optimization:** Max 3 items per type, automatic cleanup, and efficient update cycles
     *   **Technology:** Kotlin data classes, Android Canvas/Paint for rendering, Firebase integration for multiplayer sync
@@ -849,9 +849,9 @@ AndroidManifest.xml
 - **✅ M-13.6 Item & Power-Up System COMPLETED:**
     - **Modular Item System Architecture:** Created comprehensive modular item and power-up system with `Item` interface, `BaseItem` abstract class, and `ItemType` enum defining 6 item types (INK_REFILL, SPEED_BOOST, PAINT_MULTIPLIER, SHIELD, FREEZE, TELEPORT).
     - **ItemManager Implementation:** Built complete item lifecycle management system handling spawning, updating, rendering, and collection with intelligent maze-aware placement and performance optimization.
-    - **Ink Refill Power-Up:** Implemented first power-up with animated blue ink bottle, floating droplet particles, pulsing glow effects, and 50% ink restoration functionality.
+    - **Ink Refill Power-Up:** Implemented first power-up with animated blue ink bottle, floating droplet particles, pulsing glow effects, and full (100%) ink restoration functionality.
     - **Campaign Integration:** Created `ItemConfig` for campaign-level item toggling and integrated with `CampaignLevelActivity` for level-specific item configuration and spawning control.
-    - **Maze-Aware Spawning System:** Developed three-tier intelligent spawning strategy using walkable maze cells, normalized coordinates, and screen-based fallback to prevent out-of-bounds placement.
+    - **Maze-Aware Spawning System:** Developed precise spawning confined to walkable maze cell rectangles, eliminating prior screen-based fallbacks that could place items outside the maze.
     - **Enhanced Collision Detection:** Implemented multi-point collision testing with configurable radius (30px) testing center, left, right, top, and bottom points around items.
     - **Performance Optimization:** Added spawn cooldowns (5 seconds), item limits (max 3 per type), automatic cleanup, and efficient update cycles for optimal performance.
     - **Loose Coupling Architecture:** Created `GameViewPlayerManager` bridge class for clean separation between item system and player systems without tight coupling.

@@ -37,11 +37,28 @@ class GameViewPlayerManager(
     }
     
     /**
+     * Find the player ID by the Player object reference
+     * This is the most reliable way to match players for collision detection
+     */
+    fun getPlayerIdByObject(targetPlayer: Player): String? {
+        return players.entries.find { (_, player) -> 
+            player === targetPlayer 
+        }?.key
+    }
+    
+    /**
      * Get the local player if available
      */
     fun getLocalPlayer(): Player? {
         // In the current implementation, there's usually only one local player
         // This is a simple heuristic - in a full implementation you'd track the local player ID
         return players.values.firstOrNull()
+    }
+    
+    /**
+     * Get all player entries (ID to Player mapping)
+     */
+    fun getAllPlayerEntries(): Set<Map.Entry<String, Player>> {
+        return players.entries
     }
 } 

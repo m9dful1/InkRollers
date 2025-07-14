@@ -75,7 +75,9 @@ class ItemManager(
         if (item != null) {
             activeItems.add(item)
             itemCounts[itemType] = (itemCounts[itemType] ?: 0) + 1
-            Log.d(TAG, "Spawned $itemType at ($x, $y)")
+            Log.d(TAG, "🎯 Successfully spawned $itemType at ($x, $y) - Total active items: ${activeItems.size}")
+        } else {
+            Log.w(TAG, "❌ Failed to create $itemType item at ($x, $y)")
         }
         return item
     }
@@ -213,13 +215,17 @@ class ItemManager(
                 )
                 
                 if (distance <= COLLISION_DISTANCE) {
-                    // Create a simple player ID for collection
-                    val playerId = "player_${player.hashCode()}"
+                    // Use the player manager to find the correct player ID by object reference
+                    val playerId = (playerManager as? GameViewPlayerManager)?.getPlayerIdByObject(player)
                     
-                    if (item.onCollected(playerId)) {
+                    Log.d(TAG, "Player collision detected! Distance: $distance, Player ID: $playerId, Item: ${item.type}")
+                    
+                    if (playerId != null && item.onCollected(playerId)) {
                         itemsToRemove.add(item)
-                        Log.d(TAG, "Player collected ${item.type} item")
+                        Log.d(TAG, "✅ Player $playerId successfully collected ${item.type} item")
                         break // Item collected, no need to check other players
+                    } else {
+                        Log.w(TAG, "❌ Failed to collect item - player ID: $playerId, item active: ${item.isActive}")
                     }
                 }
             }
@@ -263,93 +269,150 @@ class ItemManager(
     }
     
     /**
-     * Find a safe location to spawn an item
+     * Find a safe location to spawn an item using the same logic as CoverageCalculator
      */
     private fun findSafeSpawnLocation(level: Level?, players: List<Player>, paintSurface: PaintSurface?): Pair<Float, Float>? {
         if (level == null || paintSurface == null) return null
         
-        val maxAttempts = 100
+        return when (level) {
+            is MazeLevel -> findSafeSpawnLocationInMaze(level, players)
+            is com.spiritwisestudios.inkrollers.campaign.CampaignLevel -> findSafeSpawnLocationInCampaign(level, players)
+            else -> findSafeSpawnLocationGeneral(level, players, paintSurface)
+        }
+    }
+
+    /**
+     * Find safe spawn location within a CampaignLevel by leveraging its underlying maze coordinate system.
+     */
+    private fun findSafeSpawnLocationInCampaign(level: com.spiritwisestudios.inkrollers.campaign.CampaignLevel, players: List<Player>): Pair<Float, Float>? {
+        val maxAttempts = 200
+        var attempts = 0
+
+        // Compute the maze bounding box in screen space using the helper conversion
+        val (topLeftX, topLeftY) = level.mazeToScreenCoord(0f, 0f)
+        val (bottomRightX, bottomRightY) = level.mazeToScreenCoord(1f, 1f)
+
+        val minX = minOf(topLeftX, bottomRightX)
+        val maxX = maxOf(topLeftX, bottomRightX)
+        val minY = minOf(topLeftY, bottomRightY)
+        val maxY = maxOf(topLeftY, bottomRightY)
+
+        val margin = 10f // Keep away from maze borders
+
+        while (attempts < maxAttempts) {
+            // Generate random normalized coordinates (0.0-1.0) inside the maze
+            val relX = Random.nextFloat()
+            val relY = Random.nextFloat()
+            val (x, y) = level.mazeToScreenCoord(relX, relY)
+
+            // Ensure we stay inside the maze bounds with margin
+            if (x < minX + margin || x > maxX - margin || y < minY + margin || y > maxY - margin) {
+                attempts++
+                continue
+            }
+
+            // Validate against walls and distances
+            if (!level.checkCollision(x, y) &&
+                isValidDistanceFromPlayers(x, y, players) &&
+                isValidDistanceFromOtherItems(x, y)) {
+                Log.d(TAG, "✅ Successfully found spawn location in CampaignLevel maze at ($x, $y)")
+                return Pair(x, y)
+            }
+
+            attempts++
+        }
+
+        Log.w(TAG, "❌ Could not find safe spawn location in CampaignLevel after $maxAttempts attempts")
+        return null
+    }
+    
+    /**
+     * Find safe spawn location in MazeLevel using walkable cell rectangles
+     * Uses the same approach as CoverageCalculator.calculateWithCellRects()
+     */
+    private fun findSafeSpawnLocationInMaze(level: MazeLevel, players: List<Player>): Pair<Float, Float>? {
+        val maxAttempts = 200
         var attempts = 0
         
-        // Try maze-aware spawning if it's a MazeLevel
-        if (level is MazeLevel) {
-            // First try using walkable cell rectangles for more precise placement
-            val walkableCells = level.getWalkableCellRects()
-            if (walkableCells.isNotEmpty()) {
-                while (attempts < maxAttempts * 2 / 3) { // Use 2/3 of attempts for precise method
-                    val randomCell = walkableCells.random()
-                    
-                    // Generate random position within the selected cell
-                    val x = randomCell.left + Random.nextFloat() * (randomCell.right - randomCell.left)
-                    val y = randomCell.top + Random.nextFloat() * (randomCell.bottom - randomCell.top)
-                    
-                    // Check if location is valid
-                    if (isValidSpawnLocation(x, y, level, players)) {
-                        Log.d(TAG, "Successfully spawned item using walkable cell at ($x, $y)")
-                        return Pair(x, y)
-                    }
-                    
-                    attempts++
-                }
-            }
-            
-            // Fallback to maze coordinate system
-            while (attempts < maxAttempts) {
-                // Generate coordinates within the maze area using maze coordinate system
-                val relX = 0.1f + Random.nextFloat() * 0.8f // Stay away from edges
-                val relY = 0.1f + Random.nextFloat() * 0.8f
-                
-                val (x, y) = level.mazeToScreenCoord(relX, relY)
-                
-                // Check if location is valid
-                if (isValidSpawnLocation(x, y, level, players)) {
-                    Log.d(TAG, "Successfully spawned item using maze coordinates at ($x, $y)")
-                    return Pair(x, y)
-                }
-                
-                attempts++
-            }
+        // Get walkable cell rectangles from the maze level (same as CoverageCalculator)
+        val cellRects = level.getWalkableCellRects()
+        
+        if (cellRects.isEmpty()) {
+            Log.w(TAG, "❌ No walkable cell rectangles found in maze")
+            return null
         }
         
-        // Fallback to original method for non-maze levels or if maze method fails
-        attempts = 0
+        Log.d(TAG, "🎯 Found ${cellRects.size} walkable cell rectangles in maze for item spawning")
+        
         while (attempts < maxAttempts) {
-            // Generate random coordinates within level bounds, but with better boundaries
-            val margin = 100f // Keep away from screen edges
-            val x = margin + Random.nextFloat() * (paintSurface.w - 2 * margin)
-            val y = margin + Random.nextFloat() * (paintSurface.h - 2 * margin)
+            // Pick a random walkable cell rectangle
+            val randomCell = cellRects.random()
             
-            // Check if location is valid
-            if (isValidSpawnLocation(x, y, level, players)) {
-                return Pair(x, y)
+            // Generate random position within the selected cell with some margin from edges
+            val margin = 10f // Small margin from cell edges
+            val cellWidth = randomCell.right - randomCell.left
+            val cellHeight = randomCell.bottom - randomCell.top
+            
+            if (cellWidth > margin * 2 && cellHeight > margin * 2) {
+                val x = randomCell.left + margin + Random.nextFloat() * (cellWidth - margin * 2)
+                val y = randomCell.top + margin + Random.nextFloat() * (cellHeight - margin * 2)
+                
+                // Validate the spawn location
+                if (isValidSpawnLocationInCell(x, y, players)) {
+                    Log.d(TAG, "✅ Successfully found spawn location in walkable cell at ($x, $y)")
+                    return Pair(x, y)
+                }
             }
             
             attempts++
         }
         
-        return null // Could not find a safe location
+        Log.w(TAG, "❌ Could not find safe spawn location in maze after $maxAttempts attempts")
+        return null
     }
     
     /**
-     * Check if a location is valid for spawning an item
+     * Find safe spawn location for non-MazeLevel types using collision checking
+     * Uses the same approach as CoverageCalculator.calculateOriginal()
      */
-    private fun isValidSpawnLocation(x: Float, y: Float, level: Level, players: List<Player>): Boolean {
-        val itemRadius = 30f // Approximate item size
+    private fun findSafeSpawnLocationGeneral(level: Level, players: List<Player>, paintSurface: PaintSurface): Pair<Float, Float>? {
+        val maxAttempts = 200
+        var attempts = 0
         
-        // Check for collision with walls - test multiple points around the item center
-        val testPoints = listOf(
-            Pair(x, y), // Center
-            Pair(x - itemRadius, y), // Left
-            Pair(x + itemRadius, y), // Right
-            Pair(x, y - itemRadius), // Top
-            Pair(x, y + itemRadius)  // Bottom
-        )
-        
-        for ((testX, testY) in testPoints) {
-            if (level.checkCollision(testX, testY)) return false
+        while (attempts < maxAttempts) {
+            val margin = 50f // Keep away from screen edges
+            val x = margin + Random.nextFloat() * (paintSurface.w - 2 * margin)
+            val y = margin + Random.nextFloat() * (paintSurface.h - 2 * margin)
+            
+            // Skip locations that are on walls (same as CoverageCalculator)
+            if (!level.checkCollision(x, y)) {
+                // Additional validation for player distance
+                if (isValidDistanceFromPlayers(x, y, players)) {
+                    Log.d(TAG, "✅ Successfully found spawn location for general level at ($x, $y)")
+                    return Pair(x, y)
+                }
+            }
+            
+            attempts++
         }
         
-        // Check distance from players
+        Log.w(TAG, "❌ Could not find safe spawn location in general level after $maxAttempts attempts")
+        return null
+    }
+    
+    /**
+     * Check if a location within a walkable cell is valid for spawning an item
+     * Assumes the location is already within a valid walkable area
+     */
+    private fun isValidSpawnLocationInCell(x: Float, y: Float, players: List<Player>): Boolean {
+        // Since we're already in a walkable cell, just check distances
+        return isValidDistanceFromPlayers(x, y, players) && isValidDistanceFromOtherItems(x, y)
+    }
+    
+    /**
+     * Check if location is far enough from players
+     */
+    private fun isValidDistanceFromPlayers(x: Float, y: Float, players: List<Player>): Boolean {
         for (player in players) {
             val distance = sqrt(
                 (player.x - x) * (player.x - x) +
@@ -357,8 +420,13 @@ class ItemManager(
             )
             if (distance < MIN_SPAWN_DISTANCE_FROM_PLAYER) return false
         }
-        
-        // Check distance from other items
+        return true
+    }
+    
+    /**
+     * Check if location is far enough from other items
+     */
+    private fun isValidDistanceFromOtherItems(x: Float, y: Float): Boolean {
         for (item in activeItems) {
             val distance = sqrt(
                 (item.position.first - x) * (item.position.first - x) +
@@ -366,7 +434,8 @@ class ItemManager(
             )
             if (distance < MIN_SPAWN_DISTANCE_FROM_ITEMS) return false
         }
-        
         return true
     }
+
+
 } 
