@@ -138,7 +138,7 @@ class Robot(
                     lastPathfindingAttempt = currentTime
                 }
                 
-                Log.d(TAG, "Robot targeting player paint at (${nearestPaint.first}, ${nearestPaint.second})")
+                //Log.d(TAG, "Robot targeting player paint at (${nearestPaint.first}, ${nearestPaint.second})")
             } else {
                 // No paint found, return to patrol
                 currentTarget = null
@@ -181,7 +181,7 @@ class Robot(
                     lastPathfindingAttempt = currentTime
                 }
                 
-                Log.d(TAG, "Converted robot targeting unpainted area at (${nearestUnpainted.first}, ${nearestUnpainted.second})")
+                //Log.d(TAG, "Converted robot targeting unpainted area at (${nearestUnpainted.first}, ${nearestUnpainted.second})")
             } else {
                 // No unpainted areas nearby, return to patrol
                 currentTarget = null
@@ -354,9 +354,9 @@ class Robot(
             pathToTarget = path.toMutableList()
             currentPathIndex = 0
             isFollowingPath = true
-            Log.d(TAG, "Generated path with ${path.size} waypoints to target ${target}")
+            //Log.d(TAG, "Generated path with ${path.size} waypoints to target ${target}")
         } else {
-            Log.d(TAG, "No path found to target ${target}")
+            //Log.d(TAG, "No path found to target ${target}")
             clearPath()
         }
     }
@@ -502,7 +502,7 @@ class Robot(
             y = newY
         } else {
             // Path blocked, clear path and find new one
-            Log.d(TAG, "Path blocked at waypoint $currentPathIndex, clearing path")
+            //Log.d(TAG, "Path blocked at waypoint $currentPathIndex, clearing path")
             clearPath()
         }
     }
@@ -587,7 +587,7 @@ class Robot(
             // Immediately paint around conversion spot to show the change
             paintConversionSpot(paintSurface)
             
-            Log.d(TAG, "Robot converted at position ($x, $y) - switching to ally mode")
+            //Log.d(TAG, "Robot converted at position ($x, $y) - switching to ally mode")
             return true
         }
         
@@ -853,7 +853,7 @@ class Robot(
         
         isActivelyRemoving = paintRemoved
         if (paintRemoved) {
-            Log.d(TAG, "Robot aggressively removing player paint at position ($x, $y)")
+            //Log.d(TAG, "Robot aggressively removing player paint at position ($x, $y)")
         }
     }
     
@@ -872,7 +872,7 @@ class Robot(
         // Paint every 2 pixels along the path for dense coverage
         val steps = (distance / 2f).toInt().coerceAtLeast(1)
         
-        Log.d(TAG, "Painting trail: distance=$distance, steps=$steps, from ($fromX, $fromY) to ($toX, $toY)")
+        //Log.d(TAG, "Painting trail: distance=$distance, steps=$steps, from ($fromX, $fromY) to ($toX, $toY)")
         
         for (i in 0..steps) {
             val progress = i.toFloat() / steps
@@ -886,7 +886,7 @@ class Robot(
                 
                 // Paint at current position with green color
                 paintSurface.paintAt(paintX, paintY, Color.GREEN)
-                Log.v(TAG, "Painted trail spot at ($paintX, $paintY)")
+                //Log.v(TAG, "Painted trail spot at ($paintX, $paintY)")
             }
         }
         
@@ -894,17 +894,17 @@ class Robot(
         if (fromX >= 0 && fromX < paintSurface.w && fromY >= 0 && fromY < paintSurface.h &&
             level?.checkCollision(fromX, fromY) != true) {
             paintSurface.paintAt(fromX, fromY, Color.GREEN)
-            Log.v(TAG, "Painted start position at ($fromX, $fromY)")
+            //Log.v(TAG, "Painted start position at ($fromX, $fromY)")
         }
         
         // Paint at current position too
         if (toX >= 0 && toX < paintSurface.w && toY >= 0 && toY < paintSurface.h &&
             level?.checkCollision(toX, toY) != true) {
             paintSurface.paintAt(toX, toY, Color.GREEN)
-            Log.v(TAG, "Painted end position at ($toX, $toY)")
+            //Log.v(TAG, "Painted end position at ($toX, $toY)")
         }
         
-        Log.d(TAG, "Converted robot painted movement trail from ($fromX, $fromY) to ($toX, $toY), distance: $distance")
+        //Log.d(TAG, "Converted robot painted movement trail from ($fromX, $fromY) to ($toX, $toY), distance: $distance")
     }
     
     /**
@@ -936,7 +936,7 @@ class Robot(
             }
         }
         
-        Log.v(TAG, "Converted robot painted at current position ($x, $y)")
+        //Log.v(TAG, "Converted robot painted at current position ($x, $y)")
     }
     
     /**
@@ -960,7 +960,7 @@ class Robot(
             }
         }
         
-        Log.d(TAG, "Robot painted conversion spot at ($x, $y)")
+        //Log.d(TAG, "Robot painted conversion spot at ($x, $y)")
     }
     
     /**
@@ -1006,7 +1006,7 @@ class Robot(
             // If robot hasn't moved more than 5 pixels in 1 second, it's likely stuck
             if (distanceMoved < 5f) {
                 stuckCounter++
-                Log.d(TAG, "Robot potentially stuck. Counter: $stuckCounter, distance moved: $distanceMoved, in corner: $isInCorner")
+                //Log.d(TAG, "Robot potentially stuck. Counter: $stuckCounter, distance moved: $distanceMoved, in corner: $isInCorner")
                 
                 // If stuck for 2 consecutive checks (2 seconds), or in corner for 1 check, initiate escape
                 if ((stuckCounter >= 2 || isInCorner) && !isEscaping) {
@@ -1068,7 +1068,7 @@ class Robot(
             escapeDistance = minOf(escapeDistance * 1.5f, 120f) // Escape further from corners
         }
         
-        Log.d(TAG, "Robot initiating intelligent escape! Direction: ${(escapeDirection * 180 / PI).toInt()}°, Distance: $escapeDistance, Corner: $isInCorner")
+        //Log.d(TAG, "Robot initiating intelligent escape! Direction: ${(escapeDirection * 180 / PI).toInt()}°, Distance: $escapeDistance, Corner: $isInCorner")
     }
     
     /**
@@ -1098,11 +1098,11 @@ class Robot(
                 val possibleDirections = listOf(0, 45, 90, 135, 180, 225, 270, 315)
                 escapeDirection = possibleDirections.random() * PI.toFloat() / 180f
                 escapeDistance = 30f + (0..30).toList().random() // Shorter distance for subsequent attempts
-                Log.d(TAG, "Escape blocked, trying new direction: ${(escapeDirection * 180 / PI).toInt()}°")
+                //Log.d(TAG, "Escape blocked, trying new direction: ${(escapeDirection * 180 / PI).toInt()}°")
             } else {
                 // Tried too many directions, give up and resume normal behavior
                 exitEscapeMode()
-                Log.d(TAG, "Escape attempts exhausted, resuming normal behavior")
+                //Log.d(TAG, "Escape attempts exhausted, resuming normal behavior")
             }
         }
     }
@@ -1120,7 +1120,7 @@ class Robot(
         currentTarget = null
         isFollowingPatrol = true
         
-        Log.d(TAG, "Robot exited escape mode, resuming normal AI")
+        //Log.d(TAG, "Robot exited escape mode, resuming normal AI")
     }
     
     /**
@@ -1179,7 +1179,7 @@ class Robot(
         }
         
         if (areasPainted > 0) {
-            Log.v(TAG, "Converted robot painted $areasPainted strategic spots at ($x, $y)")
+            //Log.v(TAG, "Converted robot painted $areasPainted strategic spots at ($x, $y)")
         }
     }
 

@@ -109,7 +109,7 @@ class CampaignEffects {
         colorShiftEffectActive = true
         colorShiftEffectTime = 0f
         colorShiftEffectCenter = Pair(player.x, player.y)
-        Log.d(TAG, "Color shift effect triggered at (${player.x}, ${player.y})")
+        //Log.d(TAG, "Color shift effect triggered at (${player.x}, ${player.y})")
     }
     
     /**

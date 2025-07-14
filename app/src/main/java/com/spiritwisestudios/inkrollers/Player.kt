@@ -60,7 +60,9 @@ class Player(
     // Stop all sounds when switching modes
     stopPaintSound()
     stopRefillSound()
+    val oldMode = mode
     mode=1-mode 
+    Log.d(TAG, "toggleMode: Changed from mode $oldMode to mode $mode")
     audioManager?.playSound(AudioManager.SoundType.MODE_TOGGLE)
   }
   
@@ -101,105 +103,73 @@ class Player(
    */
   fun isCampaignMode(): Boolean = isCampaignMode
   fun move(dirX: Float, dirY: Float, magnitude: Float, level: Level? = null, deltaTime: Float) {
-    // Log.d("Player", "move: Input: dirX=$dirX, dirY=$dirY, mag=$magnitude, deltaTime=$deltaTime")
-    if (magnitude == 0f) return
+    // 1. Calculate final position based on input and collision.
+    var finalX = x
+    var finalY = y
 
-    val moveAmount = MOVE_SPEED * magnitude * deltaTime
-    var nextX = x + dirX * moveAmount
-    var nextY = y + dirY * moveAmount
+    if (magnitude > 0f) {
+        val moveAmount = MOVE_SPEED * magnitude * deltaTime
+        var nextX = x + dirX * moveAmount
+        var nextY = y + dirY * moveAmount
 
-    nextX = nextX.coerceIn(0f, surface.w.toFloat() - 1)
-    nextY = nextY.coerceIn(0f, surface.h.toFloat() - 1)
+        nextX = nextX.coerceIn(0f, surface.w.toFloat() - 1)
+        nextY = nextY.coerceIn(0f, surface.h.toFloat() - 1)
 
-    // Use provided level parameter or class level field if available
-    val currentLevel = level ?: this.level
-    
-    if (currentLevel != null && currentLevel.checkCollision(nextX, nextY)) {
-      val nextXOnly = x + dirX * moveAmount
-      val nextYOnly = y + dirY * moveAmount
+        val currentLevel = level ?: this.level
+        if (currentLevel != null && currentLevel.checkCollision(nextX, nextY)) {
+            val nextXOnly = x + dirX * moveAmount
+            val nextYOnly = y + dirY * moveAmount
 
-      if (!currentLevel.checkCollision(nextXOnly, y)) {
-        nextX = nextXOnly
-        nextY = y
-        // Log.d("Player", "move: Sliding X")
-      } else if (!currentLevel.checkCollision(x, nextYOnly)) {
-        nextX = x
-        nextY = nextYOnly
-        // Log.d("Player", "move: Sliding Y")
-      } else {
-        // Log.d("Player", "move: Blocked by collision")
-        return
-      }
+            if (!currentLevel.checkCollision(nextXOnly, y)) {
+                finalX = nextXOnly
+                finalY = y
+            } else if (!currentLevel.checkCollision(x, nextYOnly)) {
+                finalX = x
+                finalY = nextYOnly
+            }
+            // else, finalX and finalY remain x and y (no movement)
+        } else {
+            finalX = nextX
+            finalY = nextY
+        }
     }
 
-    if (nextX != x || nextY != y) {
-        x = nextX
-        y = nextY
+    // 2. Update player's position state.
+    val moved = (x != finalX || y != finalY)
+    x = finalX
+    y = finalY
 
-        if (mode == 0) {
-            if (ink > 0f) {
-                // Start paint sound if not already playing
-                startPaintSound()
-                
-                ink -= PAINT_COST
-                if (ink < 0f) ink = 0f
-                
-                // Paint locally
-                surface.paintAt(x, y, paint.color)
-                
-                // Create paint splat particle effect
-                particleManager?.createPaintSplat(x, y, paint.color)
-                
-                try {
-                    // Get the current level - either from parameter or member variable
-                    val levelForCoords = level ?: this.level
-                    
-                    // Normalize coordinates for maze and send to network
-                    if (levelForCoords is MazeLevel) {
-                        val mazeRelativeCoords = levelForCoords.screenToMazeCoord(x, y)
-                        // Send normalized coordinates
-                        multiplayerManager?.sendPaintAction(
-                            x.toInt(), 
-                            y.toInt(), 
-                            paint.color,
-                            mazeRelativeCoords.first,  // Normalized X
-                            mazeRelativeCoords.second  // Normalized Y
-                        )
-                    } else {
-                        // Fallback to absolute coordinates if maze conversion not available
-                        multiplayerManager?.sendPaintAction(x.toInt(), y.toInt(), paint.color)
-                    }
-                } catch (e: Exception) {
-                    Log.e("Player", "Error sending paint action", e)
-                    // Fallback to absolute coordinates
+    // 3. Handle actions (paint or refill) based on the current mode.
+    if (mode == 0) { // PAINT mode
+        stopRefillSound() // Ensure refill sound is off
+        if (moved && ink > 0f) {
+            startPaintSound()
+            ink -= PAINT_COST
+            if (ink < 0f) ink = 0f
+            
+            surface.paintAt(x, y, paint.color)
+            particleManager?.createPaintSplat(x, y, paint.color)
+            
+            // Network paint action
+            try {
+                val levelForCoords = level ?: this.level
+                if (levelForCoords is MazeLevel) {
+                    val mazeRelativeCoords = levelForCoords.screenToMazeCoord(x, y)
+                    multiplayerManager?.sendPaintAction(x.toInt(), y.toInt(), paint.color, mazeRelativeCoords.first, mazeRelativeCoords.second)
+                } else {
                     multiplayerManager?.sendPaintAction(x.toInt(), y.toInt(), paint.color)
                 }
-            } else {
-                // Stop paint sound if out of ink
-                stopPaintSound()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error sending paint action", e)
+                multiplayerManager?.sendPaintAction(x.toInt(), y.toInt(), paint.color)
             }
         } else {
-            val ix = x.toInt()
-            val iy = y.toInt()
-            if (ix >= 0 && ix < surface.w && iy >= 0 && iy < surface.h) {
-                 if (surface.getPixelColor(ix, iy) == paint.color && ink < MAX_INK) {
-                    // Start refill sound if not already playing
-                    startRefillSound()
-                    
-                    ink += REFILL_GAIN
-                    if (ink > MAX_INK) ink = MAX_INK
-                } else {
-                    // Stop refill sound if not on correct color
-                    stopRefillSound()
-                }
-            }
+            stopPaintSound() // Stop if not moving or out of ink
         }
-    } else {
-        // Player not moving, stop all looping sounds
-        stopPaintSound()
-        stopRefillSound()
+    } else { // FILL mode
+        stopPaintSound() // Ensure paint sound is off
+        refillCurrentSpot() // Refill regardless of movement
     }
-    // Log.d("Player", "move: Final position: ($x, $y)")
   }
   fun getInkPercent(): Float = ink / MAX_INK
   fun getModeText(): String = if (mode == 0) "PAINT" else "FILL"
@@ -260,5 +230,34 @@ class Player(
       audioManager?.stopLoopingSound(AudioManager.SoundType.REFILL)
       isRefillSoundPlaying = false
     }
+  }
+
+  fun changeModeIfNeeded(newMode: Int) {
+    Log.d(TAG, "changeModeIfNeeded called: current mode = $mode, requested mode = $newMode")
+    if (newMode != mode) {
+      toggleMode()
+    }
+  }
+
+  /**
+   * Attempt to refill ink at the player's current position if conditions are met.
+   */
+  private fun refillCurrentSpot() {
+      val ix = x.toInt()
+      val iy = y.toInt()
+      if (ix >= 0 && ix < surface.w && iy >= 0 && iy < surface.h) {
+          if (surface.getPixelColor(ix, iy) == paint.color && ink < MAX_INK) {
+              // Start refill sound if not already playing
+              startRefillSound()
+
+              ink += REFILL_GAIN
+              if (ink > MAX_INK) ink = MAX_INK
+          } else {
+              // Stop refill sound if not on correct color
+              stopRefillSound()
+          }
+      } else {
+          stopRefillSound()
+      }
   }
 }

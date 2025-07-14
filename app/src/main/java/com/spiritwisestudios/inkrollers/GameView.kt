@@ -424,16 +424,13 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
               Log.d(TAG, "Updating remote player $playerId screen pos to ($sx, $sy) from norm (${newState.normX}, ${newState.normY}) via actuallyProcessPlayerState")
               player.x = sx
               player.y = sy
+              player.mode = newState.mode
+              player.ink = newState.ink
+              player.playerName = newState.playerName
           }
       }
-      // Always update mode and ink for all players based on Firebase state
-      player.mode = newState.mode
-      player.ink = newState.ink
-      if (playerId != localPlayerId) { // Only update name from state for remote players
-          player.playerName = newState.playerName // Update player name directly
-      }
-      // Commented out per-frame logs to reduce clutter
-      // Log.d(TAG, "Player $playerId state processed. Position: (${player.x}, ${player.y}), Ink: ${player.ink}, Mode: ${player.mode}")
+       // Commented out per-frame logs to reduce clutter
+       // Log.d(TAG, "Player $playerId state processed. Position: (${player.x}, ${player.y}), Ink: ${player.ink}, Mode: ${player.mode}")
   }
 
   override fun onPlayerStateChanged(playerId: String, newState: PlayerState) {
@@ -448,6 +445,14 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
           pendingPlayerStates.remove(playerId) // Also remove from pending if they leave before processing
           joysticks.remove(playerId)
           return
+      }
+
+      if (playerId == localPlayerId) {
+        // For the local player, we ONLY care about the state of other players.
+        // We must not process state changes for ourself that come from the network,
+        // as our local state is the source of truth. This prevents network race
+        // conditions from overriding local actions (like mode changes).
+        return
       }
 
       if (currentLevel == null) {

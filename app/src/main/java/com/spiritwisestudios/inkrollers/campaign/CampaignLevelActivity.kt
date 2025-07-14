@@ -107,9 +107,63 @@ class CampaignLevelActivity : AppCompatActivity() {
         }
         
         // Setup mode toggle button
-        binding.buttonModeToggle.setOnClickListener {
-            localPlayer?.toggleMode()
-            updateModeDisplay()
+        // Initialize button appearance for default PAINT mode (hold to refill)
+        binding.buttonModeToggle.setTextColor(android.graphics.Color.WHITE)
+        binding.buttonModeToggle.setBackgroundColor(android.graphics.Color.parseColor("#2196F3")) // Blue indicates paint mode active
+        binding.buttonModeToggle.text = "REFILL"
+        
+        binding.buttonModeToggle.setOnTouchListener { view, event ->
+            val localPlayer = gameView.getLocalPlayer()
+            Log.d(TAG, "Campaign button touch event: ${event.action} / ${event.actionMasked}")
+            Log.d(TAG, "Local player available: ${localPlayer != null}")
+            if (localPlayer != null) {
+                Log.d(TAG, "Current player mode: ${localPlayer.mode}")
+            }
+            
+            when (event.action) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    Log.d(TAG, "REFILL button pressed - switching to FILL mode")
+                    if (localPlayer != null) {
+                        Log.d(TAG, "Calling changeModeIfNeeded(1) on local player")
+                        localPlayer.changeModeIfNeeded(1)
+                        binding.buttonModeToggle.setBackgroundColor(android.graphics.Color.parseColor("#FF9800"))
+                        binding.buttonModeToggle.text = "REFILLING"
+                        updateModeDisplay()
+                        // Add haptic feedback
+                        view.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                    } else {
+                        Log.w(TAG, "Cannot switch to FILL mode - local player is null")
+                    }
+                    return@setOnTouchListener true
+                }
+                android.view.MotionEvent.ACTION_UP -> {
+                    Log.d(TAG, "REFILL button released - switching to PAINT mode")
+                    if (localPlayer != null) {
+                        Log.d(TAG, "Calling changeModeIfNeeded(0) on local player")
+                        localPlayer.changeModeIfNeeded(0)
+                        binding.buttonModeToggle.setBackgroundColor(android.graphics.Color.parseColor("#2196F3"))
+                        binding.buttonModeToggle.text = "REFILL"
+                        updateModeDisplay()
+                    } else {
+                        Log.w(TAG, "Cannot switch to PAINT mode - local player is null")
+                    }
+                    return@setOnTouchListener true
+                }
+                android.view.MotionEvent.ACTION_CANCEL -> {
+                    Log.d(TAG, "REFILL button cancelled - switching to PAINT mode")
+                    if (localPlayer != null) {
+                        Log.d(TAG, "Calling changeModeIfNeeded(0) on local player (cancel)")
+                        localPlayer.changeModeIfNeeded(0)
+                        binding.buttonModeToggle.setBackgroundColor(android.graphics.Color.parseColor("#2196F3"))
+                        binding.buttonModeToggle.text = "REFILL"
+                        updateModeDisplay()
+                    } else {
+                        Log.w(TAG, "Cannot switch to PAINT mode - local player is null (cancel)")
+                    }
+                    return@setOnTouchListener true
+                }
+            }
+            false
         }
 
         // Setup back button

@@ -73,7 +73,7 @@ class MazeLevel(
     init {
         // Log orientation and cell dimensions
         val orientationStr = if (screenW > screenH) "landscape" else "portrait"
-        Log.d(TAG, "Creating maze in $orientationStr orientation with cells: ${this.cellsX}x${this.cellsY} for screen ${screenW}x${screenH}, complexity: $complexity")
+        //Log.d(TAG, "Creating maze in $orientationStr orientation with cells: ${this.cellsX}x${this.cellsY} for screen ${screenW}x${screenH}, complexity: $complexity")
         
         calculateScaling()
         generateGrids()      // build wall arrays & maze
@@ -108,7 +108,7 @@ class MazeLevel(
         // Scale walls thickness proportionally but with a min/max bound
         scale = minOf(maxOf(cellSize / 64f, 0.5f), 2.0f) // Keep scale between 0.5 and 2.0
         
-        Log.d("MazeLevel", "Scaling: cellSize=$cellSize, offset=($viewportOffsetX,$viewportOffsetY), scale=$scale, maze size=${mazeWidth}x${mazeHeight}")
+        //Log.d("MazeLevel", "Scaling: cellSize=$cellSize, offset=($viewportOffsetX,$viewportOffsetY), scale=$scale, maze size=${mazeWidth}x${mazeHeight}")
     }
 
     private fun generateGrids() {
@@ -437,7 +437,7 @@ class MazeLevel(
         val px = viewportOffsetX + cx * cellSize + cellSize / 2
         val py = viewportOffsetY + cy * cellSize + cellSize / 2
         
-        Log.d("MazeLevel", "Player $playerIndex start position: ($px, $py) from cell ($cx, $cy)")
+        //Log.d("MazeLevel", "Player $playerIndex start position: ($px, $py) from cell ($cx, $cy)")
         return px to py
     }
     
@@ -479,7 +479,7 @@ class MazeLevel(
             }
         }
         
-        Log.d(TAG, "Generated ${zones.size} zones for maze level")
+        //Log.d(TAG, "Generated ${zones.size} zones for maze level")
         return zones
     }
     
@@ -514,7 +514,7 @@ class MazeLevel(
             }
         }
         
-        Log.d(TAG, "Generated ${cellRects.size} walkable cell rectangles")
+        //Log.d(TAG, "Generated ${cellRects.size} walkable cell rectangles")
         return cellRects
     }
 }

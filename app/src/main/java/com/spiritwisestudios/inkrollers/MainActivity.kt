@@ -60,7 +60,7 @@ class MainActivity : AppCompatActivity() {
       private const val TAG = "MainActivity"
       private val NEON_GREEN = Color.parseColor("#39FF14")
       private val NEON_BLUE = Color.parseColor("#1F51FF")
-      const val EXTRA_CAMPAIGN_LEVEL = "com.spiritwisestudios.inkrollers.CAMPAIGN_LEVEL"
+              const val EXTRA_CAMPAIGN_LEVEL = "com.spiritwisestudios.inkrollers.CAMPAIGN_LEVEL"
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -147,21 +147,63 @@ class MainActivity : AppCompatActivity() {
    */
   private fun setupUI() {
     val toggleButton = findViewById<Button>(R.id.btn_toggle)
-    // Initialize button for Paint mode (shows action to switch to Fill)
+    // Initialize button appearance for default PAINT mode (tap & hold to refill)
     toggleButton.setTextColor(Color.WHITE)
-    toggleButton.setBackgroundColor(Color.parseColor("#2196F3")) // Blue for Paint
-    toggleButton.text = "FILL"
-    toggleButton.setOnClickListener {
-        gameView.getLocalPlayer()?.let { player ->
-            player.toggleMode()
-            val isPaintMode = player.mode == 0
-            // Button text shows the next action
-            toggleButton.text = if (isPaintMode) "FILL" else "PAINT"
-            // Warm orange for Paint mode, cool blue for Fill mode
-            val bgColor = if (isPaintMode) Color.parseColor("#2196F3") else Color.parseColor("#FF9800")
-            toggleButton.setBackgroundColor(bgColor)
-            toggleButton.setTextColor(Color.WHITE)
+    toggleButton.setBackgroundColor(Color.parseColor("#2196F3")) // Blue indicates paint mode active
+    toggleButton.text = "REFILL"
+    toggleButton.isClickable = true
+    toggleButton.isFocusable = false  // Prevent focus issues
+
+    // Change behavior to hold-to-refill using touch listener
+    toggleButton.setOnTouchListener { view, event ->
+        val localPlayer = gameView.getLocalPlayer()
+        Log.d(TAG, "Button touch event: ${event.action} / ${event.actionMasked}")
+        Log.d(TAG, "Local player available: ${localPlayer != null}")
+        if (localPlayer != null) {
+            Log.d(TAG, "Current player mode: ${localPlayer.mode}")
         }
+        
+        when (event.action) {
+            android.view.MotionEvent.ACTION_DOWN -> {
+                Log.d(TAG, "REFILL button pressed - switching to FILL mode")
+                if (localPlayer != null) {
+                    Log.d(TAG, "Calling changeModeIfNeeded(1) on local player")
+                    localPlayer.changeModeIfNeeded(1)
+                    toggleButton.setBackgroundColor(Color.parseColor("#FF9800"))
+                    toggleButton.text = "REFILLING"
+                    // Add haptic feedback
+                    view.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                } else {
+                    Log.w(TAG, "Cannot switch to FILL mode - local player is null")
+                }
+                return@setOnTouchListener true
+            }
+            android.view.MotionEvent.ACTION_UP -> {
+                Log.d(TAG, "REFILL button released - switching to PAINT mode")
+                if (localPlayer != null) {
+                    Log.d(TAG, "Calling changeModeIfNeeded(0) on local player")
+                    localPlayer.changeModeIfNeeded(0)
+                    toggleButton.setBackgroundColor(Color.parseColor("#2196F3"))
+                    toggleButton.text = "REFILL"
+                } else {
+                    Log.w(TAG, "Cannot switch to PAINT mode - local player is null")
+                }
+                return@setOnTouchListener true
+            }
+            android.view.MotionEvent.ACTION_CANCEL -> {
+                Log.d(TAG, "REFILL button cancelled - switching to PAINT mode")
+                if (localPlayer != null) {
+                    Log.d(TAG, "Calling changeModeIfNeeded(0) on local player (cancel)")
+                    localPlayer.changeModeIfNeeded(0)
+                    toggleButton.setBackgroundColor(Color.parseColor("#2196F3"))
+                    toggleButton.text = "REFILL"
+                } else {
+                    Log.w(TAG, "Cannot switch to PAINT mode - local player is null (cancel)")
+                }
+                return@setOnTouchListener true
+            }
+        }
+        false
     }
 
     findViewById<Button>(R.id.btn_toggle_p2).visibility = android.view.View.GONE

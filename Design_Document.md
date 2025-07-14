@@ -282,6 +282,15 @@ The UI aims for simplicity and intuitiveness, suitable for a casual game.
 *   **Home Screen:** Clean, with a prominent "Play" button leading to game options. Profile access is also available.
 *   **Game Screen:** Dominated by the `GameView` for action. HUD elements are overlaid non-intrusively to provide essential game information. Controls include a virtual joystick and a mode toggle button.
 *   **Ink HUD (Visual Update July 2025):** The ink meter is now a pill-shaped bar, divided into 4 sections by 3 white lines. The ink fill animates within the pill, and the current mode is displayed below. This replaces the previous rectangular bar for improved clarity and aesthetics.
+*   **Fill/Paint Button (Unified Hold-to-Refill, July 2025):**
+    *   The Fill/Paint button now uses a unified **hold-to-refill** mechanic in both multiplayer and campaign modes.
+    *   **Behavior:**
+        *   **Press and hold:** Player enters FILL mode (button turns orange, text shows "REFILLING"). Ink is refilled if standing on own paint.
+        *   **Release:** Player returns to PAINT mode (button turns blue, text shows "REFILL").
+    *   **Implementation:**
+        *   Uses a `setOnTouchListener` on the button to detect ACTION_DOWN (enter FILL) and ACTION_UP/ACTION_CANCEL (return to PAINT).
+        *   Visual and haptic feedback provided for state changes.
+        *   This replaces the previous click-to-toggle logic in campaign mode for consistency.
 *   **Dialogs:** Standard Android `AlertDialogs` are used for matchmaking progress (waiting, countdown) and post-match interactions (rematch).
 *   **Profile Screen:** Allows users to customize their name, preferred colors, and catchphrase, and manage a friends list.
 
@@ -1034,3 +1043,10 @@ AndroidManifest.xml
     - Covered core functionalities including mode switching, ink depletion/refill logic under various conditions (correct color, different color, boundary limits), ink percentage calculation, basic player movement mechanics (position updates, boundary coercion), and collision-based movement (no collision, full collision, sliding along X/Y axes).
     - Resolved issues related to mocking Android SDK dependencies (e.g., `android.graphics.Paint`) by configuring `testOptions { unitTests.returnDefaultValues = true }` in `build.gradle`.
     - Addressed and fixed a subtle bug in test logic where mock setups for `PaintSurface.getPixelColor` did not account for player position changes before the color check, ensuring accurate testing of ink refill conditions.
+
+**2025-07-14**
+- **Unified Hold-to-Refill Fill/Paint Button:**
+    - Replaced the click-to-toggle Fill/Paint button in campaign mode with a hold-to-refill mechanic, matching multiplayer mode.
+    - Now, pressing and holding the button enters FILL mode (orange, "REFILLING"), and releasing returns to PAINT mode (blue, "REFILL").
+    - Implemented via `setOnTouchListener` in both `MainActivity` and `CampaignLevelActivity`.
+    - Updated UI documentation and rationale in Section 4.1.
