@@ -69,27 +69,44 @@ object ZoneOwnershipCalculator {
         val colorCounts = mutableMapOf<Int, Int>()
         var totalSamples = 0
         
+        // Get walkable cell rectangles from the maze level
+        val cellRects = level.getWalkableCellRects()
+        
         // Convert normalized zone coordinates to screen coordinates
         val (offsetX, offsetY) = viewportOffset
         val mazeWidth = bitmap.width - 2 * offsetX
         val mazeHeight = bitmap.height - 2 * offsetY
         
-        val screenLeft = (offsetX + normalizedZone.left * mazeWidth).toInt()
-        val screenTop = (offsetY + normalizedZone.top * mazeHeight).toInt()
-        val screenRight = (offsetX + normalizedZone.right * mazeWidth).toInt()
-        val screenBottom = (offsetY + normalizedZone.bottom * mazeHeight).toInt()
+        val screenLeft = offsetX + normalizedZone.left * mazeWidth
+        val screenTop = offsetY + normalizedZone.top * mazeHeight
+        val screenRight = offsetX + normalizedZone.right * mazeWidth
+        val screenBottom = offsetY + normalizedZone.bottom * mazeHeight
         
-        // Sample pixels within the zone
-        for (y in screenTop..screenBottom step sampleStep) {
-            for (x in screenLeft..screenRight step sampleStep) {
-                if (x >= 0 && x < bitmap.width && y >= 0 && y < bitmap.height) {
-                    // Skip wall pixels
-                    if (!level.checkCollision(x.toFloat(), y.toFloat())) {
-                        val pixel = bitmap.getPixel(x, y)
-                        // Skip transparent/background pixels
-                        if (android.graphics.Color.alpha(pixel) > 0) {
-                            colorCounts[pixel] = colorCounts.getOrDefault(pixel, 0) + 1
-                            totalSamples++
+        val zoneRect = RectF(screenLeft, screenTop, screenRight, screenBottom)
+        
+        // Sample pixels only within walkable cell rectangles that intersect with this zone
+        for (cellRect in cellRects) {
+            // Check if this cell rectangle intersects with the zone
+            if (RectF.intersects(cellRect, zoneRect)) {
+                // Calculate the intersection area
+                val intersectionRect = RectF()
+                intersectionRect.setIntersect(cellRect, zoneRect)
+                
+                val left = intersectionRect.left.toInt()
+                val top = intersectionRect.top.toInt()
+                val right = intersectionRect.right.toInt()
+                val bottom = intersectionRect.bottom.toInt()
+                
+                // Sample pixels within the intersection
+                for (y in top until bottom step sampleStep) {
+                    for (x in left until right step sampleStep) {
+                        if (x >= 0 && x < bitmap.width && y >= 0 && y < bitmap.height) {
+                            val pixel = bitmap.getPixel(x, y)
+                            // Skip transparent/background pixels
+                            if (android.graphics.Color.alpha(pixel) > 0) {
+                                colorCounts[pixel] = colorCounts.getOrDefault(pixel, 0) + 1
+                                totalSamples++
+                            }
                         }
                     }
                 }

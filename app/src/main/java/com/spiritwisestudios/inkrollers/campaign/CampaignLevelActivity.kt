@@ -210,6 +210,10 @@ class CampaignLevelActivity : AppCompatActivity() {
         gameView.setCampaignPlayer(localPlayer!!)
         Log.d(TAG, "Campaign player set up in GameView")
         
+        // Connect the paint surface to the campaign level
+        campaignLevel!!.setPaintSurface(paintSurface)
+        Log.d(TAG, "Paint surface connected to campaign level")
+        
         // Set up game mode manager
         levelData.timeLimit?.let { timeLimit ->
             gameModeManager = GameModeManager(GameMode.COVERAGE, timeLimit)

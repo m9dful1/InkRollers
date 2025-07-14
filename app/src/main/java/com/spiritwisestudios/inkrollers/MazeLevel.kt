@@ -482,4 +482,39 @@ class MazeLevel(
         Log.d(TAG, "Generated ${zones.size} zones for maze level")
         return zones
     }
+    
+    /**
+     * Get all walkable cell rectangles for accurate coverage calculation.
+     * Returns a list of RectF objects representing the walkable areas within each maze cell.
+     * This excludes wall areas and only includes the actual playable space.
+     */
+    fun getWalkableCellRects(): List<RectF> {
+        val cellRects = mutableListOf<RectF>()
+        val wallPadding = (wallThickness * scale) / 2f
+        
+        for (row in 0 until cellsY) {
+            for (col in 0 until cellsX) {
+                // Calculate the base cell rectangle
+                val left = viewportOffsetX + col * cellSize
+                val top = viewportOffsetY + row * cellSize
+                val right = left + cellSize
+                val bottom = top + cellSize
+                
+                // Shrink the rectangle to account for wall thickness
+                // This ensures we only count the actual walkable area within each cell
+                val adjustedLeft = left + wallPadding
+                val adjustedTop = top + wallPadding
+                val adjustedRight = right - wallPadding
+                val adjustedBottom = bottom - wallPadding
+                
+                // Only add valid rectangles (ensure they have positive dimensions)
+                if (adjustedRight > adjustedLeft && adjustedBottom > adjustedTop) {
+                    cellRects.add(RectF(adjustedLeft, adjustedTop, adjustedRight, adjustedBottom))
+                }
+            }
+        }
+        
+        Log.d(TAG, "Generated ${cellRects.size} walkable cell rectangles")
+        return cellRects
+    }
 }

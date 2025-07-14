@@ -47,6 +47,72 @@ object CoverageCalculator {
      * @return Map of color to coverage fraction (0.0 to 1.0)
      */
     fun calculate(level: Level, pixelProvider: PaintPixelProvider, sampleStep: Int = 4): Map<Int, Float> {
+        // For MazeLevel, use the more accurate cell-based calculation
+        if (level is MazeLevel) {
+            return calculateWithCellRects(level, pixelProvider, sampleStep)
+        }
+        
+        // For other level types, use the original method
+        return calculateOriginal(level, pixelProvider, sampleStep)
+    }
+    
+    /**
+     * Calculate coverage using walkable cell rectangles for MazeLevel.
+     * This provides more accurate coverage by only counting the actual playable maze area.
+     */
+    private fun calculateWithCellRects(level: MazeLevel, pixelProvider: PaintPixelProvider, sampleStep: Int): Map<Int, Float> {
+        // Handle invalid sample steps
+        val actualSampleStep = when {
+            sampleStep <= 0 -> 1
+            else -> sampleStep
+        }
+        
+        val colorCounts = mutableMapOf<Int, Int>()
+        var totalValidPixels = 0
+        
+        // Get walkable cell rectangles from the maze level
+        val cellRects = level.getWalkableCellRects()
+        
+        // Sample pixels only within the walkable cell rectangles
+        for (cellRect in cellRects) {
+            val left = cellRect.left.toInt()
+            val top = cellRect.top.toInt()
+            val right = cellRect.right.toInt()
+            val bottom = cellRect.bottom.toInt()
+            
+            for (y in top until bottom step actualSampleStep) {
+                for (x in left until right step actualSampleStep) {
+                    // Ensure we're within bounds
+                    if (x >= 0 && x < pixelProvider.w && y >= 0 && y < pixelProvider.h) {
+                        val pixelColor = pixelProvider.getPixelColor(x, y)
+                        
+                        // Skip transparent/unpainted pixels
+                        if (pixelColor == Color.TRANSPARENT || Color.alpha(pixelColor) == 0) {
+                            totalValidPixels++
+                            continue
+                        }
+                        
+                        // Count this colored pixel
+                        colorCounts[pixelColor] = colorCounts.getOrDefault(pixelColor, 0) + 1
+                        totalValidPixels++
+                    }
+                }
+            }
+        }
+        
+        // Convert counts to percentages
+        return if (totalValidPixels > 0) {
+            colorCounts.mapValues { (_, count) -> count.toFloat() / totalValidPixels }
+        } else {
+            emptyMap()
+        }
+    }
+    
+    /**
+     * Original coverage calculation method for non-MazeLevel types.
+     * This method samples the entire surface and skips wall pixels.
+     */
+    private fun calculateOriginal(level: Level, pixelProvider: PaintPixelProvider, sampleStep: Int): Map<Int, Float> {
         // Handle invalid sample steps
         val actualSampleStep = when {
             sampleStep <= 0 -> 1

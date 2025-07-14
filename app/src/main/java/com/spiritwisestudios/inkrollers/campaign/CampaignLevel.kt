@@ -109,10 +109,37 @@ class CampaignLevel(
             hardenedPaintAreas.add(hardenedPaint)
         }
         
-        // Initialize secret areas
+        // Initialize secret areas with proper coordinate transformation
         levelData.secretAreas.forEach { secretData ->
-            val secretArea = SecretArea(secretData, audioManager)
+            // Transform secret area coordinates from level data to screen coordinates
+            // Treat coordinates as relative positions within the maze (0.0-1.0 normalized)
+            val originalArea = secretData.area
+            
+            // Convert from absolute pixel coordinates to normalized coordinates (0.0-1.0)
+            // Assuming the level data coordinates are in a 0-1000 range, normalize them
+            val normalizedLeft = originalArea.left / 1000f
+            val normalizedTop = originalArea.top / 1000f
+            val normalizedRight = originalArea.right / 1000f
+            val normalizedBottom = originalArea.bottom / 1000f
+            
+            // Transform to screen coordinates using maze coordinate system
+            val (screenLeft, screenTop) = mazeLevel.mazeToScreenCoord(normalizedLeft, normalizedTop)
+            val (screenRight, screenBottom) = mazeLevel.mazeToScreenCoord(normalizedRight, normalizedBottom)
+            
+            // Create transformed secret area data
+            val transformedArea = RectF(screenLeft, screenTop, screenRight, screenBottom)
+            val transformedSecretData = secretData.copy(area = transformedArea)
+            
+            val secretArea = SecretArea(transformedSecretData, audioManager)
+            secretArea.setCampaignLevel(this)
             secretAreas.add(secretArea)
+            
+            Log.d(TAG, "Created secret area:")
+            Log.d(TAG, "  Original data: (${originalArea.left}, ${originalArea.top}, ${originalArea.right}, ${originalArea.bottom})")
+            Log.d(TAG, "  Normalized: ($normalizedLeft, $normalizedTop, $normalizedRight, $normalizedBottom)")
+            Log.d(TAG, "  Screen coords: ($screenLeft, $screenTop, $screenRight, $screenBottom)")
+            Log.d(TAG, "  Maze viewport: ${mazeLevel.getViewportOffset()}")
+            Log.d(TAG, "  Maze scale: ${mazeLevel.getScale()}")
         }
         
         totalSecrets = secretAreas.size
@@ -276,6 +303,11 @@ class CampaignLevel(
         val playerY = player.y
         val currentFrequency = player.getCurrentFrequency()
         
+        // Update secret area distances for visual feedback
+        secretAreas.forEach { secretArea ->
+            secretArea.updatePlayerDistance(playerX, playerY)
+        }
+        
         // Trigger color shift effect when player changes frequency
         // This will be called from Player.toggleColorShift()
         campaignEffects.triggerColorShiftEffect(player)
@@ -420,6 +452,7 @@ class CampaignLevel(
     
     fun setPaintSurface(surface: PaintSurface) {
         this.paintSurface = surface
+        secretAreas.forEach { it.setPaintSurface(surface) }
     }
     
     private fun getPaintSurface(): PaintSurface? = paintSurface

@@ -18,20 +18,26 @@ class SecretArea(
     
     companion object {
         private const val TAG = "SecretArea"
-        private const val PROXIMITY_RADIUS = 30f
-        private const val MEDIUM_DISTANCE = 80f
-        private const val FAR_DISTANCE = 120f
+        private const val PROXIMITY_RADIUS = 100f  // Increased from 30f
+        private const val MEDIUM_DISTANCE = 200f   // Increased from 80f
+        private const val FAR_DISTANCE = 300f     // Increased from 120f
+        private const val DEBUG_MODE = true        // Make secret areas always visible for testing
     }
     
     private var isDiscovered = false
     private var discoveryAnimation = 0f
     private var proximityAnimation = 0f
     private var lastPlayerDistance = Float.MAX_VALUE
+    private var creationTime = System.currentTimeMillis()
+    
+    // References for unlock condition checking
+    private var campaignLevel: com.spiritwisestudios.inkrollers.campaign.CampaignLevel? = null
+    private var paintSurface: com.spiritwisestudios.inkrollers.PaintSurface? = null
     
     // Visual elements for different states
     private val discoveryPaint = Paint().apply {
         style = Paint.Style.STROKE
-        strokeWidth = 4f
+        strokeWidth = 6f  // Increased from 4f
         isAntiAlias = true
     }
     
@@ -42,8 +48,16 @@ class SecretArea(
     
     private val pulsePaint = Paint().apply {
         style = Paint.Style.STROKE
-        strokeWidth = 2f
+        strokeWidth = 4f  // Increased from 2f
         isAntiAlias = true
+    }
+    
+    private val debugPaint = Paint().apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 3f
+        isAntiAlias = true
+        color = Color.WHITE
+        alpha = 180
     }
     
     /**
@@ -103,27 +117,98 @@ class SecretArea(
      * Check if unlock condition is met
      */
     private fun checkUnlockCondition(playerX: Float, playerY: Float, playerFrequency: ColorFrequency?): Boolean {
-        // TODO: Use playerX and playerY for paint detection and robot proximity checks
         return when (secretData.unlockCondition) {
             SecretUnlockCondition.PROXIMITY_ONLY -> true
             SecretUnlockCondition.FREQUENCY_MATCH -> playerFrequency == secretData.requiredFrequency
             SecretUnlockCondition.PAINT_REQUIRED -> {
-                // For now, just check frequency match
-                // TODO: Implement actual paint detection
-                playerFrequency == secretData.requiredFrequency
+                // Check if the area is painted with the correct frequency color
+                checkAreaPainted(playerFrequency)
             }
             SecretUnlockCondition.TIME_THRESHOLD -> {
-                // For now, always allow
-                // TODO: Implement time-based unlocking
-                true
+                // Check if enough time has passed (e.g., 30 seconds)
+                val timeElapsed = System.currentTimeMillis() - creationTime
+                timeElapsed >= 30000L // 30 seconds
             }
             SecretUnlockCondition.ROBOT_ASSISTED -> {
-                // For now, always allow
-                // TODO: Implement robot proximity check
-                true
+                // Check if there's a converted robot nearby
+                checkRobotProximity(playerX, playerY)
             }
             null -> true
         }
+    }
+    
+    /**
+     * Check if the secret area is painted with the correct color
+     */
+    private fun checkAreaPainted(playerFrequency: ColorFrequency?): Boolean {
+        if (paintSurface == null || playerFrequency == null) return false
+        
+        val requiredColor = when (playerFrequency) {
+            ColorFrequency.RED -> android.graphics.Color.RED
+            ColorFrequency.BLUE -> android.graphics.Color.BLUE
+            ColorFrequency.GREEN -> android.graphics.Color.GREEN
+            ColorFrequency.YELLOW -> android.graphics.Color.YELLOW
+        }
+        
+        // Sample several points within the secret area
+        val samplePoints = 5
+        var paintedPoints = 0
+        
+        for (i in 0 until samplePoints) {
+            for (j in 0 until samplePoints) {
+                val sampleX = secretData.area.left + (secretData.area.width() * i / (samplePoints - 1))
+                val sampleY = secretData.area.top + (secretData.area.height() * j / (samplePoints - 1))
+                
+                if (sampleX >= 0 && sampleX < paintSurface!!.w && sampleY >= 0 && sampleY < paintSurface!!.h) {
+                    val pixelColor = paintSurface!!.getPixelColor(sampleX.toInt(), sampleY.toInt())
+                    if (pixelColor == requiredColor) {
+                        paintedPoints++
+                    }
+                }
+            }
+        }
+        
+        // Require at least 60% of sample points to be painted with correct color
+        return paintedPoints >= (samplePoints * samplePoints * 0.6f)
+    }
+    
+    /**
+     * Check if there's a converted robot within proximity
+     */
+    private fun checkRobotProximity(playerX: Float, playerY: Float): Boolean {
+        if (campaignLevel == null) return false
+        
+        val robots = campaignLevel!!.getRobots()
+        val proximityRadius = 100f // Robots must be within 100 pixels
+        
+        for (robot in robots) {
+            if (robot.isFullyConverted()) {
+                val robotBounds = robot.getBounds()
+                val robotCenterX = robotBounds.centerX()
+                val robotCenterY = robotBounds.centerY()
+                
+                val distance = sqrt((playerX - robotCenterX).pow(2) + (playerY - robotCenterY).pow(2))
+                if (distance <= proximityRadius) {
+                    return true
+                }
+            }
+        }
+        
+        return false
+    }
+    
+    /**
+     * Set campaign level reference for unlock condition checking
+     */
+    fun setCampaignLevel(level: com.spiritwisestudios.inkrollers.campaign.CampaignLevel) {
+        this.campaignLevel = level
+    }
+    
+    /**
+     * Set paint surface reference for unlock condition checking
+     */
+    fun setPaintSurface(surface: com.spiritwisestudios.inkrollers.PaintSurface) {
+        this.paintSurface = surface
     }
     
     /**
@@ -144,9 +229,23 @@ class SecretArea(
     }
     
     /**
+     * Update player distance for visual feedback (should be called from CampaignLevel)
+     */
+    fun updatePlayerDistance(playerX: Float, playerY: Float) {
+        val centerX = (secretData.area.left + secretData.area.right) / 2f
+        val centerY = (secretData.area.top + secretData.area.bottom) / 2f
+        
+        lastPlayerDistance = sqrt((playerX - centerX).pow(2) + (playerY - centerY).pow(2))
+    }
+    
+    /**
      * Draw the secret area with enhanced visual feedback
      */
     fun draw(canvas: Canvas) {
+        if (DEBUG_MODE) {
+            drawDebugSecret(canvas)
+        }
+        
         if (isDiscovered) {
             drawDiscoveredSecret(canvas)
         } else {
@@ -155,19 +254,46 @@ class SecretArea(
     }
     
     /**
+     * Draw debug version of secret area (always visible for testing)
+     */
+    private fun drawDebugSecret(canvas: Canvas) {
+        val secretColor = getSecretColor()
+        
+        // Always draw a visible outline
+        debugPaint.color = secretColor
+        debugPaint.alpha = 200
+        canvas.drawRect(secretData.area, debugPaint)
+        
+        // Draw distance indicator
+        val distanceText = "Dist: ${lastPlayerDistance.toInt()}"
+        val textPaint = Paint().apply {
+            color = Color.WHITE
+            textSize = 24f
+            isAntiAlias = true
+        }
+        canvas.drawText(distanceText, secretData.area.left, secretData.area.top - 10f, textPaint)
+        
+        // Draw frequency requirement
+        val freqText = "Freq: ${secretData.requiredFrequency ?: "None"}"
+        canvas.drawText(freqText, secretData.area.left, secretData.area.bottom + 30f, textPaint)
+    }
+    
+    /**
      * Draw undiscovered secret with proximity-based feedback
      */
     private fun drawUndiscoveredSecret(canvas: Canvas) {
+        if (DEBUG_MODE) return // Skip normal drawing in debug mode
+        
         val secretColor = getSecretColor()
         
         when {
             lastPlayerDistance <= PROXIMITY_RADIUS -> {
                 // Very close - bright glow
-                val alpha = 150
+                val alpha = 255  // Increased from 150
                 discoveryPaint.color = secretColor
                 discoveryPaint.alpha = alpha
                 glowPaint.color = secretColor
-                glowPaint.alpha = (alpha * 0.3f).toInt()
+                glowPaint.alpha = (alpha * 0.5f).toInt()  // Increased from 0.3f
                 
                 canvas.drawRect(secretData.area, glowPaint)
                 canvas.drawRect(secretData.area, discoveryPaint)
@@ -175,20 +301,20 @@ class SecretArea(
             lastPlayerDistance <= MEDIUM_DISTANCE -> {
                 // Medium distance - pulsing outline
                 val pulseIntensity = (0.5f + 0.5f * kotlin.math.sin(proximityAnimation)).toFloat()
-                val alpha = (100 * pulseIntensity).toInt()
+                val alpha = (200 * pulseIntensity).toInt()  // Increased from 100
                 
                 discoveryPaint.color = secretColor
                 discoveryPaint.alpha = alpha
-                discoveryPaint.strokeWidth = 3f
+                discoveryPaint.strokeWidth = 5f  // Increased from 3f
                 
                 canvas.drawRect(secretData.area, discoveryPaint)
             }
             lastPlayerDistance <= FAR_DISTANCE -> {
-                // Far distance - very subtle hint
-                val alpha = 30
+                // Far distance - subtle hint
+                val alpha = 100  // Increased from 30
                 discoveryPaint.color = secretColor
                 discoveryPaint.alpha = alpha
-                discoveryPaint.strokeWidth = 1f
+                discoveryPaint.strokeWidth = 2f  // Increased from 1f
                 
                 canvas.drawRect(secretData.area, discoveryPaint)
             }

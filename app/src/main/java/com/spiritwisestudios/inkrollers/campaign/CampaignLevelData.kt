@@ -140,7 +140,7 @@ object CampaignLevels {
         hardenedPaintAreas = emptyList(),
         secretAreas = listOf(
             SecretAreaData(
-                area = RectF(50f, 50f, 80f, 80f),
+                area = RectF(200f, 200f, 400f, 400f), // Much larger area for testing - positioned in upper-left quadrant
                 secretType = SecretType.STORY_FRAGMENT,
                 description = "Hidden Reclamation Corps message",
                 requiredFrequency = ColorFrequency.RED,
