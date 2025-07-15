@@ -192,31 +192,29 @@ class CampaignLevel(
             Log.d(TAG, "  Original: (${originalArea.left}, ${originalArea.top}, ${originalArea.right}, ${originalArea.bottom})")
             Log.d(TAG, "  Screen: ($screenLeft, $screenTop, $screenRight, $screenBottom)")
         } ?: run {
-            // For single-path levels without explicit exit zone, create one at the maze exit
-            if (levelData.requiresSinglePath) {
-                // Get the maze exit position (bottom-right corner in normalized coordinates)
-                val (exitScreenX, exitScreenY) = mazeLevel.getPlayerStartPosition(1) // Player 1 starts at exit
-                
-                // Create exit zone around the maze exit position
-                val exitSize = 60f // Size of the exit zone in pixels
-                val exitArea = RectF(
-                    exitScreenX - exitSize / 2,
-                    exitScreenY - exitSize / 2,
-                    exitScreenX + exitSize / 2,
-                    exitScreenY + exitSize / 2
-                )
-                
-                val autoExitData = ExitZoneData(
-                    area = exitArea,
-                    description = "Maze Exit"
-                )
-                
-                exitZone = ExitZone(autoExitData, audioManager)
-                
-                Log.d(TAG, "Auto-created exit zone at maze exit:")
-                Log.d(TAG, "  Position: ($exitScreenX, $exitScreenY)")
-                Log.d(TAG, "  Area: (${exitArea.left}, ${exitArea.top}, ${exitArea.right}, ${exitArea.bottom})")
-            }
+            // For levels without explicit exit zone, create one at the maze exit
+            // Get the maze exit position (bottom-right corner in normalized coordinates)
+            val (exitScreenX, exitScreenY) = mazeLevel.getPlayerStartPosition(1) // Player 1 starts at exit
+            
+            // Create exit zone around the maze exit position
+            val exitSize = 60f // Size of the exit zone in pixels
+            val exitArea = RectF(
+                exitScreenX - exitSize / 2,
+                exitScreenY - exitSize / 2,
+                exitScreenX + exitSize / 2,
+                exitScreenY + exitSize / 2
+            )
+            
+            val autoExitData = ExitZoneData(
+                area = exitArea,
+                description = "Maze Exit"
+            )
+            
+            exitZone = ExitZone(autoExitData, audioManager)
+            
+            Log.d(TAG, "Auto-created exit zone at maze exit:")
+            Log.d(TAG, "  Position: ($exitScreenX, $exitScreenY)")
+            Log.d(TAG, "  Area: (${exitArea.left}, ${exitArea.top}, ${exitArea.right}, ${exitArea.bottom})")
         }
         
         Log.d(TAG, "Setup campaign elements: ${robots.size} robots, ${securityDevices.size} devices, ${hardenedPaintAreas.size} hardened areas, ${doorActivators.size} door activators, exit zone: ${exitZone != null}")

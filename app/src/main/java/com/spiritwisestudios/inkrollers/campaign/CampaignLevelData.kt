@@ -207,15 +207,15 @@ object CampaignLevels {
         doorActivators = listOf(
             DoorActivatorData(
                 /*
-                // left  top  right bottom
+                // (1)left  (2)top  (3)right  (4)bottom
                 // Movement Rules:
-                // Move RIGHT: Increase left and right by same amount
-                // Move DOWN: Increase top and bottom by same amount
-                // Move LEFT: Decrease left and right by same amount
-                // Move UP: Decrease top and bottom by same amount
+                // Move RIGHT: Increase (1)left and (3)right by same amount
+                // Move DOWN: Increase (2)top and (4)bottom by same amount
+                // Move LEFT: Decrease (1)left and (3)right by same amount
+                // Move UP: Decrease (2)top and (4)bottom by same amount
                 */
-                activatorArea = RectF(470f, 515f, 520f, 610f), // 50x50 activator square positioned near the path
-                wallArea = RectF(530f, 510f, 555f, 610f), // 30x90 door wall blocking the main path corridor
+                activatorArea = RectF(370f, 515f, 420f, 610f), // 50x50 activator square positioned near the path
+                wallArea = RectF(430f, 510f, 455f, 610f), // 30x90 door wall blocking the main path corridor
                 requiredFrequency = ColorFrequency.RED,
                 description = "Main pathway door"
             )
@@ -241,16 +241,16 @@ object CampaignLevels {
                 x = 150f,
                 y = 150f,
                 patrolPath = listOf(
-                    150f to 150f,
-                    300f to 150f
+                    250f to 250f,
+                    600f to 250f
                 )
             ),
             RobotData(
-                x = 250f,
-                y = 250f,
+                x = 650f,
+                y = 650f,
                 patrolPath = listOf(
-                    250f to 250f,
-                    400f to 250f
+                    650f to 650f,
+                    400f to 650f
                 )
             )
         ),
@@ -271,16 +271,13 @@ object CampaignLevels {
         ),
         doorActivators = listOf(
             DoorActivatorData(
-                activatorArea = RectF(320f, 320f, 360f, 360f),
-                wallArea = RectF(370f, 300f, 390f, 380f),
+                activatorArea = RectF(440f, 820f, 480f, 870f),
+                wallArea = RectF(490f, 800f, 510f, 890f),
                 requiredFrequency = ColorFrequency.BLUE,
                 description = "Secondary access door"
             )
         ),
-        exitZone = ExitZoneData(
-            area = RectF(450f, 450f, 500f, 500f),
-            description = "Level Exit"
-        ),
+        exitZone = null, // Will be positioned at maze exit automatically
         requiredCoverage = 0.6f,
         timeLimit = null,
         mazeComplexity = "MEDIUM",
@@ -348,22 +345,25 @@ object CampaignLevels {
         ),
         doorActivators = listOf(
             DoorActivatorData(
-                activatorArea = RectF(380f, 380f, 420f, 420f),
-                wallArea = RectF(430f, 360f, 450f, 440f),
+                activatorArea = RectF(410f, 330f, 430f, 410f), //LBRT
+                wallArea = RectF(390f, 330f, 410f, 410f),
                 requiredFrequency = ColorFrequency.GREEN,
                 description = "Access tunnel door"
             ),
             DoorActivatorData(
-                activatorArea = RectF(40f, 40f, 80f, 80f),
-                wallArea = RectF(90f, 20f, 110f, 100f),
+                activatorArea = RectF(820f, 670f, 840f, 750f),
+                wallArea = RectF(840f, 670f, 860f, 750f),
+                requiredFrequency = ColorFrequency.YELLOW,
+                description = "Document archive door"
+            ),
+            DoorActivatorData(
+                activatorArea = RectF(415f, 991f, 435f, 921f),
+                wallArea = RectF(435f, 991f, 455f, 921f),
                 requiredFrequency = ColorFrequency.YELLOW,
                 description = "Document archive door"
             )
         ),
-        exitZone = ExitZoneData(
-            area = RectF(500f, 500f, 550f, 550f),
-            description = "Level Exit"
-        ),
+        exitZone = null, // Will be positioned at maze exit automatically
         requiredCoverage = 0.8f,
         timeLimit = 300000L, // 5 minutes
         mazeComplexity = "HIGH",
@@ -447,10 +447,7 @@ object CampaignLevels {
                 description = "Power core access door"
             )
         ),
-        exitZone = ExitZoneData(
-            area = RectF(550f, 550f, 600f, 600f),
-            description = "Power Plant Exit"
-        ),
+        exitZone = null, // Will be positioned at maze exit automatically
         requiredCoverage = 0.9f,
         timeLimit = 240000L, // 4 minutes
         mazeComplexity = "HIGH",
@@ -522,10 +519,7 @@ object CampaignLevels {
                 description = "Backup system door"
             )
         ),
-        exitZone = ExitZoneData(
-            area = RectF(500f, 500f, 550f, 550f),
-            description = "Data Hub Exit"
-        ),
+        exitZone = null, // Will be positioned at maze exit automatically
         requiredCoverage = 0.9f,
         timeLimit = 300000L, // 5 minutes
         mazeComplexity = "HIGH",

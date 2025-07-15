@@ -542,7 +542,12 @@ class CampaignLevelActivity : AppCompatActivity() {
                 levelData = levelData
             )
         } else {
-            LevelGrading.calculateBasicGrade(timeTaken, levelData ?: CampaignLevels.LEVEL_1)
+            LevelGrading.calculateBasicGrade(
+                timeTaken = timeTaken,
+                secretsFound = doorsActivated,
+                totalSecrets = totalDoors,
+                levelData = levelData ?: CampaignLevels.LEVEL_1
+            )
         }
         
         // Save level completion

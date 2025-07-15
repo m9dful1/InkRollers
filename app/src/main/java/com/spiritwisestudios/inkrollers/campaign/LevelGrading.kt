@@ -26,7 +26,7 @@ object LevelGrading {
         
         // Use basic grading if configured
         if (config.useBasicGrading) {
-            return calculateBasicGrade(timeTaken, levelData)
+            return calculateBasicGrade(timeTaken, secretsFound, totalSecrets, levelData)
         }
         
         var score: Int
@@ -96,12 +96,15 @@ object LevelGrading {
      */
     fun calculateBasicGrade(
         timeTaken: Long,
+        secretsFound: Int,
+        totalSecrets: Int,
         levelData: CampaignLevelData
     ): CampaignManager.LevelGrade {
         
         val config = levelData.gradingConfig
         var score = config.baseCompletionScore // Use configurable base score
         var timeBonus = 0
+        var secretsBonus = 0
         
         // Time bonus (if level has time limit)
         levelData.timeLimit?.let { timeLimit ->
@@ -114,7 +117,14 @@ object LevelGrading {
             }
         }
         
-        score += timeBonus
+        // Secrets bonus (doors activated)
+        if (totalSecrets > 0) {
+            val secretsRatio = secretsFound.toFloat() / totalSecrets.toFloat()
+            val maxSecretsBonus = config.secretsBonusConfig.maxSecretsBonus
+            secretsBonus = (secretsRatio * maxSecretsBonus).toInt()
+        }
+        
+        score += timeBonus + secretsBonus
         
         // Determine grade based on basic grading thresholds
         // For basic grading, we use simpler thresholds
@@ -126,7 +136,7 @@ object LevelGrading {
             else -> "F"
         }
         
-        Log.d(TAG, "Basic level grading - Score: $score, Grade: $grade, Time: $timeBonus")
+        Log.d(TAG, "Basic level grading - Score: $score, Grade: $grade, Time: $timeBonus, Secrets: $secretsBonus")
         
         return CampaignManager.LevelGrade(
             grade = grade,
@@ -134,7 +144,7 @@ object LevelGrading {
             timeBonus = timeBonus,
             efficiencyBonus = 0,
             robotBonus = 0,
-            secretsBonus = 0
+            secretsBonus = secretsBonus
         )
     }
 } 

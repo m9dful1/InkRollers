@@ -24,7 +24,7 @@ If you don't specify a `gradingConfig`, the system uses these defaults:
 
 ### Score Calculation
 **Standard Grading**: `Score = Time Bonus + Efficiency Bonus + Robot Bonus + Secrets Bonus`
-**Basic Grading**: `Score = Base Score + Time Bonus` (simpler, more lenient)
+**Basic Grading**: `Score = Base Score + Time Bonus + Secrets Bonus` (simpler, more lenient)
 
 ## Configuration Examples
 
@@ -33,10 +33,10 @@ If you don't specify a `gradingConfig`, the system uses these defaults:
 val TUTORIAL_LEVEL = CampaignLevelData(
     // ... other properties ...
     gradingConfig = LevelGradingConfig(
-        useBasicGrading = true,           // Simpler scoring
+        useBasicGrading = true,           // Simpler scoring (base + time + secrets)
         baseCompletionScore = 100,        // Base score for completion
         secretsBonusConfig = SecretsBonusConfig(
-            maxSecretsBonus = 50          // Lower bonus for tutorial
+            maxSecretsBonus = 50          // Bonus for activating doors
         )
     )
 )
