@@ -25,21 +25,24 @@ class MazeLevelTest {
             screenW = testScreenWidth,
             screenH = testScreenHeight,
             complexity = HomeActivity.COMPLEXITY_LOW,
-            seed = testSeed
+            seed = testSeed,
+            pathType = MazeLevel.PathType.MULTIPLE_PATHS
         )
         
         mediumComplexityMaze = MazeLevel(
             screenW = testScreenWidth,
             screenH = testScreenHeight,
             complexity = HomeActivity.COMPLEXITY_MEDIUM,
-            seed = testSeed
+            seed = testSeed,
+            pathType = MazeLevel.PathType.MULTIPLE_PATHS
         )
         
         highComplexityMaze = MazeLevel(
             screenW = testScreenWidth,
             screenH = testScreenHeight,
             complexity = HomeActivity.COMPLEXITY_HIGH,
-            seed = testSeed
+            seed = testSeed,
+            pathType = MazeLevel.PathType.MULTIPLE_PATHS
         )
     }
 
@@ -85,9 +88,9 @@ class MazeLevelTest {
     @Test
     fun mazeGeneration_withSameSeed_producesIdenticalMaze() {
         val maze1 = MazeLevel(testScreenWidth, testScreenHeight, 
-                             complexity = HomeActivity.COMPLEXITY_HIGH, seed = testSeed)
+                             complexity = HomeActivity.COMPLEXITY_HIGH, seed = testSeed, pathType = MazeLevel.PathType.MULTIPLE_PATHS)
         val maze2 = MazeLevel(testScreenWidth, testScreenHeight, 
-                             complexity = HomeActivity.COMPLEXITY_HIGH, seed = testSeed)
+                             complexity = HomeActivity.COMPLEXITY_HIGH, seed = testSeed, pathType = MazeLevel.PathType.MULTIPLE_PATHS)
         
         val walls1 = maze1.getWalls()
         val walls2 = maze2.getWalls()

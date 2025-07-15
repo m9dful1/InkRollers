@@ -374,26 +374,42 @@ class CampaignLevelActivity : AppCompatActivity() {
         // Update level name
         binding.textLevelName.text = levelData.levelName
         
-        // Update coverage objective
-        val coveragePercent = (levelData.requiredCoverage * 100).toInt()
-        binding.textCoverageObjective.text = "• Paint $coveragePercent% of the area"
-        
-        // Update robots objective
-        val robotCount = levelData.robotPositions.size
-        if (robotCount > 0) {
-            binding.textRobotsObjective.text = "• Convert $robotCount robot${if (robotCount != 1) "s" else ""}"
+        // Special objectives for tutorial level (level_1)
+        if (levelData.levelId == "level_1") {
+            // Tutorial objectives: Ink door activator and reach exit
+            binding.textCoverageObjective.text = "• Ink door activator"
+            binding.textCoverageObjective.visibility = android.view.View.VISIBLE
+            
+            binding.textRobotsObjective.text = "• Make it to the end of maze"
             binding.textRobotsObjective.visibility = android.view.View.VISIBLE
-        } else {
-            binding.textRobotsObjective.visibility = android.view.View.GONE
-        }
-        
-        // Update secrets objective
-        val secretCount = levelData.secretAreas.size
-        if (secretCount > 0) {
-            binding.textSecretsObjective.text = "• Find $secretCount secret area${if (secretCount != 1) "s" else ""}"
-            binding.textSecretsObjective.visibility = android.view.View.VISIBLE
-        } else {
+            
+            // Hide secrets objective for tutorial
             binding.textSecretsObjective.visibility = android.view.View.GONE
+        } else {
+            // Standard objectives for other levels
+            
+            // Update coverage objective
+            val coveragePercent = (levelData.requiredCoverage * 100).toInt()
+            binding.textCoverageObjective.text = "• Paint $coveragePercent% of the area"
+            binding.textCoverageObjective.visibility = android.view.View.VISIBLE
+            
+            // Update robots objective
+            val robotCount = levelData.robotPositions.size
+            if (robotCount > 0) {
+                binding.textRobotsObjective.text = "• Convert $robotCount robot${if (robotCount != 1) "s" else ""}"
+                binding.textRobotsObjective.visibility = android.view.View.VISIBLE
+            } else {
+                binding.textRobotsObjective.visibility = android.view.View.GONE
+            }
+            
+            // Update door activators objective (replaces secrets)
+            val doorCount = levelData.doorActivators.size
+            if (doorCount > 0) {
+                binding.textSecretsObjective.text = "• Activate $doorCount door${if (doorCount != 1) "s" else ""}"
+                binding.textSecretsObjective.visibility = android.view.View.VISIBLE
+            } else {
+                binding.textSecretsObjective.visibility = android.view.View.GONE
+            }
         }
     }
     
@@ -423,49 +439,77 @@ class CampaignLevelActivity : AppCompatActivity() {
                 
                 // Update objectives with completion status
                 updateObjectiveCompletion(level, totalCoverage)
-                
-                // Check for level completion
-                if (!levelCompleted && totalCoverage >= level.getRequiredCoverage()) {
-                    handleLevelCompletion()
-                }
             }
         }
     }
     
     private fun updateObjectiveCompletion(level: CampaignLevel, totalCoverage: Float) {
         val levelData = level.getLevelData()
-        val requiredCoverage = levelData.requiredCoverage
         val gradingStats = level.getGradingStats()
         
-        // Update coverage objective
-        val coveragePercent = (requiredCoverage * 100).toInt()
-        val currentPercent = (totalCoverage * 100).toInt()
-        val coverageComplete = totalCoverage >= requiredCoverage
-        val coverageCheckmark = if (coverageComplete) "✓" else "•"
-        val coverageColor = if (coverageComplete) android.graphics.Color.GREEN else android.graphics.Color.WHITE
-        binding.textCoverageObjective.text = "$coverageCheckmark Paint $coveragePercent% of the area ($currentPercent%)"
-        binding.textCoverageObjective.setTextColor(coverageColor)
-        
-        // Update robots objective
-        val robotsConverted = gradingStats["robotsConverted"] as? Int ?: 0
-        val totalRobots = gradingStats["totalRobots"] as? Int ?: 0
-        if (totalRobots > 0) {
-            val robotsComplete = robotsConverted >= totalRobots
-            val robotsCheckmark = if (robotsComplete) "✓" else "•"
-            val robotsColor = if (robotsComplete) android.graphics.Color.GREEN else android.graphics.Color.WHITE
-            binding.textRobotsObjective.text = "$robotsCheckmark Convert $totalRobots robot${if (totalRobots != 1) "s" else ""} ($robotsConverted/$totalRobots)"
-            binding.textRobotsObjective.setTextColor(robotsColor)
-        }
-        
-        // Update secrets objective
-        val secretsFound = gradingStats["secretsFound"] as? Int ?: 0
-        val totalSecrets = gradingStats["totalSecrets"] as? Int ?: 0
-        if (totalSecrets > 0) {
-            val secretsComplete = secretsFound >= totalSecrets
-            val secretsCheckmark = if (secretsComplete) "✓" else "•"
-            val secretsColor = if (secretsComplete) android.graphics.Color.GREEN else android.graphics.Color.WHITE
-            binding.textSecretsObjective.text = "$secretsCheckmark Find $totalSecrets secret area${if (totalSecrets != 1) "s" else ""} ($secretsFound/$totalSecrets)"
-            binding.textSecretsObjective.setTextColor(secretsColor)
+        // Special completion logic for tutorial level (level_1)
+        if (levelData.levelId == "level_1") {
+            val doorsActivated = gradingStats["doorsActivated"] as? Int ?: 0
+            val totalDoors = gradingStats["totalDoors"] as? Int ?: 0
+            val reachedExit = gradingStats["reachedExit"] as? Boolean ?: false
+            
+            // Update door activator objective
+            val doorComplete = doorsActivated >= totalDoors
+            val doorCheckmark = if (doorComplete) "✓" else "•"
+            val doorColor = if (doorComplete) android.graphics.Color.GREEN else android.graphics.Color.WHITE
+            binding.textCoverageObjective.text = "$doorCheckmark Ink door activator"
+            binding.textCoverageObjective.setTextColor(doorColor)
+            
+            // Update exit objective
+            val exitCheckmark = if (reachedExit) "✓" else "•"
+            val exitColor = if (reachedExit) android.graphics.Color.GREEN else android.graphics.Color.WHITE
+            binding.textRobotsObjective.text = "$exitCheckmark Make it to the end of maze"
+            binding.textRobotsObjective.setTextColor(exitColor)
+            
+            // Check for level completion (tutorial only needs exit)
+            if (!levelCompleted && reachedExit) {
+                handleLevelCompletion()
+            }
+        } else {
+            // Standard completion logic for other levels
+            val requiredCoverage = levelData.requiredCoverage
+            val robotsConverted = gradingStats["robotsConverted"] as? Int ?: 0
+            val totalRobots = gradingStats["totalRobots"] as? Int ?: 0
+            val doorsActivated = gradingStats["doorsActivated"] as? Int ?: 0
+            val totalDoors = gradingStats["totalDoors"] as? Int ?: 0
+            val reachedExit = gradingStats["reachedExit"] as? Boolean ?: false
+            
+            // Update coverage objective
+            val coveragePercent = (requiredCoverage * 100).toInt()
+            val currentPercent = (totalCoverage * 100).toInt()
+            val coverageComplete = totalCoverage >= requiredCoverage
+            val coverageCheckmark = if (coverageComplete) "✓" else "•"
+            val coverageColor = if (coverageComplete) android.graphics.Color.GREEN else android.graphics.Color.WHITE
+            binding.textCoverageObjective.text = "$coverageCheckmark Paint $coveragePercent% of the area ($currentPercent%)"
+            binding.textCoverageObjective.setTextColor(coverageColor)
+            
+            // Update robots objective
+            if (totalRobots > 0) {
+                val robotsComplete = robotsConverted >= totalRobots
+                val robotsCheckmark = if (robotsComplete) "✓" else "•"
+                val robotsColor = if (robotsComplete) android.graphics.Color.GREEN else android.graphics.Color.WHITE
+                binding.textRobotsObjective.text = "$robotsCheckmark Convert $totalRobots robot${if (totalRobots != 1) "s" else ""} ($robotsConverted/$totalRobots)"
+                binding.textRobotsObjective.setTextColor(robotsColor)
+            }
+            
+            // Update doors objective (replaces secrets)
+            if (totalDoors > 0) {
+                val doorsComplete = doorsActivated >= totalDoors
+                val doorsCheckmark = if (doorsComplete) "✓" else "•"
+                val doorsColor = if (doorsComplete) android.graphics.Color.GREEN else android.graphics.Color.WHITE
+                binding.textSecretsObjective.text = "$doorsCheckmark Activate $totalDoors door${if (totalDoors != 1) "s" else ""} ($doorsActivated/$totalDoors)"
+                binding.textSecretsObjective.setTextColor(doorsColor)
+            }
+            
+            // Check for level completion (coverage + exit for other levels)
+            if (!levelCompleted && totalCoverage >= requiredCoverage && reachedExit) {
+                handleLevelCompletion()
+            }
         }
     }
     
@@ -479,8 +523,8 @@ class CampaignLevelActivity : AppCompatActivity() {
         val gradingStats = campaignLevel?.getGradingStats() ?: emptyMap()
         val robotsConverted = gradingStats["robotsConverted"] as? Int ?: 0
         val totalRobots = gradingStats["totalRobots"] as? Int ?: 0
-        val secretsFound = gradingStats["secretsFound"] as? Int ?: 0
-        val totalSecrets = gradingStats["totalSecrets"] as? Int ?: 0
+        val doorsActivated = gradingStats["doorsActivated"] as? Int ?: 0
+        val totalDoors = gradingStats["totalDoors"] as? Int ?: 0
         
         // Calculate ink used (simplified - could be tracked more accurately)
         val inkUsed = 500f // Placeholder value
@@ -493,8 +537,8 @@ class CampaignLevelActivity : AppCompatActivity() {
                 inkUsed = inkUsed,
                 robotsConverted = robotsConverted,
                 totalRobots = totalRobots,
-                secretsFound = secretsFound,
-                totalSecrets = totalSecrets,
+                secretsFound = doorsActivated, // Use doors activated instead of secrets
+                totalSecrets = totalDoors, // Use total doors instead of total secrets
                 levelData = levelData
             )
         } else {
@@ -505,7 +549,7 @@ class CampaignLevelActivity : AppCompatActivity() {
         campaignManager.completeLevel(currentLevelId!!, grade)
         
         // Show completion dialog
-        showLevelCompletionDialog(grade, timeTaken, robotsConverted, totalRobots, secretsFound, totalSecrets)
+        showLevelCompletionDialog(grade, timeTaken, robotsConverted, totalRobots, doorsActivated, totalDoors)
         
         Log.d(TAG, "Level completed with grade: ${grade.grade}")
     }
@@ -515,12 +559,28 @@ class CampaignLevelActivity : AppCompatActivity() {
         timeTaken: Long,
         robotsConverted: Int,
         totalRobots: Int,
-        secretsFound: Int,
-        totalSecrets: Int
+        doorsActivated: Int,
+        totalDoors: Int
     ) {
         val timeString = String.format("%02d:%02d", timeTaken / 60000, (timeTaken % 60000) / 1000)
         
-        val message = """
+        val message = if (currentLevelId == "level_1") {
+            // Tutorial completion message
+            """
+            Tutorial Complete!
+            
+            Grade: ${grade.grade}
+            Score: ${grade.score}
+            
+            Time: $timeString
+            Doors Activated: $doorsActivated/$totalDoors
+            
+            You've learned the basics!
+            Try the next level for more challenges.
+            """.trimIndent()
+        } else {
+            // Standard completion message
+            """
             Level Complete!
             
             Grade: ${grade.grade}
@@ -528,13 +588,14 @@ class CampaignLevelActivity : AppCompatActivity() {
             
             Time: $timeString
             Robots Converted: $robotsConverted/$totalRobots
-            Secrets Found: $secretsFound/$totalSecrets
+            Doors Activated: $doorsActivated/$totalDoors
             
             Time Bonus: ${grade.timeBonus}
             Efficiency Bonus: ${grade.efficiencyBonus}
             Robot Bonus: ${grade.robotBonus}
-            Secrets Bonus: ${grade.secretsBonus}
-        """.trimIndent()
+            Door Bonus: ${grade.secretsBonus}
+            """.trimIndent()
+        }
         
         android.app.AlertDialog.Builder(this)
             .setTitle("Mission Accomplished!")

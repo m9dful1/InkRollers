@@ -1044,6 +1044,26 @@ AndroidManifest.xml
     - Resolved issues related to mocking Android SDK dependencies (e.g., `android.graphics.Paint`) by configuring `testOptions { unitTests.returnDefaultValues = true }` in `build.gradle`.
     - Addressed and fixed a subtle bug in test logic where mock setups for `PaintSurface.getPixelColor` did not account for player position changes before the color check, ensuring accurate testing of ink refill conditions.
 
+**2025-12-21**
+- **Fixed Single-Path Maze Generation for Campaign Tutorial:**
+    - **Critical Fix:** Resolved maze generation algorithm that was breaking connectivity for single-path tutorial levels.
+    - **Root Cause:** The `generateMaze()` function was always applying 180-degree rotational symmetry, which was designed for competitive multiplayer balance but broke proper entrance-to-exit connectivity for tutorial levels.
+    - **Solution:** Modified `MazeLevel.generateMaze()` to conditionally apply rotational symmetry:
+        - **SINGLE_PATH** (campaign tutorials): Uses standard DFS algorithm to guarantee proper connectivity
+        - **MULTIPLE_PATHS** (multiplayer): Maintains rotational symmetry for balanced competitive gameplay
+    - **Impact:** Level 1 tutorial now generates proper single-path mazes where door puzzles can effectively block player progression.
+- **Enhanced Campaign Level Configuration:**
+    - **Custom Seed Support:** Added level-specific maze seed generation in `CampaignLevel.kt` for consistent tutorial experiences.
+    - **Coordinate System Documentation:** Clarified the 0-1000 normalized coordinate system used for door activator positioning.
+    - **Door Activator Refinements:** Optimized door activator and wall dimensions in `CampaignLevelData.kt` for better gameplay balance:
+        - Activator area: 60×60 pixels (clearly visible but not overwhelming)
+        - Wall area: 30×100 pixels (effectively blocks path without being massive)
+    - **Positioning Strategy:** Positioned door elements to intersect main path flow from entrance (top-left) to exit (bottom-right).
+- **Architecture Improvements:**
+    - **PathType Enum:** Leveraged existing `PathType.SINGLE_PATH` and `PathType.MULTIPLE_PATHS` to control maze generation behavior.
+    - **Conditional Logic:** Implemented clean conditional logic that preserves multiplayer balance while enabling proper tutorial functionality.
+    - **Backward Compatibility:** All existing multiplayer levels continue to work unchanged with rotational symmetry preserved.
+
 **2025-07-14**
 - **Unified Hold-to-Refill Fill/Paint Button:**
     - Replaced the click-to-toggle Fill/Paint button in campaign mode with a hold-to-refill mechanic, matching multiplayer mode.

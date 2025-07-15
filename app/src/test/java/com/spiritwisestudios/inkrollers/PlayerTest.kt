@@ -85,7 +85,7 @@ class PlayerTest {
 
         Mockito.`when`(mockPaintSurface.getPixelColor(expectedXAfterMove.toInt(), expectedYAfterMove.toInt())).thenReturn(playerColor)
 
-        player.move(dirX, dirY, magnitude, deltaTime) // Pass parameters in correct order
+        player.move(dirX, dirY, magnitude, null, deltaTime) // Pass parameters in correct order
         assertTrue("Ink should increase when filling on own color", player.ink > initialInk)
         assertEquals("Ink should increase by REFILL_GAIN", initialInk + Player.REFILL_GAIN, player.ink, 0.001f)
     }
@@ -106,7 +106,7 @@ class PlayerTest {
 
         Mockito.`when`(mockPaintSurface.getPixelColor(expectedXAfterMove.toInt(), expectedYAfterMove.toInt())).thenReturn(differentColor)
 
-        player.move(dirX, dirY, magnitude, deltaTime) // Pass parameters in correct order
+        player.move(dirX, dirY, magnitude, null, deltaTime) // Pass parameters in correct order
         assertEquals("Ink should not change when filling on a different color", initialInk, player.ink, 0.001f)
     }
 
@@ -122,7 +122,7 @@ class PlayerTest {
         var currentExpectedX = (player.x + dirX * moveAmount).coerceIn(0f, mockPaintSurface.w -1f)
         var currentExpectedY = (player.y + dirY * moveAmount).coerceIn(0f, mockPaintSurface.h -1f)
         Mockito.`when`(mockPaintSurface.getPixelColor(currentExpectedX.toInt(), currentExpectedY.toInt())).thenReturn(playerColor)
-        player.move(dirX, dirY, magnitude, deltaTime)
+        player.move(dirX, dirY, magnitude, null, deltaTime)
 
         // Second move - important to update mock for new position if player moves again
         // For this test, we assume the player keeps moving over their own color.
@@ -133,7 +133,7 @@ class PlayerTest {
         currentExpectedX = (player.x + dirX * moveAmount).coerceIn(0f, mockPaintSurface.w -1f) // player.x is now the position after the first move
         currentExpectedY = (player.y + dirY * moveAmount).coerceIn(0f, mockPaintSurface.h -1f)
         Mockito.`when`(mockPaintSurface.getPixelColor(currentExpectedX.toInt(), currentExpectedY.toInt())).thenReturn(playerColor)
-        player.move(dirX, dirY, magnitude, deltaTime) // Perform second fill
+        player.move(dirX, dirY, magnitude, null, deltaTime) // Perform second fill
 
         assertEquals("Ink should not exceed MAX_INK", Player.MAX_INK, player.ink, 0.001f)
     }
@@ -159,19 +159,17 @@ class PlayerTest {
     }
 
     @Test
-    fun move_updatesPlayerPositionCorrectly() {
-        val startX = player.x
-        val startY = player.y
-        val dirX = 1f
-        val dirY = 0f // Move only horizontally for simplicity
-        val magnitude = 1f
-        val deltaTime = 0.1f
+    fun playerMove_updatesPosition() {
+        val initialX = player.x
+        player.move(dirX = 1f, dirY = 0f, magnitude = 1f, level = null, deltaTime = 0.1f)
+        assertTrue("Player X should have moved", player.x > initialX)
+    }
 
-        player.move(dirX, dirY, magnitude, deltaTime)
-
-        val expectedX = startX + dirX * Player.MOVE_SPEED * magnitude * deltaTime
-        assertEquals("Player X position should be updated correctly", expectedX, player.x, 0.001f)
-        assertEquals("Player Y position should remain unchanged", startY, player.y, 0.001f)
+    @Test
+    fun playerMove_respectsSurfaceBounds() {
+        player.x = mockPaintSurface.w - 1f
+        player.move(dirX = 1f, dirY = 0f, magnitude = 1f, level = null, deltaTime = 0.1f)
+        assertEquals("Player X should be constrained to surface bounds", mockPaintSurface.w - 1f, player.x, 0.001f)
     }
 
     @Test
@@ -242,7 +240,7 @@ class PlayerTest {
         // Ensure level reports no collision for any relevant check
         Mockito.`when`(mockLevel.checkCollision(anyFloat(), anyFloat())).thenReturn(false)
 
-        player.move(dirX, dirY, magnitude, deltaTime, mockLevel)
+        player.move(dirX, dirY, magnitude, mockLevel, deltaTime)
 
         val expectedX = startX + dirX * Player.MOVE_SPEED * magnitude * deltaTime
         val expectedY = startY + dirY * Player.MOVE_SPEED * magnitude * deltaTime
@@ -283,7 +281,7 @@ class PlayerTest {
         // Collision if moving only in Y (startX, nextYPotential) - to force X slide
         Mockito.`when`(mockLevel.checkCollision(startX, nextYPotential)).thenReturn(true)
 
-        player.move(dirX, dirY, magnitude, deltaTime, mockLevel)
+        player.move(dirX, dirY, magnitude, mockLevel, deltaTime)
 
         assertEquals("Player X should update (slide in X)", nextXPotential, player.x, 0.001f)
         assertEquals("Player Y should not change (slide in X)", startY, player.y, 0.001f)
@@ -308,7 +306,7 @@ class PlayerTest {
         // No collision if moving only in Y (startX, nextYPotential)
         Mockito.`when`(mockLevel.checkCollision(startX, nextYPotential)).thenReturn(false)
 
-        player.move(dirX, dirY, magnitude, deltaTime, mockLevel)
+        player.move(dirX, dirY, magnitude, mockLevel, deltaTime)
 
         assertEquals("Player X should not change (slide in Y)", startX, player.x, 0.001f)
         assertEquals("Player Y should update (slide in Y)", nextYPotential, player.y, 0.001f)
@@ -333,9 +331,164 @@ class PlayerTest {
         // Collision if moving only in Y (startX, nextYPotential)
         Mockito.`when`(mockLevel.checkCollision(startX, nextYPotential)).thenReturn(true)
 
-        player.move(dirX, dirY, magnitude, deltaTime, mockLevel)
+        player.move(dirX, dirY, magnitude, mockLevel, deltaTime)
 
         assertEquals("Player X should not change (blocked, no slide)", startX, player.x, 0.001f)
         assertEquals("Player Y should not change (blocked, no slide)", startY, player.y, 0.001f)
+    }
+
+    @Test
+    fun inkIncrease_respectsMaxInkLimit() {
+        player.ink = Player.MAX_INK - 10f // Close to max
+        player.mode = 1 // FILL mode
+
+        player.move(1f, 0f, 1f, null, 0.1f)
+        assertEquals("Ink should not exceed max limit", Player.MAX_INK, player.ink, 0.001f)
+    }
+
+    @Test
+    fun inkIncrease_twoFillsOnSameColor() {
+        player.mode = 1 // FILL mode
+        val initialInk = player.ink
+
+        player.move(1f, 0f, 1f, null, 0.1f) // Perform first fill
+        val inkAfterFirstFill = player.ink
+
+        player.move(dirX = 1f, dirY = 0f, magnitude = 1f, level = null, deltaTime = 0.1f)
+        val inkAfterSecondFill = player.ink
+
+        assertTrue("Ink should increase after first fill", inkAfterFirstFill > initialInk)
+        assertTrue("Ink should increase after second fill", inkAfterSecondFill > inkAfterFirstFill)
+    }
+
+    // Testing basic movement mechanics ===================================
+
+    @Test
+    fun testBasicMovement_positionUpdates() {
+        val initialX = player.x
+        val initialY = player.y
+
+        val dirX = 1f; val dirY = 0f; val magnitude = 1f; val deltaTime = 0.1f
+        player.move(dirX, dirY, magnitude, null, deltaTime)
+
+        assertTrue("Player should move in X direction", player.x > initialX)
+        assertEquals("Player Y should remain same", initialY, player.y, 0.001f)
+    }
+
+    @Test
+    fun testMovement_respectsBounds() {
+        // Test left boundary
+        player.x = 0f
+        player.move(dirX = -1f, dirY = 0f, magnitude = 1f, level = null, deltaTime = 1f)
+        assertTrue("Player should stay within left boundary", player.x >= 0f)
+
+        // Test right boundary
+        player.x = mockPaintSurface.w - 1f
+        player.move(dirX = 1f, dirY = 0f, magnitude = 1f, level = null, deltaTime = 1f)
+        assertTrue("Player should stay within right boundary", player.x <= mockPaintSurface.w - 1f)
+
+        // Test top boundary
+        player.y = 0f
+        player.move(dirX = 0f, dirY = -1f, magnitude = 1f, level = null, deltaTime = 1f)
+        assertTrue("Player should stay within top boundary", player.y >= 0f)
+
+        // Test bottom boundary
+        player.y = mockPaintSurface.h - 1f
+        player.move(dirX = 0f, dirY = 1f, magnitude = 1f, level = null, deltaTime = 1f)
+        assertTrue("Player should stay within bottom boundary", player.y <= mockPaintSurface.h - 1f)
+    }
+
+    @Test
+    fun testMovement_zeroMagnitude() {
+        val initialX = player.x
+        val initialY = player.y
+
+        player.move(dirX = 1f, dirY = 1f, magnitude = 0f, level = null, deltaTime = 0.1f)
+
+        assertEquals("Player X should not change with zero magnitude", initialX, player.x, 0.001f)
+        assertEquals("Player Y should not change with zero magnitude", initialY, player.y, 0.001f)
+    }
+
+    @Test
+    fun testMovement_zeroDeltaTime() {
+        val initialX = player.x
+        val initialY = player.y
+
+        player.move(dirX = 1f, dirY = 1f, magnitude = 1f, level = null, deltaTime = 0f)
+
+        assertEquals("Player X should not change with zero deltaTime", initialX, player.x, 0.001f)
+        assertEquals("Player Y should not change with zero deltaTime", initialY, player.y, 0.001f)
+    }
+
+    // Testing collision-based movement ====================================
+
+    @Test
+    fun testCollisionMovement_noCollision() {
+        val mockLevel = Mockito.mock(Level::class.java)
+        Mockito.`when`(mockLevel.checkCollision(Mockito.anyFloat(), Mockito.anyFloat())).thenReturn(false)
+
+        val initialX = player.x
+        val dirX = 1f; val dirY = 0f; val magnitude = 1f; val deltaTime = 0.1f
+
+        player.move(dirX, dirY, magnitude, mockLevel, deltaTime)
+
+        assertTrue("Player should move when no collision", player.x > initialX)
+    }
+
+    @Test
+    fun testCollisionMovement_fullCollision() {
+        val mockLevel = Mockito.mock(Level::class.java)
+        // Return true for any collision check (wall everywhere)
+        Mockito.`when`(mockLevel.checkCollision(Mockito.anyFloat(), Mockito.anyFloat())).thenReturn(true)
+
+        val initialX = player.x
+        val initialY = player.y
+
+        player.move(dirX = 1f, dirY = 0f, magnitude = 1f, level = mockLevel, deltaTime = 0.1f)
+
+        assertEquals("Player X should not change with full collision", initialX, player.x, 0.001f)
+        assertEquals("Player Y should not change with full collision", initialY, player.y, 0.001f)
+    }
+
+    @Test
+    fun testCollisionMovement_slidingXAxis() {
+        val mockLevel = Mockito.mock(Level::class.java)
+        
+        // Allow Y movement but block X movement
+        Mockito.`when`(mockLevel.checkCollision(Mockito.anyFloat(), Mockito.anyFloat())).thenAnswer { invocation ->
+            val x = invocation.getArgument<Float>(0)
+            val y = invocation.getArgument<Float>(1)
+            // Block X movement (return true for any X change from current position)
+            x != player.x
+        }
+
+        val initialX = player.x
+        val initialY = player.y
+
+        player.move(1f, 1f, 1f, mockLevel, 0.1f)
+
+        assertEquals("Player X should not change when X-axis blocked", initialX, player.x, 0.001f)
+        assertTrue("Player Y should change when sliding along Y-axis", player.y > initialY)
+    }
+
+    @Test
+    fun testCollisionMovement_slidingYAxis() {
+        val mockLevel = Mockito.mock(Level::class.java)
+        
+        // Allow X movement but block Y movement
+        Mockito.`when`(mockLevel.checkCollision(Mockito.anyFloat(), Mockito.anyFloat())).thenAnswer { invocation ->
+            val x = invocation.getArgument<Float>(0)
+            val y = invocation.getArgument<Float>(1)
+            // Block Y movement (return true for any Y change from current position)
+            y != player.y
+        }
+
+        val initialX = player.x
+        val initialY = player.y
+
+        player.move(1f, 1f, 1f, mockLevel, 0.1f)
+
+        assertTrue("Player X should change when sliding along X-axis", player.x > initialX)
+        assertEquals("Player Y should not change when Y-axis blocked", initialY, player.y, 0.001f)
     }
 } 

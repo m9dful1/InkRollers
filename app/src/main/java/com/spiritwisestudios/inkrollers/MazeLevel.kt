@@ -28,9 +28,21 @@ class MazeLevel(
      * Top margin (in pixels) reserved for overlay UI such as the coverage HUD.
      * The maze will be scaled and positioned within the remaining space.
      */
-    private val topMargin: Int = 0 // Pixels to offset the maze from the top (e.g. HUD height)
+    private val topMargin: Int = 0, // Pixels to offset the maze from the top (e.g. HUD height)
+    
+    /**
+     * Path type for maze generation
+     * SINGLE_PATH: Creates a perfect maze with only one path between any two points (ideal for puzzles)
+     * MULTIPLE_PATHS: Creates a maze with multiple paths through braiding (ideal for competitive gameplay)
+     */
+    private val pathType: PathType = PathType.MULTIPLE_PATHS
   
 ) : Level {
+
+    enum class PathType {
+        SINGLE_PATH,     // Perfect maze with only one path (for campaign puzzles)
+        MULTIPLE_PATHS   // Maze with multiple paths via braiding (for multiplayer)
+    }
 
     private val calculatedCellDimensions: Pair<Int, Int> = run {
         val baseCellsX: Int
@@ -116,7 +128,12 @@ class MazeLevel(
         horizontalWalls = Array(cellsY + 1) { BooleanArray(cellsX) { true } }
         verticalWalls   = Array(cellsY)     { BooleanArray(cellsX + 1) { true } }
         generateMaze()
-        ensureMultiplePaths(minPaths = 3)
+        
+        // Only add multiple paths if specified (for competitive modes)
+        if (pathType == PathType.MULTIPLE_PATHS) {
+            ensureMultiplePaths(minPaths = 3)
+        }
+        // For SINGLE_PATH, we keep the perfect maze structure for puzzle gameplay
     }
 
     /* -------------------------------------------------------------------- */
@@ -125,17 +142,18 @@ class MazeLevel(
 
     private fun generateMaze() {
         /*
-         * 180-degree rotational symmetry:
-         * Every time we remove a wall between (x,y) and its neighbour in direction dir,
-         * we also remove the opposite wall of the rotated cell (rx,ry).
-         * We mark both cells as visited together so the DFS never carves them twice.
+         * Conditional rotational symmetry:
+         * For MULTIPLE_PATHS: Apply 180-degree rotational symmetry for balanced competitive gameplay
+         * For SINGLE_PATH: Use standard DFS to guarantee proper connectivity for puzzle levels
          */
 
+        val useSymmetry = (pathType == PathType.MULTIPLE_PATHS)
+        
         fun oppositeDir(d: Int): Int = when (d) { 0 -> 1; 1 -> 0; 2 -> 3; else -> 2 }
 
-        // helper that knocks down chosen wall + its rotated counterpart
+        // helper that knocks down chosen wall (and optionally its rotated counterpart)
         fun knockDownWall(x: Int, y: Int, dir: Int) {
-            // original
+            // original wall
             when (dir) {
                 0 -> horizontalWalls[y][x] = false            // north
                 1 -> horizontalWalls[y + 1][x] = false        // south
@@ -143,24 +161,30 @@ class MazeLevel(
                 3 -> verticalWalls[y][x] = false              // west
             }
 
-            // rotated counterpart
-            val rx = cellsX - 1 - x
-            val ry = cellsY - 1 - y
-            val rDir = oppositeDir(dir)
-            when (rDir) {
-                0 -> horizontalWalls[ry][rx] = false
-                1 -> horizontalWalls[ry + 1][rx] = false
-                2 -> verticalWalls[ry][rx + 1] = false
-                3 -> verticalWalls[ry][rx] = false
+            // rotated counterpart (only for multiplayer balance)
+            if (useSymmetry) {
+                val rx = cellsX - 1 - x
+                val ry = cellsY - 1 - y
+                val rDir = oppositeDir(dir)
+                when (rDir) {
+                    0 -> horizontalWalls[ry][rx] = false
+                    1 -> horizontalWalls[ry + 1][rx] = false
+                    2 -> verticalWalls[ry][rx + 1] = false
+                    3 -> verticalWalls[ry][rx] = false
+                }
             }
         }
 
         val visited = Array(cellsY) { BooleanArray(cellsX) }
         fun markVisited(x: Int, y: Int) {
             if (!visited[y][x]) visited[y][x] = true
-            val rx = cellsX - 1 - x
-            val ry = cellsY - 1 - y
-            if (!visited[ry][rx]) visited[ry][rx] = true
+            
+            // only mark rotated counterpart for multiplayer symmetry
+            if (useSymmetry) {
+                val rx = cellsX - 1 - x
+                val ry = cellsY - 1 - y
+                if (!visited[ry][rx]) visited[ry][rx] = true
+            }
         }
 
         val stack = Stack<Pair<Int, Int>>()

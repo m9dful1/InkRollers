@@ -8,7 +8,7 @@ import com.spiritwisestudios.inkrollers.campaign.effects.CampaignEffects
 
 /**
  * CampaignLevel class for single-player campaign mode.
- * Extends MazeLevel functionality with robots, security devices, and hardened paint areas.
+ * Extends MazeLevel functionality with robots, security devices, hardened paint areas, and puzzle doors.
  */
 class CampaignLevel(
     screenW: Int,
@@ -29,15 +29,17 @@ class CampaignLevel(
     private val robots = mutableListOf<Robot>()
     private val securityDevices = mutableListOf<SecurityDevice>()
     private val hardenedPaintAreas = mutableListOf<HardenedPaint>()
-    private val secretAreas = mutableListOf<SecretArea>()
+    private val doorActivators = mutableListOf<DoorActivator>()
+    private var exitZone: ExitZone? = null
     
     // Visual effects
     private val campaignEffects = CampaignEffects()
     
     // Level state
     private var isLevelComplete = false
-    private var discoveredSecrets = 0
-    private var totalSecrets = 0
+    private var activatedDoors = 0
+    private var totalDoors = 0
+    private var playerInExitZone = false
     
     init {
         // Create base maze with campaign level settings
@@ -49,18 +51,30 @@ class CampaignLevel(
         }
         
         // Use level ID as seed for consistent maze generation
-        val seed = levelData.levelId.hashCode().toLong()
+        // For Level 1, use a custom seed to ensure the path works with the door placement
+        val seed = when (levelData.levelId) {
+            "level_1" -> 1337L  // Custom seed for tutorial level that creates a good path layout
+            else -> levelData.levelId.hashCode().toLong()
+        }
+        
+        // Use single-path mazes for puzzle levels to ensure door mechanics work properly
+        val pathType = if (levelData.requiresSinglePath) {
+            MazeLevel.PathType.SINGLE_PATH
+        } else {
+            MazeLevel.PathType.MULTIPLE_PATHS
+        }
         
         mazeLevel = MazeLevel(
             screenW, screenH, 
             12, 20, 12f, // Default maze parameters
             seed, 
             complexityStr,
-            topMargin
+            topMargin,
+            pathType
         )
         
         setupCampaignElements()
-        Log.d(TAG, "Created campaign level: ${levelData.levelName}")
+        Log.d(TAG, "Created campaign level: ${levelData.levelName} with ${if (levelData.requiresSinglePath) "single" else "multiple"} path(s)")
     }
     
     /**
@@ -109,14 +123,56 @@ class CampaignLevel(
             hardenedPaintAreas.add(hardenedPaint)
         }
         
-        // Initialize secret areas with proper coordinate transformation
-        levelData.secretAreas.forEach { secretData ->
-            // Transform secret area coordinates from level data to screen coordinates
-            // Treat coordinates as relative positions within the maze (0.0-1.0 normalized)
-            val originalArea = secretData.area
+        // Initialize door activators with proper coordinate transformation
+        levelData.doorActivators.forEach { activatorData ->
+            // Transform door activator coordinates from level data to screen coordinates
+            val originalActivatorArea = activatorData.activatorArea
+            val originalWallArea = activatorData.wallArea
             
             // Convert from absolute pixel coordinates to normalized coordinates (0.0-1.0)
             // Assuming the level data coordinates are in a 0-1000 range, normalize them
+            val normalizedActivatorLeft = originalActivatorArea.left / 1000f
+            val normalizedActivatorTop = originalActivatorArea.top / 1000f
+            val normalizedActivatorRight = originalActivatorArea.right / 1000f
+            val normalizedActivatorBottom = originalActivatorArea.bottom / 1000f
+            
+            val normalizedWallLeft = originalWallArea.left / 1000f
+            val normalizedWallTop = originalWallArea.top / 1000f
+            val normalizedWallRight = originalWallArea.right / 1000f
+            val normalizedWallBottom = originalWallArea.bottom / 1000f
+            
+            // Transform to screen coordinates using maze coordinate system
+            val (screenActivatorLeft, screenActivatorTop) = mazeLevel.mazeToScreenCoord(normalizedActivatorLeft, normalizedActivatorTop)
+            val (screenActivatorRight, screenActivatorBottom) = mazeLevel.mazeToScreenCoord(normalizedActivatorRight, normalizedActivatorBottom)
+            
+            val (screenWallLeft, screenWallTop) = mazeLevel.mazeToScreenCoord(normalizedWallLeft, normalizedWallTop)
+            val (screenWallRight, screenWallBottom) = mazeLevel.mazeToScreenCoord(normalizedWallRight, normalizedWallBottom)
+            
+            // Create transformed door activator data
+            val transformedActivatorArea = RectF(screenActivatorLeft, screenActivatorTop, screenActivatorRight, screenActivatorBottom)
+            val transformedWallArea = RectF(screenWallLeft, screenWallTop, screenWallRight, screenWallBottom)
+            val transformedActivatorData = activatorData.copy(
+                activatorArea = transformedActivatorArea,
+                wallArea = transformedWallArea
+            )
+            
+            val doorActivator = DoorActivator(transformedActivatorData, audioManager)
+            doorActivators.add(doorActivator)
+            
+            Log.d(TAG, "Created door activator:")
+            Log.d(TAG, "  Original activator: (${originalActivatorArea.left}, ${originalActivatorArea.top}, ${originalActivatorArea.right}, ${originalActivatorArea.bottom})")
+            Log.d(TAG, "  Screen activator: ($screenActivatorLeft, $screenActivatorTop, $screenActivatorRight, $screenActivatorBottom)")
+            Log.d(TAG, "  Original wall: (${originalWallArea.left}, ${originalWallArea.top}, ${originalWallArea.right}, ${originalWallArea.bottom})")
+            Log.d(TAG, "  Screen wall: ($screenWallLeft, $screenWallTop, $screenWallRight, $screenWallBottom)")
+        }
+        
+        totalDoors = doorActivators.size
+        
+        // Initialize exit zone if present
+        levelData.exitZone?.let { exitData ->
+            val originalArea = exitData.area
+            
+            // Convert from absolute pixel coordinates to normalized coordinates
             val normalizedLeft = originalArea.left / 1000f
             val normalizedTop = originalArea.top / 1000f
             val normalizedRight = originalArea.right / 1000f
@@ -126,25 +182,44 @@ class CampaignLevel(
             val (screenLeft, screenTop) = mazeLevel.mazeToScreenCoord(normalizedLeft, normalizedTop)
             val (screenRight, screenBottom) = mazeLevel.mazeToScreenCoord(normalizedRight, normalizedBottom)
             
-            // Create transformed secret area data
+            // Create transformed exit zone data
             val transformedArea = RectF(screenLeft, screenTop, screenRight, screenBottom)
-            val transformedSecretData = secretData.copy(area = transformedArea)
+            val transformedExitData = exitData.copy(area = transformedArea)
             
-            val secretArea = SecretArea(transformedSecretData, audioManager)
-            secretArea.setCampaignLevel(this)
-            secretAreas.add(secretArea)
+            exitZone = ExitZone(transformedExitData, audioManager)
             
-            Log.d(TAG, "Created secret area:")
-            Log.d(TAG, "  Original data: (${originalArea.left}, ${originalArea.top}, ${originalArea.right}, ${originalArea.bottom})")
-            Log.d(TAG, "  Normalized: ($normalizedLeft, $normalizedTop, $normalizedRight, $normalizedBottom)")
-            Log.d(TAG, "  Screen coords: ($screenLeft, $screenTop, $screenRight, $screenBottom)")
-            Log.d(TAG, "  Maze viewport: ${mazeLevel.getViewportOffset()}")
-            Log.d(TAG, "  Maze scale: ${mazeLevel.getScale()}")
+            Log.d(TAG, "Created exit zone:")
+            Log.d(TAG, "  Original: (${originalArea.left}, ${originalArea.top}, ${originalArea.right}, ${originalArea.bottom})")
+            Log.d(TAG, "  Screen: ($screenLeft, $screenTop, $screenRight, $screenBottom)")
+        } ?: run {
+            // For single-path levels without explicit exit zone, create one at the maze exit
+            if (levelData.requiresSinglePath) {
+                // Get the maze exit position (bottom-right corner in normalized coordinates)
+                val (exitScreenX, exitScreenY) = mazeLevel.getPlayerStartPosition(1) // Player 1 starts at exit
+                
+                // Create exit zone around the maze exit position
+                val exitSize = 60f // Size of the exit zone in pixels
+                val exitArea = RectF(
+                    exitScreenX - exitSize / 2,
+                    exitScreenY - exitSize / 2,
+                    exitScreenX + exitSize / 2,
+                    exitScreenY + exitSize / 2
+                )
+                
+                val autoExitData = ExitZoneData(
+                    area = exitArea,
+                    description = "Maze Exit"
+                )
+                
+                exitZone = ExitZone(autoExitData, audioManager)
+                
+                Log.d(TAG, "Auto-created exit zone at maze exit:")
+                Log.d(TAG, "  Position: ($exitScreenX, $exitScreenY)")
+                Log.d(TAG, "  Area: (${exitArea.left}, ${exitArea.top}, ${exitArea.right}, ${exitArea.bottom})")
+            }
         }
         
-        totalSecrets = secretAreas.size
-        
-        Log.d(TAG, "Setup campaign elements: ${robots.size} robots, ${securityDevices.size} devices, ${hardenedPaintAreas.size} hardened areas, ${secretAreas.size} secrets")
+        Log.d(TAG, "Setup campaign elements: ${robots.size} robots, ${securityDevices.size} devices, ${hardenedPaintAreas.size} hardened areas, ${doorActivators.size} door activators, exit zone: ${exitZone != null}")
     }
     
     /**
@@ -186,10 +261,13 @@ class CampaignLevel(
             hardenedPaint.update(1f / 60f)
         }
         
-        // Update secret areas
-        secretAreas.forEach { secretArea ->
-            secretArea.update(1f / 60f)
+        // Update door activators
+        doorActivators.forEach { doorActivator ->
+            doorActivator.update(1f / 60f)
         }
+        
+        // Update exit zone
+        exitZone?.update(1f / 60f)
         
         // Update visual effects
         campaignEffects.update(1f / 60f)
@@ -201,16 +279,26 @@ class CampaignLevel(
     private fun checkLevelCompletion() {
         if (isLevelComplete) return
         
-        // Check coverage requirement
+        // For tutorial level (level_1), completion is based on reaching the exit zone
+        if (levelData.levelId == "level_1") {
+            if (playerInExitZone) {
+                isLevelComplete = true
+                audioManager?.playSound(AudioManager.SoundType.LEVEL_COMPLETE)
+                Log.d(TAG, "Tutorial level complete! Player reached exit zone.")
+                return
+            }
+        }
+        
+        // For other levels, check coverage requirement and exit zone
         val paintSurface = getPaintSurface()
         if (paintSurface != null) {
             val coverage = calculateCoverage(paintSurface)
             val totalCoverage = coverage.values.sum()
             
-            if (totalCoverage >= levelData.requiredCoverage) {
+            if (totalCoverage >= levelData.requiredCoverage && playerInExitZone) {
                 isLevelComplete = true
                 audioManager?.playSound(AudioManager.SoundType.LEVEL_COMPLETE)
-                Log.d(TAG, "Level complete! Coverage: $totalCoverage / ${levelData.requiredCoverage}")
+                Log.d(TAG, "Level complete! Coverage: $totalCoverage / ${levelData.requiredCoverage}, in exit zone: $playerInExitZone")
             }
         }
     }
@@ -227,10 +315,13 @@ class CampaignLevel(
             hardenedPaint.draw(canvas)
         }
         
-        // Draw secret areas (subtle hints)
-        secretAreas.forEach { secretArea ->
-            secretArea.draw(canvas)
+        // Draw door activators (walls and activator squares)
+        doorActivators.forEach { doorActivator ->
+            doorActivator.draw(canvas)
         }
+        
+        // Draw exit zone
+        exitZone?.draw(canvas)
         
         // Draw security devices
         securityDevices.forEach { device ->
@@ -247,7 +338,7 @@ class CampaignLevel(
     }
     
     /**
-     * Check collision with maze walls and campaign elements
+     * Check collision with maze walls, campaign elements, and door walls
      */
     override fun checkCollision(x: Float, y: Float): Boolean {
         // Check maze walls first
@@ -265,6 +356,13 @@ class CampaignLevel(
         // Check hardened paint areas
         hardenedPaintAreas.forEach { hardenedPaint ->
             if (hardenedPaint.isBlocking(x, y)) {
+                return true
+            }
+        }
+        
+        // Check door activator walls (only if not activated)
+        doorActivators.forEach { doorActivator ->
+            if (doorActivator.isBlocking(x, y)) {
                 return true
             }
         }
@@ -303,9 +401,15 @@ class CampaignLevel(
         val playerY = player.y
         val currentFrequency = player.getCurrentFrequency()
         
-        // Update secret area distances for visual feedback
-        secretAreas.forEach { secretArea ->
-            secretArea.updatePlayerDistance(playerX, playerY)
+        // Update door activator distances for visual feedback
+        doorActivators.forEach { doorActivator ->
+            doorActivator.updatePlayerDistance(playerX, playerY)
+        }
+        
+        // Update exit zone player status
+        exitZone?.let { exit ->
+            playerInExitZone = exit.checkPlayerInZone(playerX, playerY)
+            exit.updatePlayerDistance(playerX, playerY)
         }
         
         // Trigger color shift effect when player changes frequency
@@ -342,13 +446,9 @@ class CampaignLevel(
             }
         }
         
-        // Check secret area interactions
-        secretAreas.forEach { secretArea ->
-            if (secretArea.attemptDiscovery(playerX, playerY, currentFrequency)) {
-                discoveredSecrets++
-                campaignEffects.triggerBloomEffect(Pair(playerX, playerY))
-            }
-        }
+        // Door activators are automatically checked during their update cycle
+        // Count activated doors for objectives
+        activatedDoors = doorActivators.count { it.isActivated() }
     }
     
     /**
@@ -370,6 +470,16 @@ class CampaignLevel(
      * Get all hardened paint areas in this level
      */
     fun getHardenedPaintAreas(): List<HardenedPaint> = hardenedPaintAreas
+    
+    /**
+     * Get all door activators in this level
+     */
+    fun getDoorActivators(): List<DoorActivator> = doorActivators
+    
+    /**
+     * Get exit zone if present
+     */
+    fun getExitZone(): ExitZone? = exitZone
     
     /**
      * Check if level is complete
@@ -401,20 +511,26 @@ class CampaignLevel(
         return mapOf(
             "robotsConverted" to convertedRobots,
             "totalRobots" to totalRobots,
-            "secretsFound" to discoveredSecrets,
-            "totalSecrets" to totalSecrets
+            "doorsActivated" to activatedDoors,
+            "totalDoors" to totalDoors,
+            "reachedExit" to playerInExitZone
         )
     }
     
     /**
-     * Get discovered secrets count
+     * Get activated doors count
      */
-    fun getDiscoveredSecrets(): Int = discoveredSecrets
+    fun getActivatedDoors(): Int = activatedDoors
     
     /**
-     * Get total secrets count
+     * Get total doors count
      */
-    fun getTotalSecrets(): Int = totalSecrets
+    fun getTotalDoors(): Int = totalDoors
+    
+    /**
+     * Check if player is in exit zone
+     */
+    fun isPlayerInExitZone(): Boolean = playerInExitZone
     
     /**
      * Convert screen coordinates to maze coordinates (for consistency)
@@ -452,7 +568,7 @@ class CampaignLevel(
     
     fun setPaintSurface(surface: PaintSurface) {
         this.paintSurface = surface
-        secretAreas.forEach { it.setPaintSurface(surface) }
+        doorActivators.forEach { it.setPaintSurface(surface) }
     }
     
     private fun getPaintSurface(): PaintSurface? = paintSurface

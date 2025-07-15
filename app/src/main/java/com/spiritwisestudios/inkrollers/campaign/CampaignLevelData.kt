@@ -11,10 +11,12 @@ data class CampaignLevelData(
     val robotPositions: List<RobotData> = emptyList(),
     val securityDevices: List<SecurityDeviceData> = emptyList(),
     val hardenedPaintAreas: List<HardenedPaintData> = emptyList(),
-    val secretAreas: List<SecretAreaData> = emptyList(),
+    val doorActivators: List<DoorActivatorData> = emptyList(), // New: replaces secretAreas
+    val exitZone: ExitZoneData? = null, // New: level exit area
     val requiredCoverage: Float = 1.0f,
     val timeLimit: Long? = null,
-    val mazeComplexity: String = "MEDIUM"
+    val mazeComplexity: String = "MEDIUM",
+    val requiresSinglePath: Boolean = false // New: true for puzzle levels that need linear progression
 )
 
 /**
@@ -47,26 +49,24 @@ data class HardenedPaintData(
 )
 
 /**
- * Data class for secret area configuration
+ * Data class for door activator configuration
+ * Replaces SecretAreaData with interactive puzzle doors
  */
-data class SecretAreaData(
-    val area: RectF,
-    val secretType: SecretType,
-    val description: String,
-    val requiredFrequency: ColorFrequency? = null, // New: frequency requirement for discovery
-    val unlockCondition: SecretUnlockCondition? = null // New: additional unlock requirements
+data class DoorActivatorData(
+    val activatorArea: RectF,     // The colored square that needs to be painted
+    val wallArea: RectF,          // The wall that gets removed when activated
+    val requiredFrequency: ColorFrequency, // Color needed to activate
+    val description: String       // Description of what this door opens
 )
 
 /**
- * Enum for secret unlock conditions
+ * Data class for exit zone configuration
+ * Defines the area where players need to go to complete the level
  */
-enum class SecretUnlockCondition {
-    PROXIMITY_ONLY,      // Discovered just by being nearby
-    FREQUENCY_MATCH,     // Requires correct frequency to be active
-    PAINT_REQUIRED,      // Requires painting the area with correct color
-    TIME_THRESHOLD,      // Only appears after certain time
-    ROBOT_ASSISTED       // Requires converted robot nearby
-}
+data class ExitZoneData(
+    val area: RectF,              // The exit area
+    val description: String = "Level Exit" // Description for the exit
+)
 
 /**
  * Enum for device types
@@ -82,16 +82,6 @@ enum class DeviceType {
  */
 enum class ColorFrequency {
     RED, BLUE, GREEN, YELLOW
-}
-
-/**
- * Enum for secret types
- */
-enum class SecretType {
-    HIDDEN_PASSAGE,
-    BONUS_POWERUP,
-    STORY_FRAGMENT,
-    ACHIEVEMENT
 }
 
 /**
@@ -120,39 +110,37 @@ object CampaignLevels {
         return listOf("level_1", "level_2", "level_3", "level_4a", "level_4b")
     }
     
-    // Level 1: The Awakening - Introduction level
+    // Level 1: Tutorial - Simple linear maze with door puzzle
     val LEVEL_1 = CampaignLevelData(
         levelId = "level_1",
-        levelName = "The Awakening",
-        robotPositions = listOf(
-            RobotData(
-                x = 400f,
-                y = 300f,
-                patrolPath = listOf(
-                    400f to 300f,
-                    600f to 300f,
-                    600f to 500f,
-                    400f to 500f
-                )
-            )
-        ),
-        securityDevices = emptyList(),
-        hardenedPaintAreas = emptyList(),
-        secretAreas = listOf(
-            SecretAreaData(
-                area = RectF(200f, 200f, 400f, 400f), // Much larger area for testing - positioned in upper-left quadrant
-                secretType = SecretType.STORY_FRAGMENT,
-                description = "Hidden Reclamation Corps message",
+        levelName = "First Steps",
+        robotPositions = emptyList(), // No robots in tutorial
+        securityDevices = emptyList(), // No security devices in tutorial
+        hardenedPaintAreas = emptyList(), // No hardened paint in tutorial
+        doorActivators = listOf(
+            DoorActivatorData(
+                /*
+                // left  top  right bottom
+                // Movement Rules:
+                // Move RIGHT: Increase left and right by same amount
+                // Move DOWN: Increase top and bottom by same amount
+                // Move LEFT: Decrease left and right by same amount
+                // Move UP: Decrease top and bottom by same amount
+                */
+                activatorArea = RectF(470f, 515f, 520f, 610f), // 50x50 activator square positioned near the path
+                wallArea = RectF(530f, 510f, 555f, 610f), // 30x90 door wall blocking the main path corridor
                 requiredFrequency = ColorFrequency.RED,
-                unlockCondition = SecretUnlockCondition.FREQUENCY_MATCH
+                description = "Main pathway door"
             )
         ),
-        requiredCoverage = 0.8f,
-        timeLimit = null,
-        mazeComplexity = "LOW"
+        exitZone = null, // Will be positioned at maze exit automatically for single-path levels
+        requiredCoverage = 0.1f, // Very low coverage requirement for tutorial
+        timeLimit = null, // No time limit for tutorial
+        mazeComplexity = "LOW", // Simple maze for tutorial
+        requiresSinglePath = true // Tutorial is a puzzle level requiring door unlock
     )
     
-    // Level 2: First Contact - Introduces security devices
+    // Level 2: First Contact - Introduces security devices and more doors
     val LEVEL_2 = CampaignLevelData(
         levelId = "level_2",
         levelName = "First Contact",
@@ -189,18 +177,22 @@ object CampaignLevels {
                 requiredFrequency = ColorFrequency.RED
             )
         ),
-        secretAreas = listOf(
-            SecretAreaData(
-                area = RectF(350f, 350f, 380f, 380f),
-                secretType = SecretType.BONUS_POWERUP,
-                description = "Enhanced paint capacity",
+        doorActivators = listOf(
+            DoorActivatorData(
+                activatorArea = RectF(320f, 320f, 360f, 360f),
+                wallArea = RectF(370f, 300f, 390f, 380f),
                 requiredFrequency = ColorFrequency.BLUE,
-                unlockCondition = SecretUnlockCondition.PAINT_REQUIRED
+                description = "Secondary access door"
             )
         ),
-        requiredCoverage = 0.9f,
+        exitZone = ExitZoneData(
+            area = RectF(450f, 450f, 500f, 500f),
+            description = "Level Exit"
+        ),
+        requiredCoverage = 0.6f,
         timeLimit = null,
-        mazeComplexity = "MEDIUM"
+        mazeComplexity = "MEDIUM",
+        requiresSinglePath = false // Linear maze
     )
     
     // Level 3: Deep Infiltration - More complex puzzles
@@ -253,25 +245,28 @@ object CampaignLevels {
                 requiredFrequency = ColorFrequency.BLUE
             )
         ),
-        secretAreas = listOf(
-            SecretAreaData(
-                area = RectF(400f, 400f, 430f, 430f),
-                secretType = SecretType.HIDDEN_PASSAGE,
-                description = "Secret Ministry access tunnel",
+        doorActivators = listOf(
+            DoorActivatorData(
+                activatorArea = RectF(380f, 380f, 420f, 420f),
+                wallArea = RectF(430f, 360f, 450f, 440f),
                 requiredFrequency = ColorFrequency.GREEN,
-                unlockCondition = SecretUnlockCondition.FREQUENCY_MATCH
+                description = "Access tunnel door"
             ),
-            SecretAreaData(
-                area = RectF(60f, 60f, 90f, 90f),
-                secretType = SecretType.STORY_FRAGMENT,
-                description = "Classified Ministry document",
+            DoorActivatorData(
+                activatorArea = RectF(40f, 40f, 80f, 80f),
+                wallArea = RectF(90f, 20f, 110f, 100f),
                 requiredFrequency = ColorFrequency.YELLOW,
-                unlockCondition = SecretUnlockCondition.TIME_THRESHOLD
+                description = "Document archive door"
             )
         ),
-        requiredCoverage = 0.95f,
+        exitZone = ExitZoneData(
+            area = RectF(500f, 500f, 550f, 550f),
+            description = "Level Exit"
+        ),
+        requiredCoverage = 0.8f,
         timeLimit = 300000L, // 5 minutes
-        mazeComplexity = "HIGH"
+        mazeComplexity = "HIGH",
+        requiresSinglePath = false // Linear maze
     )
     
     // Level 4A: Branch A - Power Plant
@@ -332,18 +327,22 @@ object CampaignLevels {
                 requiredFrequency = ColorFrequency.YELLOW
             )
         ),
-        secretAreas = listOf(
-            SecretAreaData(
-                area = RectF(450f, 450f, 480f, 480f),
-                secretType = SecretType.ACHIEVEMENT,
-                description = "Power Plant Master achievement",
-                requiredFrequency = null,
-                unlockCondition = SecretUnlockCondition.ROBOT_ASSISTED
+        doorActivators = listOf(
+            DoorActivatorData(
+                activatorArea = RectF(430f, 430f, 470f, 470f),
+                wallArea = RectF(480f, 410f, 500f, 490f),
+                requiredFrequency = ColorFrequency.RED,
+                description = "Power core access door"
             )
         ),
-        requiredCoverage = 1.0f,
+        exitZone = ExitZoneData(
+            area = RectF(550f, 550f, 600f, 600f),
+            description = "Power Plant Exit"
+        ),
+        requiredCoverage = 0.9f,
         timeLimit = 240000L, // 4 minutes
-        mazeComplexity = "HIGH"
+        mazeComplexity = "HIGH",
+        requiresSinglePath = false // Linear maze
     )
     
     // Level 4B: Branch B - Data Hub
@@ -396,24 +395,27 @@ object CampaignLevels {
                 requiredFrequency = ColorFrequency.GREEN
             )
         ),
-        secretAreas = listOf(
-            SecretAreaData(
-                area = RectF(400f, 400f, 430f, 430f),
-                secretType = SecretType.STORY_FRAGMENT,
-                description = "Data Hub access codes",
+        doorActivators = listOf(
+            DoorActivatorData(
+                activatorArea = RectF(380f, 380f, 420f, 420f),
+                wallArea = RectF(430f, 360f, 450f, 440f),
                 requiredFrequency = ColorFrequency.BLUE,
-                unlockCondition = SecretUnlockCondition.FREQUENCY_MATCH
+                description = "Data core access door"
             ),
-            SecretAreaData(
-                area = RectF(50f, 50f, 80f, 80f),
-                secretType = SecretType.BONUS_POWERUP,
-                description = "Temporary invincibility",
+            DoorActivatorData(
+                activatorArea = RectF(30f, 30f, 70f, 70f),
+                wallArea = RectF(80f, 10f, 100f, 90f),
                 requiredFrequency = ColorFrequency.RED,
-                unlockCondition = SecretUnlockCondition.PAINT_REQUIRED
+                description = "Backup system door"
             )
         ),
-        requiredCoverage = 1.0f,
+        exitZone = ExitZoneData(
+            area = RectF(500f, 500f, 550f, 550f),
+            description = "Data Hub Exit"
+        ),
+        requiredCoverage = 0.9f,
         timeLimit = 300000L, // 5 minutes
-        mazeComplexity = "HIGH"
+        mazeComplexity = "HIGH",
+        requiresSinglePath = false // Linear maze
     )
 } 

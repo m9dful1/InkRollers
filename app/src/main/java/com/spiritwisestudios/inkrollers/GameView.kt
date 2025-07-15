@@ -254,6 +254,7 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
   }
   
   override fun draw(c:Canvas){
+    super.draw(c)
     // Delegate all rendering to GameRenderer
     gameRenderer.render(
         canvas = c,
@@ -615,8 +616,9 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
         ?: 0
 
     // Create the level with the synchronized seed, complexity, and reserved top margin
+    // Use MULTIPLE_PATHS for multiplayer competitive gameplay
 
-    currentLevel = MazeLevel(width, height, 12, 20, 12f, seed, mazeComplexity, hudHeight)
+    currentLevel = MazeLevel(width, height, 12, 20, 12f, seed, mazeComplexity, hudHeight, MazeLevel.PathType.MULTIPLE_PATHS)
     Log.d(TAG, "Created maze with viewport offset: ${(currentLevel as MazeLevel).getViewportOffset()}")
     
     // Clear previous game objects for a fresh start (especially for rematches)
