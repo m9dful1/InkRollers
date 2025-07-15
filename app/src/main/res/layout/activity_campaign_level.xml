@@ -109,21 +109,6 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
-    <TextView
-        android:id="@+id/text_frequency"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="84dp"
-        android:layout_marginEnd="16dp"
-        android:background="@drawable/frequency_display_background"
-        android:padding="8dp"
-        android:text="Frequency: RED"
-        android:textColor="@android:color/white"
-        android:textSize="16sp"
-        android:textStyle="bold"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
-
     <com.spiritwisestudios.inkrollers.CoverageHudView
         android:id="@+id/coverage_hud_view"
         android:layout_width="1dp"
@@ -187,7 +172,6 @@
             android:layout_height="wrap_content"
             android:text="COLOR SHIFT"
             android:textSize="13sp"
-            android:background="@drawable/color_shift_button_background"
             android:textColor="@android:color/white"
             android:layout_marginBottom="12dp" />
         <Button

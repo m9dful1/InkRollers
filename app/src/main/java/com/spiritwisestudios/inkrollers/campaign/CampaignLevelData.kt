@@ -309,13 +309,29 @@ object CampaignLevels {
                 )
             ),
             RobotData(
+                x = 400f,
+                y = 400f,
+                patrolPath = listOf(
+                    400f to 400f,
+                    700f to 400f
+                )
+            ),
+            RobotData(
+                x = 800f,
+                y = 800f,
+                patrolPath = listOf(
+                    800f to 800f,
+                    999f to 800f
+                )
+            ),
+            RobotData(
                 x = 200f,
-                y = 200f,
+                y = 700f,
                 patrolPath = listOf(
                     200f to 200f,
-                    350f to 200f
+                    700f to 200f
                 )
-            )
+            ),
         ),
         securityDevices = listOf(
             SecurityDeviceData(
@@ -335,7 +351,7 @@ object CampaignLevels {
         ),
         hardenedPaintAreas = listOf(
             HardenedPaintData(
-                area = RectF(80f, 80f, 140f, 140f),
+                area = RectF(500f, 500f, 550f, 55f),
                 requiredFrequency = ColorFrequency.RED
             ),
             HardenedPaintData(

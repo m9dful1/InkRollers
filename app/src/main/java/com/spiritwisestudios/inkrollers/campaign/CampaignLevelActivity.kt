@@ -106,6 +106,9 @@ class CampaignLevelActivity : AppCompatActivity() {
             campaignLevel?.getCampaignEffects()?.triggerColorShiftEffect(localPlayer!!)
         }
         
+        // Initialize frequency display
+        updateFrequencyDisplay()
+        
         // Setup mode toggle button
         // Initialize button appearance for default PAINT mode (hold to refill)
         binding.buttonModeToggle.setTextColor(android.graphics.Color.WHITE)
@@ -346,7 +349,12 @@ class CampaignLevelActivity : AppCompatActivity() {
 
     private fun updateInkHudDisplay() {
         localPlayer?.let { player ->
-            inkHudView.updateHud(player.getInkPercent(), player.getModeText())
+            val inkColor = if (player.isCampaignMode()) {
+                player.getFrequencyColor()
+            } else {
+                player.getColor()
+            }
+            inkHudView.updateHud(player.getInkPercent(), player.getModeText(), inkColor)
         }
     }
 
@@ -354,13 +362,17 @@ class CampaignLevelActivity : AppCompatActivity() {
         localPlayer?.let { player ->
             val frequency = player.getCurrentFrequency()
             val frequencyColor = when (frequency) {
-                ColorFrequency.RED -> "#FF4444"
-                ColorFrequency.BLUE -> "#4444FF"
-                ColorFrequency.GREEN -> "#44FF44"
-                ColorFrequency.YELLOW -> "#FFFF44"
+                ColorFrequency.RED -> android.graphics.Color.RED
+                ColorFrequency.BLUE -> android.graphics.Color.BLUE
+                ColorFrequency.GREEN -> android.graphics.Color.GREEN
+                ColorFrequency.YELLOW -> android.graphics.Color.YELLOW
             }
-            binding.textFrequency.text = "Frequency: $frequency"
-            binding.textFrequency.setTextColor(android.graphics.Color.parseColor(frequencyColor))
+            
+            // Update Color Shift button background color
+            binding.buttonColorShift.setBackgroundColor(frequencyColor)
+            
+            // Update ink HUD color as well
+            updateInkHudDisplay()
         }
     }
     

@@ -181,8 +181,13 @@ class GameUpdateManager {
      */
     private fun updateHUDs(deltaTime: Float, localPlayer: Player?, inkHudView: InkHudView?) {
         // Update ink HUD based on local player
-        localPlayer?.let { 
-            inkHudView?.updateHud(it.getInkPercent(), it.getModeText()) 
+        localPlayer?.let { player ->
+            val inkColor = if (player.isCampaignMode()) {
+                player.getFrequencyColor()
+            } else {
+                player.getColor()
+            }
+            inkHudView?.updateHud(player.getInkPercent(), player.getModeText(), inkColor)
         }
     }
     

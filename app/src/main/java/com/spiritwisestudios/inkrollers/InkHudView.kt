@@ -14,6 +14,7 @@ class InkHudView @JvmOverloads constructor(
 
     private var inkPercent = 1f // 0.0 to 1.0
     private var modeText = "PAINT"
+    private var inkColor = Color.BLUE // Default ink color
 
     private val barPaint = Paint().apply { color = Color.BLUE; style = Paint.Style.FILL }
     private val barBackgroundPaint = Paint().apply { color = Color.LTGRAY; style = Paint.Style.FILL }
@@ -24,9 +25,11 @@ class InkHudView @JvmOverloads constructor(
     private val pillRect = RectF()
     private val inkRect = RectF()
 
-    fun updateHud(inkPercent: Float, modeText: String) {
+    fun updateHud(inkPercent: Float, modeText: String, inkColor: Int = Color.BLUE) {
         this.inkPercent = inkPercent.coerceIn(0f, 1f)
         this.modeText = modeText
+        this.inkColor = inkColor
+        this.barPaint.color = inkColor
         invalidate() // Request a redraw
     }
 
