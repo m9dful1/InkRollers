@@ -3,6 +3,92 @@ package com.spiritwisestudios.inkrollers.campaign
 import android.graphics.RectF
 
 /**
+ * Data class for level grading configuration
+ */
+data class LevelGradingConfig(
+    // Grade thresholds (score required for each grade)
+    val gradeThresholds: GradeThresholds = GradeThresholds(),
+    
+    // Time bonus configuration
+    val timeBonusConfig: TimeBonusConfig = TimeBonusConfig(),
+    
+    // Efficiency bonus configuration
+    val efficiencyBonusConfig: EfficiencyBonusConfig = EfficiencyBonusConfig(),
+    
+    // Robot bonus configuration
+    val robotBonusConfig: RobotBonusConfig = RobotBonusConfig(),
+    
+    // Secrets/doors bonus configuration
+    val secretsBonusConfig: SecretsBonusConfig = SecretsBonusConfig(),
+    
+    // Base score for completion (used in basic grading)
+    val baseCompletionScore: Int = 100,
+    
+    // Whether to use basic grading (simpler scoring system)
+    val useBasicGrading: Boolean = false
+)
+
+/**
+ * Grade thresholds configuration
+ */
+data class GradeThresholds(
+    val gradeA: Int = 350,
+    val gradeB: Int = 300,
+    val gradeC: Int = 250,
+    val gradeD: Int = 200
+    // F is anything below gradeD
+)
+
+/**
+ * Basic grade thresholds (for basic grading system)
+ */
+data class BasicGradeThresholds(
+    val gradeA: Int = 150,
+    val gradeB: Int = 125,
+    val gradeC: Int = 100,
+    val gradeD: Int = 75
+    // F is anything below gradeD
+)
+
+/**
+ * Time bonus configuration
+ */
+data class TimeBonusConfig(
+    val halfTimeBonus: Int = 100,    // Bonus for completing in ≤50% of time limit
+    val threeQuarterTimeBonus: Int = 75,  // Bonus for completing in ≤75% of time limit
+    val withinTimeBonus: Int = 50,   // Bonus for completing within time limit
+    val overtimeBonus: Int = 0,      // Bonus for completing over time limit
+    
+    // Basic grading time bonuses (smaller values)
+    val basicHalfTimeBonus: Int = 50,
+    val basicThreeQuarterTimeBonus: Int = 25,
+    val basicWithinTimeBonus: Int = 10,
+    val basicOvertimeBonus: Int = 0
+)
+
+/**
+ * Efficiency bonus configuration
+ */
+data class EfficiencyBonusConfig(
+    val maxInkCapacity: Float = 1000f,  // Maximum ink capacity for efficiency calculation
+    val maxEfficiencyBonus: Int = 100   // Maximum bonus points for perfect efficiency
+)
+
+/**
+ * Robot bonus configuration
+ */
+data class RobotBonusConfig(
+    val maxRobotBonus: Int = 100  // Maximum bonus points for converting all robots
+)
+
+/**
+ * Secrets/doors bonus configuration
+ */
+data class SecretsBonusConfig(
+    val maxSecretsBonus: Int = 100  // Maximum bonus points for finding all secrets/doors
+)
+
+/**
  * Data class for campaign level configuration
  */
 data class CampaignLevelData(
@@ -16,7 +102,8 @@ data class CampaignLevelData(
     val requiredCoverage: Float = 1.0f,
     val timeLimit: Long? = null,
     val mazeComplexity: String = "MEDIUM",
-    val requiresSinglePath: Boolean = false // New: true for puzzle levels that need linear progression
+    val requiresSinglePath: Boolean = false, // New: true for puzzle levels that need linear progression
+    val gradingConfig: LevelGradingConfig = LevelGradingConfig() // New: per-level grading configuration
 )
 
 /**
@@ -137,7 +224,12 @@ object CampaignLevels {
         requiredCoverage = 0.1f, // Very low coverage requirement for tutorial
         timeLimit = null, // No time limit for tutorial
         mazeComplexity = "LOW", // Simple maze for tutorial
-        requiresSinglePath = true // Tutorial is a puzzle level requiring door unlock
+        requiresSinglePath = true, // Tutorial is a puzzle level requiring door unlock
+        gradingConfig = LevelGradingConfig(
+            useBasicGrading = true, // Use simpler grading for tutorial
+            baseCompletionScore = 100, // Base score for completing tutorial
+            secretsBonusConfig = SecretsBonusConfig(maxSecretsBonus = 50) // Lower bonus for tutorial
+        )
     )
     
     // Level 2: First Contact - Introduces security devices and more doors
@@ -192,7 +284,16 @@ object CampaignLevels {
         requiredCoverage = 0.6f,
         timeLimit = null,
         mazeComplexity = "MEDIUM",
-        requiresSinglePath = false // Linear maze
+        requiresSinglePath = false, // Linear maze
+        gradingConfig = LevelGradingConfig(
+            // Slightly easier grading for level 2
+            gradeThresholds = GradeThresholds(
+                gradeA = 300, // Reduced from 350
+                gradeB = 250, // Reduced from 300
+                gradeC = 200, // Reduced from 250
+                gradeD = 150  // Reduced from 200
+            )
+        )
     )
     
     // Level 3: Deep Infiltration - More complex puzzles
@@ -266,7 +367,18 @@ object CampaignLevels {
         requiredCoverage = 0.8f,
         timeLimit = 300000L, // 5 minutes
         mazeComplexity = "HIGH",
-        requiresSinglePath = false // Linear maze
+        requiresSinglePath = false, // Linear maze
+        gradingConfig = LevelGradingConfig(
+            // Higher bonuses for more complex level
+            timeBonusConfig = TimeBonusConfig(
+                halfTimeBonus = 150,        // Increased from 100
+                threeQuarterTimeBonus = 100, // Increased from 75
+                withinTimeBonus = 75        // Increased from 50
+            ),
+            robotBonusConfig = RobotBonusConfig(
+                maxRobotBonus = 150 // Increased from 100 for multiple robots
+            )
+        )
     )
     
     // Level 4A: Branch A - Power Plant
@@ -342,7 +454,8 @@ object CampaignLevels {
         requiredCoverage = 0.9f,
         timeLimit = 240000L, // 4 minutes
         mazeComplexity = "HIGH",
-        requiresSinglePath = false // Linear maze
+        requiresSinglePath = false, // Linear maze
+        gradingConfig = LevelGradingConfig() // Default grading configuration
     )
     
     // Level 4B: Branch B - Data Hub
@@ -416,6 +529,7 @@ object CampaignLevels {
         requiredCoverage = 0.9f,
         timeLimit = 300000L, // 5 minutes
         mazeComplexity = "HIGH",
-        requiresSinglePath = false // Linear maze
+        requiresSinglePath = false, // Linear maze
+        gradingConfig = LevelGradingConfig() // Default grading configuration
     )
 } 

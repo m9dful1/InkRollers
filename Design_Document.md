@@ -120,7 +120,7 @@ Ink Rollers is an Android mobile game application with a client-server architect
         *   **Level Integration:** `CampaignLevel` class implementing Level interface with campaign mechanics
         *   **Core Mechanics:** Color shift system, robot AI, environmental puzzles, security devices
         *   **Secrets System:** `SecretArea` class for hidden areas with discovery mechanics and visual feedback
-        *   **Grading System:** `LevelGrading` for comprehensive performance-based evaluation (A-F grades) with detailed scoring
+        *   **Grading System:** `LevelGrading` for comprehensive performance-based evaluation (A-F grades) with detailed scoring and configurable per-level grading parameters
         *   **Progression System:** Unlock dependencies, completion tracking, grade persistence via SharedPreferences
         *   **Visual Effects System:** `CampaignEffects` class for color shift, robot conversion, area completion, and bloom effects
         *   **Enhanced UI:** Custom drawables for frequency display, color shift button, progress indicators, and grade visualization
@@ -134,7 +134,7 @@ Ink Rollers is an Android mobile game application with a client-server architect
         *   **Campaign Controls:** Fully integrated color shift, mode toggle, and campaign-specific interactions
     *   **Technology:** Android Activities/RecyclerView, SharedPreferences for persistence, Gson for serialization, custom animations and drawables
     *   **Integration:** Launched from `HomeActivity`, integrated with existing game architecture via `GameView`
-    *   **Key Classes:** `CampaignActivity`, `CampaignLevelActivity`, `CampaignManager`, `CampaignLevelData`, `CampaignLevel`, `MissionAdapter`, `LevelGrading`, `CampaignEffects`, `SecretArea`
+    *   **Key Classes:** `CampaignActivity`, `CampaignLevelActivity`, `CampaignManager`, `CampaignLevelData`, `CampaignLevel`, `MissionAdapter`, `LevelGrading`, `CampaignEffects`, `SecretArea`, `GradingExamples`
 *   **Item & Power-Up Subsystem:** *(FULLY IMPLEMENTED)*
     *   **Status:** Complete modular item system with maze-aware spawning and campaign integration.
     *   **Implemented Features:**
@@ -451,7 +451,8 @@ Data Payloads are primarily Kotlin data classes like `PlayerState` and `PlayerPr
 | **`MissionAdapter.kt** | **RecyclerView adapter for campaign mission list.** Displays mission items with status indicators (available, completed, locked), handles mission selection clicks, and manages visual state (icons, colors, button states) based on progression. Includes grade visualization with color-coded performance indicators. | `onCreateViewHolder()`, `onBindViewHolder()`, `getItemCount()`. `MissionItem` data class for mission display data. Mission list UI management with grade display. |
 | **`CampaignLevelActivity.kt** | **Campaign level gameplay activity.** Handles campaign level initialization, player setup, color shift controls, and campaign-specific UI elements. Integrates with GameView for campaign gameplay. **Phase 6 Updates:** Added comprehensive objectives display, progress tracking, and complete campaign controls integration. | `onCreate()`, `initializeCampaignLevel()`, `setupUI()`, `updateFrequencyDisplay()`, `updateObjectivesDisplay()`, `updateModeDisplay()`, `updateProgressDisplay()`. Campaign gameplay management, UI controls, and real-time progress tracking. |
 | **`CampaignLevel.kt** | **Campaign level implementation.** Extends Level interface with campaign-specific mechanics including robots, security devices, hardened paint areas, and secret areas. Uses composition with MazeLevel as base. | `update()`, `draw()`, `checkCollision()`, `handlePlayerInteraction()`, `setupCampaignElements()`, `getGradingStats()`. Campaign mechanics integration and level management with grading statistics. |
-| **`LevelGrading.kt** | **Comprehensive grading system for campaign levels.** Calculates performance-based grades (A-F) based on time completion, efficiency, robot conversion, and secrets found. Provides detailed scoring breakdown with bonus calculations. | `calculateGrade()`, `calculateBasicGrade()`. Performance evaluation and scoring system with comprehensive metrics. |
+| **`LevelGrading.kt** | **Comprehensive grading system for campaign levels.** Calculates performance-based grades (A-F) based on time completion, efficiency, robot conversion, and secrets found. Provides detailed scoring breakdown with bonus calculations. **Now supports configurable per-level grading parameters** including custom grade thresholds, bonus values, and grading modes. | `calculateGrade()`, `calculateBasicGrade()`. Performance evaluation and scoring system with comprehensive metrics and configurable parameters. |
+| **`GradingExamples.kt** | **Pre-configured grading examples for campaign levels.** Provides ready-to-use grading configurations for common scenarios including easy tutorial grading, lenient/strict grading, time-focused levels, efficiency-focused levels, robot-heavy levels, puzzle levels, and balanced generous grading. Includes comprehensive documentation and usage examples. | Pre-made configurations: `EASY_TUTORIAL_GRADING`, `LENIENT_GRADING`, `STRICT_GRADING`, `HIGH_TIME_BONUS_GRADING`, `EFFICIENCY_FOCUSED_GRADING`, `ROBOT_FOCUSED_GRADING`, `PUZZLE_FOCUSED_GRADING`, `GENEROUS_GRADING`. Easy copy-paste examples for quick level customization. |
 | **`SecretArea.kt** | **Secret area discovery and interaction system.** Handles hidden areas in campaign levels with proximity detection, discovery mechanics, and visual feedback. Manages secret types and discovery animations. | `attemptDiscovery()`, `checkPlayerProximity()`, `update()`, `draw()`. Secret area management with discovery tracking and visual effects. |
 | **`ItemManager.kt** | **Manages the modular item and power-up system.** Handles spawning, updating, rendering, and collection of items with intelligent maze-aware placement. Implements three-tier spawning strategy using walkable maze cells, collision detection with multiple point testing, and performance optimization with spawn cooldowns and item limits. | `spawnItem()`, `forceSpawnItem()`, `update()`, `render()`, `handleItemCollection()`, `clearAllItems()`, `getActiveItems()`, `canSpawnItem()`. Manages item lifecycle, collision detection, and campaign integration. |
 | **`BaseItem.kt** | **Abstract base class for all power-up items.** Provides common functionality including position management, animation system, collision detection, lifecycle management, and visual effects. Implements shared behavior for spawning, updating, rendering, and collection with proper resource cleanup. | `update()`, `render()`, `checkCollision()`, `collect()`, `spawn()`, `getCollisionRadius()`, `isActive()`. Animation support with pulsing, floating, and custom visual effects. |
@@ -854,6 +855,18 @@ AndroidManifest.xml
 
 
 ### 13.3 Change Log
+**2025-12-21**
+- **✅ Configurable Campaign Grading System COMPLETED:**
+    - **Per-Level Grading Configuration:** Implemented comprehensive configurable grading system allowing customization of grade thresholds, bonus values, and grading modes for each campaign level individually, similar to how maze seeds can be configured.
+    - **Grading Data Structures:** Added `LevelGradingConfig`, `GradeThresholds`, `TimeBonusConfig`, `EfficiencyBonusConfig`, `RobotBonusConfig`, and `SecretsBonusConfig` data classes to `CampaignLevelData.kt` for complete grading customization.
+    - **Enhanced LevelGrading System:** Updated `LevelGrading.kt` to use configurable parameters instead of hardcoded values, supporting both standard and basic grading modes with per-level customization.
+    - **Pre-Made Grading Examples:** Created `GradingExamples.kt` with 8 ready-to-use grading configurations for common scenarios: easy tutorial, lenient/strict grading, time-focused, efficiency-focused, robot-heavy, puzzle-focused, and generous grading.
+    - **Level Configuration Updates:** Updated campaign levels with custom grading configurations - Level 1 uses basic grading for tutorial, Level 2 has easier thresholds, Level 3 has higher bonuses, and Levels 4A/4B use default challenging grading.
+    - **Comprehensive Documentation:** Created detailed `CAMPAIGN_GRADING_GUIDE.md` with examples, configuration options, troubleshooting tips, and usage instructions for easy grading customization.
+    - **Backward Compatibility:** System maintains full backward compatibility with existing levels while enabling easy customization through optional `gradingConfig` parameter.
+    - **Tutorial Grade Fix:** Level 1 tutorial now uses basic grading system to prevent F grades on completion, addressing the core issue where completing both objectives still resulted in poor grades.
+    - **Build Verification:** Successfully compiled and tested with all grading configuration components integrated and functioning correctly with proper default values.
+
 **2025-12-20**
 - **✅ M-13.6 Item & Power-Up System COMPLETED:**
     - **Modular Item System Architecture:** Created comprehensive modular item and power-up system with `Item` interface, `BaseItem` abstract class, and `ItemType` enum defining 6 item types (INK_REFILL, SPEED_BOOST, PAINT_MULTIPLIER, SHIELD, FREEZE, TELEPORT).

@@ -10,7 +10,7 @@ object LevelGrading {
     private const val TAG = "LevelGrading"
     
     /**
-     * Calculate grade for a completed level
+     * Calculate grade for a completed level using configurable parameters
      */
     fun calculateGrade(
         timeTaken: Long,
@@ -22,9 +22,16 @@ object LevelGrading {
         levelData: CampaignLevelData
     ): CampaignManager.LevelGrade {
         
-        var score = 0
+        val config = levelData.gradingConfig
+        
+        // Use basic grading if configured
+        if (config.useBasicGrading) {
+            return calculateBasicGrade(timeTaken, levelData)
+        }
+        
+        var score: Int
         var timeBonus = 0
-        var efficiencyBonus = 0
+        var efficiencyBonus: Int
         var robotBonus = 0
         var secretsBonus = 0
         
@@ -32,39 +39,43 @@ object LevelGrading {
         levelData.timeLimit?.let { timeLimit ->
             val timeRatio = timeTaken.toFloat() / timeLimit.toFloat()
             timeBonus = when {
-                timeRatio <= 0.5f -> 100  // Completed in half time
-                timeRatio <= 0.75f -> 75   // Completed in 3/4 time
-                timeRatio <= 1.0f -> 50    // Completed within time limit
-                else -> 0                  // Over time limit
+                timeRatio <= 0.5f -> config.timeBonusConfig.halfTimeBonus
+                timeRatio <= 0.75f -> config.timeBonusConfig.threeQuarterTimeBonus
+                timeRatio <= 1.0f -> config.timeBonusConfig.withinTimeBonus
+                else -> config.timeBonusConfig.overtimeBonus
             }
         }
         
         // Efficiency bonus (ink usage)
-        val maxInk = 1000f // Assume max ink capacity
+        val maxInk = config.efficiencyBonusConfig.maxInkCapacity
+        val maxEfficiencyBonus = config.efficiencyBonusConfig.maxEfficiencyBonus
         val inkEfficiency = 1f - (inkUsed / maxInk)
-        efficiencyBonus = (inkEfficiency * 100).toInt().coerceIn(0, 100)
+        efficiencyBonus = (inkEfficiency * maxEfficiencyBonus).toInt().coerceIn(0, maxEfficiencyBonus)
         
         // Robot conversion bonus
         if (totalRobots > 0) {
             val conversionRatio = robotsConverted.toFloat() / totalRobots.toFloat()
-            robotBonus = (conversionRatio * 100).toInt()
+            val maxRobotBonus = config.robotBonusConfig.maxRobotBonus
+            robotBonus = (conversionRatio * maxRobotBonus).toInt()
         }
         
         // Secrets bonus
         if (totalSecrets > 0) {
             val secretsRatio = secretsFound.toFloat() / totalSecrets.toFloat()
-            secretsBonus = (secretsRatio * 100).toInt()
+            val maxSecretsBonus = config.secretsBonusConfig.maxSecretsBonus
+            secretsBonus = (secretsRatio * maxSecretsBonus).toInt()
         }
         
         // Calculate total score
         score = timeBonus + efficiencyBonus + robotBonus + secretsBonus
         
-        // Determine grade based on total score
+        // Determine grade based on configurable thresholds
+        val thresholds = config.gradeThresholds
         val grade = when {
-            score >= 350 -> "A"
-            score >= 300 -> "B"
-            score >= 250 -> "C"
-            score >= 200 -> "D"
+            score >= thresholds.gradeA -> "A"
+            score >= thresholds.gradeB -> "B"
+            score >= thresholds.gradeC -> "C"
+            score >= thresholds.gradeD -> "D"
             else -> "F"
         }
         
@@ -81,30 +92,32 @@ object LevelGrading {
     }
     
     /**
-     * Calculate a simple grade for basic completion
+     * Calculate a simple grade for basic completion using configurable parameters
      */
     fun calculateBasicGrade(
         timeTaken: Long,
         levelData: CampaignLevelData
     ): CampaignManager.LevelGrade {
         
-        var score = 100 // Base score for completion
+        val config = levelData.gradingConfig
+        var score = config.baseCompletionScore // Use configurable base score
         var timeBonus = 0
         
         // Time bonus (if level has time limit)
         levelData.timeLimit?.let { timeLimit ->
             val timeRatio = timeTaken.toFloat() / timeLimit.toFloat()
             timeBonus = when {
-                timeRatio <= 0.5f -> 50   // Completed in half time
-                timeRatio <= 0.75f -> 25   // Completed in 3/4 time
-                timeRatio <= 1.0f -> 10    // Completed within time limit
-                else -> 0                  // Over time limit
+                timeRatio <= 0.5f -> config.timeBonusConfig.basicHalfTimeBonus
+                timeRatio <= 0.75f -> config.timeBonusConfig.basicThreeQuarterTimeBonus
+                timeRatio <= 1.0f -> config.timeBonusConfig.basicWithinTimeBonus
+                else -> config.timeBonusConfig.basicOvertimeBonus
             }
         }
         
         score += timeBonus
         
-        // Determine grade based on total score
+        // Determine grade based on basic grading thresholds
+        // For basic grading, we use simpler thresholds
         val grade = when {
             score >= 150 -> "A"
             score >= 125 -> "B"
@@ -112,6 +125,8 @@ object LevelGrading {
             score >= 75 -> "D"
             else -> "F"
         }
+        
+        Log.d(TAG, "Basic level grading - Score: $score, Grade: $grade, Time: $timeBonus")
         
         return CampaignManager.LevelGrade(
             grade = grade,
