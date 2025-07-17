@@ -68,35 +68,129 @@ class Player(
   
   /**
    * Toggle the color frequency for campaign mode
+   * Thread-safe implementation with comprehensive error handling
    */
-  fun toggleColorShift() {
-      if (!isCampaignMode) return
-      
-      currentFrequency = when (currentFrequency) {
-          ColorFrequency.RED -> ColorFrequency.BLUE
-          ColorFrequency.BLUE -> ColorFrequency.GREEN
-          ColorFrequency.GREEN -> ColorFrequency.YELLOW
-          ColorFrequency.YELLOW -> ColorFrequency.RED
+  @Synchronized
+  fun toggleColorShift(): Boolean {
+      try {
+          // Validate campaign mode
+          if (!isCampaignMode) {
+              Log.w(TAG, "toggleColorShift called but player is not in campaign mode")
+              return false
+          }
+          
+          val oldFrequency = currentFrequency
+          
+          // Cycle through frequencies - Kotlin ensures currentFrequency is never null
+          currentFrequency = when (currentFrequency) {
+              ColorFrequency.RED -> ColorFrequency.BLUE
+              ColorFrequency.BLUE -> ColorFrequency.GREEN
+              ColorFrequency.GREEN -> ColorFrequency.YELLOW
+              ColorFrequency.YELLOW -> ColorFrequency.RED
+          }
+          
+          // Update paint color with validation
+          val newColor = frequencyColors[currentFrequency]
+          if (newColor == null) {
+              Log.e(TAG, "toggleColorShift: No color found for frequency $currentFrequency, using fallback")
+              paint.color = Color.RED
+              currentFrequency = ColorFrequency.RED
+              return false
+          } else {
+              paint.color = newColor
+          }
+          
+          // Play color shift sound effect (safe call)
+          try {
+              audioManager?.playSound(AudioManager.SoundType.COLOR_SHIFT)
+          } catch (e: Exception) {
+              Log.w(TAG, "toggleColorShift: Failed to play sound effect", e)
+              // Continue execution - sound failure shouldn't break color shift
+          }
+          
+          Log.d(TAG, "Color frequency shifted from $oldFrequency to $currentFrequency (color: ${String.format("#%06X", 0xFFFFFF and newColor)})")
+          return true
+          
+      } catch (e: Exception) {
+          Log.e(TAG, "toggleColorShift: Unexpected error during color shift", e)
+          // Reset to safe state
+          try {
+              currentFrequency = ColorFrequency.RED
+              paint.color = Color.RED
+          } catch (resetError: Exception) {
+              Log.e(TAG, "toggleColorShift: Failed to reset to safe state", resetError)
+          }
+          return false
       }
-      
-      // Update paint color to match new frequency
-      paint.color = frequencyColors[currentFrequency] ?: Color.RED
-      
-      // Play color shift sound effect
-      audioManager?.playSound(AudioManager.SoundType.COLOR_SHIFT)
-      
-      Log.d(TAG, "Color frequency shifted to: $currentFrequency")
   }
   
   /**
    * Get current color frequency (campaign mode)
+   * Thread-safe with validation
    */
-  fun getCurrentFrequency(): ColorFrequency = currentFrequency
+  @Synchronized
+  fun getCurrentFrequency(): ColorFrequency {
+      // Validate campaign mode
+      if (!isCampaignMode) {
+          Log.w(TAG, "getCurrentFrequency called but player is not in campaign mode")
+          return ColorFrequency.RED // Safe fallback
+      }
+      
+      return currentFrequency // Kotlin ensures this is never null
+  }
   
   /**
    * Get the color corresponding to current frequency (campaign mode)
+   * Thread-safe with validation
    */
-  fun getFrequencyColor(): Int = frequencyColors[currentFrequency] ?: Color.RED
+  @Synchronized
+  fun getFrequencyColor(): Int {
+      if (!isCampaignMode) {
+          Log.w(TAG, "getFrequencyColor called but player is not in campaign mode")
+          return getColor() // Fall back to regular player color
+      }
+      
+      val frequency = getCurrentFrequency() // This includes validation
+      return frequencyColors[frequency] ?: run {
+          Log.e(TAG, "getFrequencyColor: No color found for frequency $frequency, using RED fallback")
+          Color.RED
+      }
+  }
+  
+  /**
+   * Validate and fix frequency state if corrupted
+   */
+  @Synchronized
+  fun validateFrequencyState(): Boolean {
+      if (!isCampaignMode) return true
+      
+      try {
+          // Check if current frequency has a valid color mapping
+          val isValidFrequency = frequencyColors.containsKey(currentFrequency)
+          
+          if (!isValidFrequency) {
+              Log.w(TAG, "validateFrequencyState: Invalid frequency state detected, resetting to RED")
+              currentFrequency = ColorFrequency.RED
+              paint.color = Color.RED
+              return false
+          }
+          
+          // Check if paint color matches frequency
+          val expectedColor = frequencyColors[currentFrequency]
+          if (expectedColor != null && paint.color != expectedColor) {
+              Log.w(TAG, "validateFrequencyState: Paint color mismatch, fixing")
+              paint.color = expectedColor
+              return false
+          }
+          
+          return true
+      } catch (e: Exception) {
+          Log.e(TAG, "validateFrequencyState: Error during validation", e)
+          currentFrequency = ColorFrequency.RED
+          paint.color = Color.RED
+          return false
+      }
+  }
   
   /**
    * Check if player is in campaign mode

@@ -856,6 +856,43 @@ AndroidManifest.xml
 
 ### 13.3 Change Log
 **2025-12-21**
+- **✅ Color Shift Function Robustness Enhancement COMPLETED:**
+    - **Thread Safety Implementation:** Added `@Synchronized` annotations to all color shift methods in `Player.kt` to prevent race conditions and ensure atomic operations during frequency changes in multi-threaded environments.
+    - **Comprehensive Error Handling:** Implemented extensive try-catch blocks with specific error logging throughout the color shift system:
+        - `Player.toggleColorShift()` with state validation and graceful failure handling
+        - `CampaignLevelActivity` button click handlers with comprehensive validation
+        - `GameUpdateManager` HUD updates with error recovery and fallback mechanisms
+        - Audio system integration with proper error handling and fallback behaviors
+    - **Enhanced Input Validation:** Added robust validation throughout the color shift system:
+        - Campaign mode validation before allowing frequency changes
+        - Player state validation before UI updates
+        - Component initialization checks (audioManager, inkHudView, gameView)
+        - Campaign effects validation before triggering visual effects
+    - **Improved User Feedback:** Implemented comprehensive user feedback mechanisms:
+        - `showTemporaryMessage()` method for safe UI notifications via Toast messages
+        - Detailed logging for debugging and troubleshooting with specific error codes
+        - Graceful degradation when components are not available
+        - Audio feedback validation with fallback when audio system unavailable
+    - **UI State Management:** Enhanced UI state validation and management:
+        - Component initialization checks before UI updates
+        - Thread-safe UI operations with proper runOnUiThread usage
+        - Comprehensive state validation in `updateFrequencyDisplay()` and `updateInkHudDisplay()`
+        - Periodic frequency system validation for consistency
+    - **Button Click Handler Robustness:** Significantly improved color shift button click handling:
+        - Comprehensive validation before processing clicks
+        - Player availability checks with user feedback
+        - Campaign mode validation with appropriate error messages
+        - Audio system validation with graceful fallback
+        - Visual effects validation with error recovery
+    - **GameUpdateManager Enhancements:** Improved HUD update system robustness:
+        - Enhanced `updateHUDs()` method with comprehensive error handling
+        - Player state validation before accessing properties
+        - Ink color determination with error recovery and fallback colors
+        - Component availability checks with graceful degradation
+    - **Performance Optimizations:** Removed redundant null checks and conditions identified by Kotlin compiler while maintaining defensive programming principles for optimal performance.
+    - **Build Verification:** Successfully compiled with clean build (no warnings) and all robustness improvements integrated without performance impact.
+    - **Maintainability:** Enhanced code maintainability through consistent error handling patterns, comprehensive logging, and defensive programming practices throughout the color shift system.
+
 - **✅ Visual Frequency Indicator System IMPLEMENTED:**
     - **Removed Text Frequency Display:** Eliminated the text-based frequency indicator (`text_frequency` TextView) from campaign level layout that previously displayed "Frequency: Red/Blue/Green/Yellow".
     - **Color Shift Button Visual Indicator:** Modified Color Shift button to dynamically change its background color to match the current color frequency:
@@ -883,6 +920,34 @@ AndroidManifest.xml
         - Eliminates need to read text labels during fast-paced gameplay
     - **Technical Implementation:** Clean separation of concerns with frequency color logic centralized in player frequency system and visual updates handled by UI components.
     - **Build Verification:** Successfully compiled and tested with all visual frequency indicator components integrated and functioning correctly.
+
+- **✅ Robot Spawner Enemy Type IMPLEMENTED:**
+    - **New Enemy Type:** Created `RobotSpawner` class as a stationary device that spawns robots at timed intervals, adding dynamic enemy generation to campaign levels.
+    - **Spawner Mechanics:**
+        - Stationary device positioned on campaign levels that cannot be moved or destroyed
+        - Timer-based spawning system with configurable intervals (default 10 seconds)
+        - Maximum spawn limit to prevent overwhelming players (configurable, default 3 robots)
+        - Spawned robots have full patrol capabilities around the spawner area
+    - **Smart Robot Spawning:**
+        - Safe spawn position detection to avoid walls and obstacles
+        - Automatic patrol path generation around spawner area
+        - Custom patrol paths can be defined relative to spawner position
+        - Spawned robots integrate seamlessly with existing robot AI system
+    - **Visual Design:**
+        - Industrial-looking square device with antenna/core details
+        - Red border indicates active spawner, gray when disabled
+        - Spawn animation with cyan pulse effect when creating robots
+        - Optional spawn radius indicator for debugging
+    - **Level Integration:**
+        - Added `RobotSpawnerData` configuration to campaign level data structure
+        - Integrated with existing collision detection and coordinate transformation systems
+        - Added spawners to Level 2 (15-second intervals, max 2 robots) and Level 3 (12-second intervals, max 3 robots)
+        - Spawners update, draw, and interact with campaign level systems
+    - **Technical Implementation:**
+        - `RobotSpawner.kt`: Main spawner class with timer, collision, and visual systems
+        - `RobotSpawnerData.kt`: Configuration data class for level definitions
+        - `CampaignLevel.kt`: Integration with spawner management and robot tracking
+        - Coordinate transformation support for maze-based level layouts
 
 - **✅ Campaign Level Exit Zone Positioning Fix COMPLETED:**
     - **Auto-Exit Positioning for All Levels:** Fixed exit zone positioning for all campaign levels (2, 3, 4A, 4B) to use automatic positioning at the actual maze exit location instead of hardcoded coordinates that didn't match the maze layout.

@@ -95,6 +95,7 @@ data class CampaignLevelData(
     val levelId: String,
     val levelName: String,
     val robotPositions: List<RobotData> = emptyList(),
+    val robotSpawners: List<RobotSpawnerData> = emptyList(), // New: robot spawners
     val securityDevices: List<SecurityDeviceData> = emptyList(),
     val hardenedPaintAreas: List<HardenedPaintData> = emptyList(),
     val doorActivators: List<DoorActivatorData> = emptyList(), // New: replaces secretAreas
@@ -104,6 +105,19 @@ data class CampaignLevelData(
     val mazeComplexity: String = "MEDIUM",
     val requiresSinglePath: Boolean = false, // New: true for puzzle levels that need linear progression
     val gradingConfig: LevelGradingConfig = LevelGradingConfig() // New: per-level grading configuration
+)
+
+/**
+ * Data class for robot spawner configuration
+ */
+data class RobotSpawnerData(
+    val x: Float,                                     // Spawner position X
+    val y: Float,                                     // Spawner position Y
+    val spawnInterval: Long = 10000L,                 // Time between spawns in milliseconds (default 10 seconds)
+    val maxRobots: Int = 3,                          // Maximum robots this spawner can have active (-1 for unlimited)
+    val spawnedRobotUnpaintRadius: Float = 50f,      // Unpaint radius for spawned robots
+    val spawnedRobotPatrolPath: List<Pair<Float, Float>> = emptyList(), // Relative patrol path from spawner position
+    val showSpawnRadius: Boolean = false              // Whether to show spawn radius visually (for debugging)
 )
 
 /**
@@ -254,6 +268,22 @@ object CampaignLevels {
                 )
             )
         ),
+        robotSpawners = listOf(
+            RobotSpawnerData(
+                x = 400f,
+                y = 400f,
+                spawnInterval = 15000L, // 15 seconds between spawns
+                maxRobots = 2,          // Max 2 robots from this spawner
+                spawnedRobotUnpaintRadius = 40f,
+                spawnedRobotPatrolPath = listOf(
+                    -60f to 0f,    // Move 60 units left from spawner
+                    60f to 0f,     // Move 60 units right from spawner
+                    0f to -60f,    // Move 60 units up from spawner
+                    0f to 60f      // Move 60 units down from spawner
+                ),
+                showSpawnRadius = false
+            )
+        ),
         securityDevices = listOf(
             SecurityDeviceData(
                 x = 200f,
@@ -332,6 +362,22 @@ object CampaignLevels {
                     700f to 200f
                 )
             ),
+        ),
+        robotSpawners = listOf(
+            RobotSpawnerData(
+                x = 600f,
+                y = 600f,
+                spawnInterval = 12000L, // 12 seconds between spawns
+                maxRobots = 3,          // Max 3 robots from this spawner
+                spawnedRobotUnpaintRadius = 45f,
+                spawnedRobotPatrolPath = listOf(
+                    -80f to -80f,   // Patrol in a larger square around spawner
+                    80f to -80f,
+                    80f to 80f,
+                    -80f to 80f
+                ),
+                showSpawnRadius = false
+            )
         ),
         securityDevices = listOf(
             SecurityDeviceData(

@@ -27,6 +27,7 @@ class CampaignLevel(
     
     // Campaign elements
     private val robots = mutableListOf<Robot>()
+    private val robotSpawners = mutableListOf<RobotSpawner>()
     private val securityDevices = mutableListOf<SecurityDevice>()
     private val hardenedPaintAreas = mutableListOf<HardenedPaint>()
     private val doorActivators = mutableListOf<DoorActivator>()
@@ -109,6 +110,35 @@ class CampaignLevel(
             val robot = Robot(screenX, screenY, transformedRobotData)
             robots.add(robot)
             Log.d(TAG, "Created robot at screen position ($screenX, $screenY) from data (${robotData.x}, ${robotData.y})")
+        }
+        
+        // Initialize robot spawners with proper coordinate transformation
+        levelData.robotSpawners.forEach { spawnerData ->
+            // Convert spawner coordinates to screen coordinates
+            val (screenX, screenY) = mazeLevel.mazeToScreenCoord(
+                spawnerData.x / 1000f, // Convert from 0-1000 range to 0-1 normalized
+                spawnerData.y / 1000f
+            )
+            
+            // Transform spawned robot patrol path coordinates
+            val transformedPatrolPath = spawnerData.spawnedRobotPatrolPath.map { (pathX, pathY) ->
+                val (transformedX, transformedY) = mazeLevel.mazeToScreenCoord(
+                    (spawnerData.x + pathX) / 1000f, // Relative to spawner, then to screen
+                    (spawnerData.y + pathY) / 1000f
+                )
+                transformedX - screenX to transformedY - screenY // Make relative to spawner screen position
+            }
+            
+            // Create spawner data with transformed coordinates
+            val transformedSpawnerData = spawnerData.copy(
+                x = screenX,
+                y = screenY,
+                spawnedRobotPatrolPath = transformedPatrolPath
+            )
+            
+            val spawner = RobotSpawner(transformedSpawnerData)
+            robotSpawners.add(spawner)
+            Log.d(TAG, "Created robot spawner at screen position ($screenX, $screenY) from data (${spawnerData.x}, ${spawnerData.y})")
         }
         
         // Initialize security devices
@@ -217,7 +247,7 @@ class CampaignLevel(
             Log.d(TAG, "  Area: (${exitArea.left}, ${exitArea.top}, ${exitArea.right}, ${exitArea.bottom})")
         }
         
-        Log.d(TAG, "Setup campaign elements: ${robots.size} robots, ${securityDevices.size} devices, ${hardenedPaintAreas.size} hardened areas, ${doorActivators.size} door activators, exit zone: ${exitZone != null}")
+        Log.d(TAG, "Setup campaign elements: ${robots.size} robots, ${robotSpawners.size} robot spawners, ${securityDevices.size} devices, ${hardenedPaintAreas.size} hardened areas, ${doorActivators.size} door activators, exit zone: ${exitZone != null}")
     }
     
     /**
@@ -247,6 +277,11 @@ class CampaignLevel(
             getPaintSurface()?.let { paintSurface ->
                 robot.update(1f / 60f, paintSurface, this)
             }
+        }
+        
+        // Update robot spawners
+        robotSpawners.forEach { spawner ->
+            spawner.update(1f / 60f, this)
         }
         
         // Update security devices
@@ -321,6 +356,11 @@ class CampaignLevel(
         // Draw exit zone
         exitZone?.draw(canvas)
         
+        // Draw robot spawners (before robots so they appear behind)
+        robotSpawners.forEach { spawner ->
+            spawner.draw(canvas)
+        }
+        
         // Draw security devices
         securityDevices.forEach { device ->
             device.draw(canvas)
@@ -342,6 +382,13 @@ class CampaignLevel(
         // Check maze walls first
         if (mazeLevel.checkCollision(x, y)) {
             return true
+        }
+        
+        // Check robot spawners
+        robotSpawners.forEach { spawner ->
+            if (spawner.checkCollision(x, y)) {
+                return true
+            }
         }
         
         // Check security devices
@@ -556,6 +603,27 @@ class CampaignLevel(
      */
     fun getScale(): Float {
         return mazeLevel.getScale()
+    }
+    
+    /**
+     * Add a spawned robot to the campaign level (called by robot spawners)
+     */
+    fun addSpawnedRobot(robot: Robot) {
+        robots.add(robot)
+        Log.d(TAG, "Added spawned robot at position ${robot.getPosition()} - Total robots: ${robots.size}")
+    }
+    
+    /**
+     * Remove a robot from the campaign level (for cleanup when robots are destroyed)
+     */
+    fun removeRobot(robot: Robot) {
+        if (robots.remove(robot)) {
+            // Notify spawners that a robot was removed so they can update their count
+            robotSpawners.forEach { spawner ->
+                spawner.decrementSpawnedRobotCount()
+            }
+            Log.d(TAG, "Removed robot - Total robots: ${robots.size}")
+        }
     }
     
     /**

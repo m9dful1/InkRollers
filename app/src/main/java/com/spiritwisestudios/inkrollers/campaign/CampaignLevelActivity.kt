@@ -13,6 +13,8 @@ import com.spiritwisestudios.inkrollers.databinding.ActivityCampaignLevelBinding
 import com.spiritwisestudios.inkrollers.R
 import com.spiritwisestudios.inkrollers.items.ItemConfig
 import com.spiritwisestudios.inkrollers.items.ItemType
+import android.os.Looper
+import android.os.Handler
 
 class CampaignLevelActivity : AppCompatActivity() {
 
@@ -96,18 +98,99 @@ class CampaignLevelActivity : AppCompatActivity() {
         gameView.setHudView(inkHudView)
         gameView.setTimerHudView(timerHudView)
 
-        // Setup color shift button
+        // Setup color shift button with robust error handling
         binding.buttonColorShift.setOnClickListener {
-            audioManager.playSound(AudioManager.SoundType.COLOR_SHIFT)
-            localPlayer?.toggleColorShift()
-            updateFrequencyDisplay()
-            
-            // Trigger color shift effect
-            campaignLevel?.getCampaignEffects()?.triggerColorShiftEffect(localPlayer!!)
+            try {
+                // Validate UI state before proceeding
+                if (!this::audioManager.isInitialized) {
+                    Log.w(TAG, "Color shift clicked but audioManager not initialized")
+                }
+                
+                // Get player with validation
+                val player = gameView.getLocalPlayer()
+                if (player == null) {
+                    Log.w(TAG, "Color shift clicked but no local player available")
+                    showTemporaryMessage("Player not available")
+                    return@setOnClickListener
+                }
+                
+                // Validate campaign mode
+                if (!player.isCampaignMode()) {
+                    Log.w(TAG, "Color shift clicked but player not in campaign mode")
+                    showTemporaryMessage("Color shift only available in campaign mode")
+                    return@setOnClickListener
+                }
+                
+                // Validate frequency state before shifting
+                try {
+                    if (!player.validateFrequencyState()) {
+                        Log.w(TAG, "Player frequency state was corrected before color shift")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error validating frequency state before color shift", e)
+                    showTemporaryMessage("Error with color system")
+                    return@setOnClickListener
+                }
+                
+                // Play sound effect (safe call)
+                try {
+                    audioManager.playSound(AudioManager.SoundType.COLOR_SHIFT)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to play color shift sound", e)
+                    // Continue - sound failure shouldn't prevent color shift
+                }
+                
+                // Attempt color shift with validation
+                val colorShiftSuccess = try {
+                    player.toggleColorShift()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error during color shift", e)
+                    showTemporaryMessage("Color shift failed")
+                    false
+                }
+                
+                if (colorShiftSuccess) {
+                    // Update UI display
+                    try {
+                        updateFrequencyDisplay()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error updating frequency display after color shift", e)
+                        // Try to force a safe update
+                        runOnUiThread {
+                            try {
+                                updateFrequencyDisplay()
+                            } catch (retryError: Exception) {
+                                Log.e(TAG, "Failed to update frequency display on retry", retryError)
+                            }
+                        }
+                    }
+                    
+                    // Trigger color shift effect (safe call)
+                    try {
+                        campaignLevel?.getCampaignEffects()?.triggerColorShiftEffect(player)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to trigger color shift visual effect", e)
+                        // Continue - visual effect failure shouldn't break functionality
+                    }
+                    
+                    Log.d(TAG, "Color shift completed successfully")
+                } else {
+                    Log.w(TAG, "Color shift was not successful")
+                    showTemporaryMessage("Color shift unavailable")
+                }
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "Unexpected error in color shift button click handler", e)
+                showTemporaryMessage("Unexpected error occurred")
+            }
         }
         
-        // Initialize frequency display
-        updateFrequencyDisplay()
+        // Initialize frequency display with error handling
+        try {
+            updateFrequencyDisplay()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during initial frequency display setup", e)
+        }
         
         // Setup mode toggle button
         // Initialize button appearance for default PAINT mode (hold to refill)
@@ -348,37 +431,124 @@ class CampaignLevelActivity : AppCompatActivity() {
     }
 
     private fun updateInkHudDisplay() {
-        localPlayer?.let { player ->
-            val inkColor = if (player.isCampaignMode()) {
-                player.getFrequencyColor()
-            } else {
-                player.getColor()
+        try {
+            gameView.getLocalPlayer()?.let { player ->
+                // Validate player state before accessing
+                if (!this::inkHudView.isInitialized) {
+                    Log.w(TAG, "updateInkHudDisplay: inkHudView not initialized")
+                    return
+                }
+                
+                val inkColor = try {
+                    if (player.isCampaignMode()) {
+                        player.getFrequencyColor()
+                    } else {
+                        player.getColor()
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "updateInkHudDisplay: Error getting player color", e)
+                    android.graphics.Color.BLUE // Safe fallback
+                }
+                
+                inkHudView.updateHud(player.getInkPercent(), player.getModeText(), inkColor)
+            } ?: run {
+                Log.w(TAG, "updateInkHudDisplay: No local player available")
             }
-            inkHudView.updateHud(player.getInkPercent(), player.getModeText(), inkColor)
+        } catch (e: Exception) {
+            Log.e(TAG, "updateInkHudDisplay: Unexpected error", e)
         }
     }
 
     private fun updateFrequencyDisplay() {
-        localPlayer?.let { player ->
-            val frequency = player.getCurrentFrequency()
-            val frequencyColor = when (frequency) {
-                ColorFrequency.RED -> android.graphics.Color.RED
-                ColorFrequency.BLUE -> android.graphics.Color.BLUE
-                ColorFrequency.GREEN -> android.graphics.Color.GREEN
-                ColorFrequency.YELLOW -> android.graphics.Color.YELLOW
+        try {
+            // Ensure we're on the main thread for UI updates
+            if (Looper.myLooper() != Looper.getMainLooper()) {
+                runOnUiThread { updateFrequencyDisplay() }
+                return
             }
             
-            // Update Color Shift button background color
-            binding.buttonColorShift.setBackgroundColor(frequencyColor)
-            
-            // Update ink HUD color as well
-            updateInkHudDisplay()
+            gameView.getLocalPlayer()?.let { player ->
+                // Validate player is in campaign mode
+                if (!player.isCampaignMode()) {
+                    Log.w(TAG, "updateFrequencyDisplay: Player not in campaign mode, disabling color shift button")
+                    binding.buttonColorShift.isEnabled = false
+                    binding.buttonColorShift.alpha = 0.5f
+                    return
+                }
+                
+                // Validate player frequency state
+                val isStateValid = try {
+                    player.validateFrequencyState()
+                } catch (e: Exception) {
+                    Log.e(TAG, "updateFrequencyDisplay: Error validating frequency state", e)
+                    false
+                }
+                
+                if (!isStateValid) {
+                    Log.w(TAG, "updateFrequencyDisplay: Player frequency state was invalid and has been reset")
+                }
+                
+                // Get frequency with validation
+                val frequency = try {
+                    player.getCurrentFrequency()
+                } catch (e: Exception) {
+                    Log.e(TAG, "updateFrequencyDisplay: Error getting current frequency", e)
+                    com.spiritwisestudios.inkrollers.campaign.ColorFrequency.RED // Safe fallback
+                }
+                
+                val frequencyColor = when (frequency) {
+                    com.spiritwisestudios.inkrollers.campaign.ColorFrequency.RED -> android.graphics.Color.RED
+                    com.spiritwisestudios.inkrollers.campaign.ColorFrequency.BLUE -> android.graphics.Color.BLUE
+                    com.spiritwisestudios.inkrollers.campaign.ColorFrequency.GREEN -> android.graphics.Color.GREEN
+                    com.spiritwisestudios.inkrollers.campaign.ColorFrequency.YELLOW -> android.graphics.Color.YELLOW
+                }
+                
+                // Update Color Shift button safely
+                try {
+                    binding.buttonColorShift.isEnabled = true
+                    binding.buttonColorShift.alpha = 1.0f
+                    binding.buttonColorShift.backgroundTintList = android.content.res.ColorStateList.valueOf(frequencyColor)
+                    
+                    // Update ink HUD color as well
+                    updateInkHudDisplay()
+                    
+                    Log.v(TAG, "updateFrequencyDisplay: Updated to frequency $frequency with color ${String.format("#%06X", 0xFFFFFF and frequencyColor)}")
+                } catch (e: Exception) {
+                    Log.e(TAG, "updateFrequencyDisplay: Error updating button appearance", e)
+                }
+                
+            } ?: run {
+                Log.w(TAG, "updateFrequencyDisplay: No local player available, disabling color shift button")
+                binding.buttonColorShift.isEnabled = false
+                binding.buttonColorShift.alpha = 0.5f
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "updateFrequencyDisplay: Unexpected error", e)
+            // Safe fallback - disable button
+            try {
+                binding.buttonColorShift.isEnabled = false
+                binding.buttonColorShift.alpha = 0.5f
+            } catch (fallbackError: Exception) {
+                Log.e(TAG, "updateFrequencyDisplay: Failed to disable button in error fallback", fallbackError)
+            }
         }
     }
     
     private fun updateModeDisplay() {
-        localPlayer?.let { player ->
-            binding.buttonModeToggle.text = player.getModeText()
+        try {
+            gameView.getLocalPlayer()?.let { player ->
+                val modeText = try {
+                    player.getModeText()
+                } catch (e: Exception) {
+                    Log.e(TAG, "updateModeDisplay: Error getting mode text", e)
+                    "PAINT" // Safe fallback
+                }
+                binding.buttonModeToggle.text = modeText
+            } ?: run {
+                Log.w(TAG, "updateModeDisplay: No local player available")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "updateModeDisplay: Unexpected error", e)
         }
     }
     
@@ -720,6 +890,62 @@ class CampaignLevelActivity : AppCompatActivity() {
             // Note: Don't call audioManager.release() here as it's a singleton
         } catch (e: Exception) {
             Log.e(TAG, "Error during onDestroy", e)
+        }
+    }
+
+    /**
+     * Show temporary message to user (safe UI operation)
+     */
+    private fun showTemporaryMessage(message: String) {
+        try {
+            runOnUiThread {
+                try {
+                    Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to show temporary message: $message", e)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to schedule temporary message display", e)
+        }
+    }
+    
+    /**
+     * Periodic validation of frequency system state
+     * Call this from onResume and periodically during gameplay
+     */
+    private fun validateFrequencySystem(): Boolean {
+        try {
+            val player = gameView.getLocalPlayer()
+            if (player == null) {
+                Log.v(TAG, "validateFrequencySystem: No local player")
+                return false
+            }
+            
+            if (!player.isCampaignMode()) {
+                Log.v(TAG, "validateFrequencySystem: Player not in campaign mode")
+                return true // Valid state for non-campaign
+            }
+            
+            // Validate and fix player frequency state
+            val isValid = player.validateFrequencyState()
+            if (!isValid) {
+                Log.w(TAG, "validateFrequencySystem: Player frequency state was corrected")
+                // Update UI to reflect corrected state
+                runOnUiThread {
+                    try {
+                        updateFrequencyDisplay()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "validateFrequencySystem: Error updating display after correction", e)
+                    }
+                }
+            }
+            
+            return isValid
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "validateFrequencySystem: Unexpected error during validation", e)
+            return false
         }
     }
 } 

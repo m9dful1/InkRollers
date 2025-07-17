@@ -178,16 +178,80 @@ class GameUpdateManager {
     
     /**
      * Update HUD elements based on local player state
+     * Enhanced with comprehensive error handling and validation
      */
     private fun updateHUDs(deltaTime: Float, localPlayer: Player?, inkHudView: InkHudView?) {
-        // Update ink HUD based on local player
-        localPlayer?.let { player ->
-            val inkColor = if (player.isCampaignMode()) {
-                player.getFrequencyColor()
-            } else {
-                player.getColor()
+        try {
+            // Validate input parameters
+            if (localPlayer == null) {
+                Log.v(TAG, "updateHUDs: No local player available")
+                return
             }
-            inkHudView?.updateHud(player.getInkPercent(), player.getModeText(), inkColor)
+            
+            if (inkHudView == null) {
+                Log.v(TAG, "updateHUDs: No ink HUD view available")
+                return
+            }
+            
+            // Get ink color with comprehensive validation
+            val inkColor = try {
+                if (localPlayer.isCampaignMode()) {
+                    // Campaign mode - use frequency color with validation
+                    try {
+                        val isStateValid = localPlayer.validateFrequencyState()
+                        if (!isStateValid) {
+                            Log.w(TAG, "updateHUDs: Player frequency state was corrected")
+                        }
+                        localPlayer.getFrequencyColor()
+                    } catch (frequencyError: Exception) {
+                        Log.e(TAG, "updateHUDs: Error getting frequency color, using fallback", frequencyError)
+                        android.graphics.Color.RED // Safe fallback for campaign mode
+                    }
+                } else {
+                    // Regular mode - use standard player color
+                    try {
+                        localPlayer.getColor()
+                    } catch (colorError: Exception) {
+                        Log.e(TAG, "updateHUDs: Error getting player color, using fallback", colorError)
+                        android.graphics.Color.BLUE // Safe fallback for regular mode
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "updateHUDs: Error determining ink color", e)
+                android.graphics.Color.BLUE // Ultimate fallback
+            }
+            
+            // Get ink percentage with validation
+            val inkPercent = try {
+                localPlayer.getInkPercent()
+            } catch (e: Exception) {
+                Log.e(TAG, "updateHUDs: Error getting ink percent", e)
+                1.0f // Safe fallback - full ink
+            }
+            
+            // Get mode text with validation
+            val modeText = try {
+                localPlayer.getModeText()
+            } catch (e: Exception) {
+                Log.e(TAG, "updateHUDs: Error getting mode text", e)
+                "PAINT" // Safe fallback
+            }
+            
+            // Update HUD with validated values
+            try {
+                inkHudView.updateHud(inkPercent, modeText, inkColor)
+            } catch (e: Exception) {
+                Log.e(TAG, "updateHUDs: Error updating ink HUD display", e)
+                // Try one more time with safe fallback values
+                try {
+                    inkHudView.updateHud(1.0f, "PAINT", android.graphics.Color.BLUE)
+                } catch (fallbackError: Exception) {
+                    Log.e(TAG, "updateHUDs: Failed to update HUD with fallback values", fallbackError)
+                }
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "updateHUDs: Unexpected error during HUD update", e)
         }
     }
     
