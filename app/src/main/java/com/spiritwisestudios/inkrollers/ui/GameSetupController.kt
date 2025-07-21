@@ -260,6 +260,7 @@ class GameSetupController @Inject constructor(
                     mazeComplexity = it.complexity
                     gameMode = it.gameMode
                     Log.d(TAG, "Joined game with settings: Duration=${matchDurationMs}ms, Complexity=$mazeComplexity, GameMode=${gameMode}")
+                    Log.d(TAG, "GameSettings durationMs: ${it.durationMs}, stored matchDurationMs: $matchDurationMs")
                 }
                 
                 setupJoinerListeners()
@@ -299,6 +300,7 @@ class GameSetupController @Inject constructor(
                     mazeComplexity = it.complexity
                     gameMode = it.gameMode
                     Log.d(TAG, "Joined random game with settings: Duration=${matchDurationMs}ms, Complexity=$mazeComplexity, GameMode=${gameMode}")
+                    Log.d(TAG, "GameSettings durationMs: ${it.durationMs}, stored matchDurationMs: $matchDurationMs")
                 }
                 
                 setupJoinerListeners()
@@ -399,7 +401,24 @@ class GameSetupController @Inject constructor(
                 val startTime = snapshot.getValue(Long::class.java)
                 if (startTime != null) {
                     Log.d(TAG, "readAndStartWithSynchronizedTime: Got startTime from Firebase: $startTime")
-                    matchStartTime = startTime
+                    
+                    // Validate that the startTime is reasonable (not too far in past or future)
+                    val currentTime = System.currentTimeMillis()
+                    val timeDiff = currentTime - startTime
+                    val maxStaleTime = matchDurationMs * 0.1 // Allow 10% of match duration as stale time
+                    val maxFutureTime = 30000L // Allow max 30 seconds in the future
+                    
+                    if (timeDiff > maxStaleTime) {
+                        Log.w(TAG, "readAndStartWithSynchronizedTime: startTime is ${timeDiff}ms in the past (>${maxStaleTime}ms stale limit). Using current time instead.")
+                        Log.w(TAG, "readAndStartWithSynchronizedTime: This may indicate network delays or device sync issues.")
+                        matchStartTime = currentTime
+                    } else if (timeDiff < -maxFutureTime) {
+                        Log.w(TAG, "readAndStartWithSynchronizedTime: startTime is ${-timeDiff}ms in the future (>${maxFutureTime}ms future limit). Using current time instead.")
+                        Log.w(TAG, "readAndStartWithSynchronizedTime: This may indicate network delays or device sync issues.")
+                        matchStartTime = currentTime
+                    } else {
+                        matchStartTime = startTime
+                    }
                 } else {
                     Log.w(TAG, "readAndStartWithSynchronizedTime: startTime not found, using local time")
                     matchStartTime = System.currentTimeMillis()
@@ -462,7 +481,10 @@ class GameSetupController @Inject constructor(
 
     // Getters for the activity to access current state
     fun getLocalPlayerId(): String? = localPlayerId
-    fun getMatchDurationMs(): Long = matchDurationMs
+    fun getMatchDurationMs(): Long {
+        Log.d(TAG, "getMatchDurationMs called, returning: $matchDurationMs")
+        return matchDurationMs
+    }
     fun getMazeComplexity(): String = mazeComplexity
     fun getGameMode(): String = gameMode
     fun getMatchStartTime(): Long? = matchStartTime

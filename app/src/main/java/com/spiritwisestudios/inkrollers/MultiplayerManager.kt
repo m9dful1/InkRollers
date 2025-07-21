@@ -475,6 +475,18 @@ class MultiplayerManager {
                         return
                     }
                     
+                    // Check if the game is too old to join safely
+                    val createdAt = snapshot.child(CREATED_AT_NODE).getValue(Long::class.java)
+                    if (createdAt != null) {
+                        val gameAge = System.currentTimeMillis() - createdAt
+                        val maxSafeAge = 5 * 60 * 1000L // 5 minutes
+                        if (gameAge > maxSafeAge) {
+                            Log.w(TAG, "Game $gameId is too old to join safely (${gameAge}ms old, max ${maxSafeAge}ms). Skipping.")
+                            handleJoinFailure(initialPlayerState, availableGames, callback, "Game is too old to join")
+                            return
+                        }
+                    }
+                    
                     // Successfully found a game to join, proceed
                     Log.i(TAG, "Successfully joining game $gameId")
                     currentGameId = gameId
@@ -902,8 +914,8 @@ class MultiplayerManager {
                 Log.d(TAG, "sendMatchStart: Storing playerCount=$playerCount in game node for $currentGameId")
                 gameRef!!.child("playerCount").setValue(playerCount)
                     .addOnCompleteListener {
-                        // Write a synchronized startTime (4 seconds in the future to align with countdown end)
-                        val startTime = System.currentTimeMillis() + 4000L
+                        // Write a synchronized startTime (3 seconds in the future to align with countdown end)
+                        val startTime = System.currentTimeMillis() + 3000L
                         val updates = mapOf(
                             "started" to true,
                             "startTime" to startTime,
@@ -925,7 +937,7 @@ class MultiplayerManager {
             override fun onCancelled(error: DatabaseError) {
                 Log.w(TAG, "sendMatchStart: Failed to get player count", error.toException())
                 // Fallback: still try to start
-                val startTime = System.currentTimeMillis() + 4000L // Align with countdown end
+                val startTime = System.currentTimeMillis() + 3000L // Align with countdown end
                 val updates = mapOf(
                     "started" to true,
                     "startTime" to startTime,

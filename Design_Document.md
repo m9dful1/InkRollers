@@ -597,7 +597,7 @@ A multi-layered testing approach will be used:
     *   Collision detection.
     *   Correct HUD updates (ink, timer, coverage/zones).
     *   Real-time synchronization of player movement and paint between clients.
-    *   Correct win condition evaluation for each mode.
+    *   Correct win condition evaluation for each mode. *(Fixed: Winner calculation bug resolved - both players no longer automatically lose)*
 *   **Rematch Flow:**
     *   Both players select "Yes" -> Rematch starts correctly, state is reset.
     *   One player selects "No" -> Game ends, users return to appropriate screen.
@@ -651,11 +651,12 @@ A multi-layered testing approach will be used:
 | **M‑11 PreMatch/Rematch** | ✅ Done | Added Waiting/Countdown flow. Fixed rematch loop and state reset issues. Added Firebase game cleanup. Added `TimerHudView`. Resolved initialization/rendering bugs. Ensured frame-rate independent player movement (delta timing). Corrected `TimerHudView` position. Solidified maze wall corners for collision. | Ensures smooth multiplayer start/restart/rendering and consistent gameplay. Includes fix for duplicate game creation on host and implementation of joining random available games. Refined Firebase connection check logic. |
 | **M‑11.5 Match Customization** | ✅ Done | Added Match Settings dialog (Time Limit, Maze Complexity) for hosts. Maze complexity adjusts cell density. Settings synced via Firebase for joining players.        | Provides more replayability and control.                                       |
 | **M‑11.6 Profile Integration & Init Fixes** | ✅ Done | Player names and colors now loaded from profile and used in matches. Game initialization fixed to always set up level and player at match start. Save button logic and friend code generation improved. | Includes bug fixes for game loop/thread initialization and profile save button. |
-| **M‑12 Zones Mode**   | ✅ **Done** | Defined zones in `Level`/`MazeLevel`. Implemented `ZoneOwnershipCalculator`. Created `ZoneHudView`. Integrated into `GameModeManager`, `GameView`, `MainActivity`, `HomeActivity`. Added game mode selection to host settings and Firebase sync. Addressed performance issues and paint persistence. HUD positioning refined. | New game mode fully integrated. |
+| **M‑12 Zones Mode**   | ✅ **Done** | Defined zones in `Level`/`MazeLevel`. Implemented `ZoneOwnershipCalculator`. Created `ZoneHudView`. Integrated into `GameModeManager`, `GameView`, `MainActivity`, `HomeActivity`. Added game mode selection to host settings and Firebase sync. Addressed performance issues and paint persistence. HUD positioning refined. **Winner calculation logic fixed** - resolved critical bug where both players lost. | New game mode fully integrated with proper winner determination. |
 | **M‑12.5 Game Persistence** | ✅ **Done** | Implemented comprehensive game persistence system to maintain active sessions when app goes to background. Added `GameStateManager` for persistent storage, smart exit detection in `MainActivity`, and `rejoinGame()` functionality in `MultiplayerManager`. Includes mid-game rejoin support and state validation. | Addresses core UX issue where players were disconnected from matches when backgrounding app. |
 | **M‑13 Audio / FX**   | ✅ **Done** | **Complete audio subsystem implementation** with `AudioManager` singleton using `SoundPool` for low-latency effects and `MediaPlayer` for background music. Includes comprehensive sound effects: painting/refill sounds, UI clicks, mode toggles, match events (start/end/player join), and background music. Audio files added to `/res/raw/` directory with volume controls and lifecycle management. | **Full Implementation Complete:** All game actions have corresponding audio feedback. Paint/refill use looping sounds, match events trigger appropriate audio, and background music plays during gameplay. Audio preferences integrated with activity lifecycle (pause/resume/destroy). |
 | **M‑13.5 Single-Player Campaign** | ✅ **Phase 6 Done** | **Complete campaign system implementation** with comprehensive grading system, progression tracking, and fully functional gameplay. Includes `CampaignActivity` for mission selection, `CampaignLevelActivity` for gameplay, `CampaignLevel` for level mechanics, `LevelGrading` for performance evaluation, `SecretArea` for hidden content, and comprehensive campaign infrastructure. All core mechanics (color shift, robots, environmental puzzles, secrets) integrated with existing game architecture. **Phase 6 adds:** Complete player rendering and movement system, functional virtual joystick controls, optimized UI layout and positioning, robot coordinate transformation and visibility, and fully integrated campaign controls. Critical gameplay issues resolved. | **Phase 6 Complete (100%):** Full campaign system operational with all critical issues resolved. Player rendering functional, movement and controls working, UI properly positioned, robots visible and interactive, all campaign mechanics fully integrated and tested. Campaign mode ready for release. |
 | **M‑13.6 Item & Power-Up System** | ✅ **Done** | **Complete modular item and power-up system implementation** with maze-aware spawning and campaign integration. Includes `ItemManager` for item lifecycle management, `BaseItem` abstract class for common functionality, `InkRefillItem` as first power-up implementation, `ItemConfig` for campaign-level configuration, and `GameViewPlayerManager` for loose coupling. Features intelligent three-tier spawning strategy using walkable maze cells, enhanced collision detection, visual effects, and performance optimization. Fully integrated with existing game architecture including GameView, GameRenderer, and CampaignLevelActivity. | **Complete Implementation:** Modular architecture with 6 item types defined, ink refill power-up fully functional with animated visual effects, maze-aware spawning preventing out-of-bounds placement, campaign integration with level-specific item configuration, and comprehensive collision system. System ready for future power-up additions. |
+| **M‑13.7 Full Screen & Winner Logic** | ✅ **Done** | **Critical UI and gameplay fixes:** Implemented proper full screen display across all activities with display cutout handling for camera notch areas. Fixed critical multiplayer winner calculation bug where both players would automatically lose due to incorrect match end logic. Enhanced user experience with consistent full screen immersion and proper competitive gameplay. | **Essential Fixes:** All activities now properly full screen on modern devices, multiplayer matches correctly determine winners based on performance, improved overall game polish and user experience. |
 | **M‑14 Polish/Release**| ☐          | Icons, onboarding, Google Play bundle, privacy policy.                                                                                                                    |                                                                                |
 
 ### 10.3 Detailed Upcoming Tasks (Post M-13.5)
@@ -856,6 +857,34 @@ AndroidManifest.xml
 
 ### 13.3 Change Log
 **2025-12-21**
+- **✅ Multiplayer Winner Calculation Fix COMPLETED:**
+    - **Root Cause Identified:** Fixed critical bug where both players would automatically lose in multiplayer matches due to incorrect match end logic in `GameView.kt`.
+    - **Problem:** The `GameUpdateManager.onMatchEnd` callback was using flawed logic: `onMatchEnd?.invoke(reason == "player_won")`. When timer expired with `reason = "timer_expired"`, this evaluated to `false`, causing both players to get `didWin = false`.
+    - **Solution:** Replaced the incorrect callback logic with proper winner calculation by calling `finishMatch(reason)` method that:
+        - Calculates coverage statistics for COVERAGE mode
+        - Determines zone ownership for ZONES mode  
+        - Compares performance between players to identify actual winner
+        - Calls `onMatchEnd?.invoke(didWin)` with correct win/loss result
+    - **Implementation:** Updated `GameView.kt` line 105 to call `finishMatch(reason)` instead of the broken equality check.
+    - **Impact:** Multiplayer matches now correctly determine winners based on actual game performance rather than defaulting both players to losing.
+    - **Testing:** Verified with timing synchronization fixes and proper match end behavior across different game modes.
+
+- **✅ Full Screen Display Implementation COMPLETED:**
+    - **Problem:** HomeActivity, MainActivity, and CampaignActivity had black bars at camera cutout/notch areas while CampaignLevelActivity was properly full screen.
+    - **Root Cause:** Missing display cutout handling and system window insets configuration for Android P+ devices.
+    - **Solution Applied to All Activities:**
+        - **Display Cutout Mode:** Added `layoutInDisplayCutoutMode = LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES` for Android P+ to allow content extension into camera cutout areas.
+        - **System Window Insets:** Added `window.setDecorFitsSystemWindows(false)` for Android 11+ to enable content behind system bars.
+        - **Backward Compatibility:** Maintained existing full screen logic for older Android versions.
+    - **Activities Updated:**
+        - ✅ `HomeActivity.kt` - Now extends into camera cutout area
+        - ✅ `MainActivity.kt` - Now extends into camera cutout area  
+        - ✅ `CampaignActivity.kt` - Now extends into camera cutout area
+        - ✅ `CampaignLevelActivity.kt` - Already had proper implementation
+    - **Technical Implementation:** Updated `enableFullScreenMode()` methods in all activities with consistent display cutout handling code.
+    - **Result:** All screens now provide consistent full screen experience across the entire app, eliminating black bars on devices with camera notches/cutouts.
+    - **Build Verification:** Successfully compiled with no warnings and all full screen improvements integrated.
+
 - **✅ Color Shift Function Robustness Enhancement COMPLETED:**
     - **Thread Safety Implementation:** Added `@Synchronized` annotations to all color shift methods in `Player.kt` to prevent race conditions and ensure atomic operations during frequency changes in multi-threaded environments.
     - **Comprehensive Error Handling:** Implemented extensive try-catch blocks with specific error logging throughout the color shift system:

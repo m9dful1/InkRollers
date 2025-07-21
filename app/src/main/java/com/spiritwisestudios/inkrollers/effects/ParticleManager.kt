@@ -34,13 +34,13 @@ class ParticleManager {
     fun createPaintSplat(x: Float, y: Float, color: Int) {
         // Don't create particles if we're at the limit
         if (particles.size >= MAX_PARTICLES) {
-            Log.v(TAG, "Particle limit reached, skipping paint splat")
+            // Log.v(TAG, "Particle limit reached, skipping paint splat")
             return
         }
         
         // Warn if approaching limit
         if (particles.size >= PERFORMANCE_WARNING_THRESHOLD) {
-            Log.w(TAG, "High particle count: ${particles.size}/${MAX_PARTICLES}")
+            // Log.w(TAG, "High particle count: ${particles.size}/${MAX_PARTICLES}")
         }
         
         // Create multiple particles for a more realistic splat effect
@@ -59,7 +59,7 @@ class ParticleManager {
             totalParticlesCreated++
         }
         
-        Log.v(TAG, "Created paint splat with ${PARTICLES_PER_SPLAT} particles at ($x, $y)")
+        // Log.v(TAG, "Created paint splat with ${PARTICLES_PER_SPLAT} particles at ($x, $y)")
     }
     
     /**
@@ -84,7 +84,7 @@ class ParticleManager {
         val currentTime = System.currentTimeMillis()
         if (currentTime - lastPerformanceLogTime > 5000) {
             if (totalParticlesCreated > 0) {
-                Log.d(TAG, "Particle stats - Created: $totalParticlesCreated, Removed: $totalParticlesRemoved, Active: ${particles.size}")
+                // Log.d(TAG, "Particle stats - Created: $totalParticlesCreated, Removed: $totalParticlesRemoved, Active: ${particles.size}")
                 lastPerformanceLogTime = currentTime
             }
         }
@@ -99,7 +99,7 @@ class ParticleManager {
             try {
                 particle.draw(canvas)
             } catch (e: Exception) {
-                Log.w(TAG, "Error drawing particle", e)
+                // Log.w(TAG, "Error drawing particle", e)
             }
         }
     }
@@ -110,7 +110,7 @@ class ParticleManager {
     fun clear() {
         val removedCount = particles.size
         particles.clear()
-        Log.d(TAG, "Cleared $removedCount particles")
+        // Log.d(TAG, "Cleared $removedCount particles")
     }
     
     /**

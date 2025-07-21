@@ -103,7 +103,9 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
     
     // Set up GameUpdateManager callbacks
     gameUpdateManager.onMatchEnd = { reason ->
-        onMatchEnd?.invoke(reason == "player_won")
+        // When match ends (timer expires), calculate the actual winner
+        Log.d(TAG, "GameUpdateManager.onMatchEnd called with reason: $reason")
+        finishMatch(reason)
     }
     gameUpdateManager.onStopGameLoop = {
         if (::thread.isInitialized) {
@@ -893,20 +895,53 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
       viewScope.launch {
           var didWin = false // Default to loss
           try {
+              // Add detailed debugging logs
+              Log.d(TAG, "finishMatch: Starting winner calculation")
+              Log.d(TAG, "finishMatch: gameModeManager?.mode = ${gameModeManager?.mode}")
+              Log.d(TAG, "finishMatch: currentLevel is MazeLevel = ${currentLevel is MazeLevel}")
+              Log.d(TAG, "finishMatch: players.size = ${players.size}")
+              Log.d(TAG, "finishMatch: localPlayerId = $localPlayerId")
+              
+              val localPlayer = getLocalPlayer()
+              val localColor = localPlayer?.getColor()
+              Log.d(TAG, "finishMatch: localPlayer = $localPlayer")
+              Log.d(TAG, "finishMatch: localColor = $localColor")
+              
+              // Log all player colors
+              players.forEach { (id, player) ->
+                  Log.d(TAG, "finishMatch: Player $id has color ${player.getColor()}")
+              }
+              
               if (gameModeManager?.mode == GameMode.COVERAGE && currentLevel is MazeLevel) {
+                  Log.d(TAG, "finishMatch: Calculating coverage winner")
                   val allStats = (currentLevel as MazeLevel).calculateCoverage(surface)
-                  val localColor = getLocalPlayer()?.getColor()
+                  Log.d(TAG, "finishMatch: allStats = $allStats")
+                  
                   val activeColors = players.values.map { it.getColor() }.toSet()
+                  Log.d(TAG, "finishMatch: activeColors = $activeColors")
+                  
                   val activeStats = allStats.filterKeys { it in activeColors }
+                  Log.d(TAG, "finishMatch: activeStats = $activeStats")
+                  
                   val localFrac = if (localColor != null) activeStats[localColor] ?: 0f else 0f
-                  val maxOther = activeStats.filterKeys { it != localColor }.values.maxOrNull() ?: 0f
+                  Log.d(TAG, "finishMatch: localFrac = $localFrac")
+                  
+                  val otherStats = activeStats.filterKeys { it != localColor }
+                  Log.d(TAG, "finishMatch: otherStats = $otherStats")
+                  
+                  val maxOther = otherStats.values.maxOrNull() ?: 0f
+                  Log.d(TAG, "finishMatch: maxOther = $maxOther")
+                  
                   didWin = localFrac >= maxOther // Win includes tie
+                  Log.d(TAG, "finishMatch: Coverage mode - didWin = $didWin ($localFrac >= $maxOther)")
+                  
               } else if (gameModeManager?.mode == GameMode.ZONES && currentLevel is MazeLevel) {
+                  Log.d(TAG, "finishMatch: Calculating zones winner")
                   val zoneOwnership = ZoneOwnershipCalculator.calculateZoneOwnership(
                       currentLevel as MazeLevel,
                       surface
                   )
-                  val localColor = getLocalPlayer()?.getColor()
+                  Log.d(TAG, "finishMatch: zoneOwnership = $zoneOwnership")
                   
                   // Count zones controlled by local player vs others
                   var localZones = 0
@@ -921,10 +956,17 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
                   }
                   
                   didWin = localZones >= otherZones // Win includes tie
-                  Log.i(TAG, "finishMatch: Zones mode - Local zones: $localZones, Other zones: $otherZones")
+                  Log.d(TAG, "finishMatch: Zones mode - Local zones: $localZones, Other zones: $otherZones, didWin = $didWin")
+              } else {
+                  Log.w(TAG, "finishMatch: No valid game mode or level for winner calculation")
+                  Log.w(TAG, "finishMatch: gameModeManager = $gameModeManager")
+                  Log.w(TAG, "finishMatch: currentLevel = $currentLevel")
+                  // If we can't calculate a winner properly, default to tie (both lose)
+                  didWin = false
               }
           } catch (e: Exception) {
               Log.e(TAG, "Error calculating winner in finishMatch", e)
+              didWin = false // Default to loss on error
           }
 
           // Switch to main thread to call the listener
