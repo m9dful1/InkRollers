@@ -15,7 +15,8 @@ import kotlin.math.*
 class Robot(
     startX: Float, 
     startY: Float,
-    private val robotData: RobotData
+    private val robotData: RobotData,
+    private var customPaintColor: Int = Color.GREEN // Made mutable for dynamic color changes
 ) {
     companion object {
         private const val TAG = "Robot"
@@ -571,24 +572,48 @@ class Robot(
     }
     
     /**
-     * Handle player painting the robot for conversion
+     * Handle player painting the robot for conversion or color change
      */
     fun paintRobot(playerColor: Int, paintSurface: PaintSurface): Boolean {
-        if (isConverted) return false
-        
-        conversionProgress += 10f // Each paint action adds progress
-        
-        if (conversionProgress >= CONVERSION_THRESHOLD) {
-            isConverted = true
-            // Reset AI state for converted behavior
+        // Check if this is a color change for an already converted robot
+        if (isConverted && customPaintColor != playerColor) {
+            // Store old color for logging
+            val oldColor = customPaintColor
+            
+            // Change robot to new player color
+            customPaintColor = playerColor
+            
+            // Reset AI state to allow robot to adapt to new role
             currentTarget = null
             isFollowingPatrol = true
+            clearPath()
             
-            // Immediately paint around conversion spot to show the change
+            // Paint around robot to show color change
             paintConversionSpot(paintSurface)
             
-            //Log.d(TAG, "Robot converted at position ($x, $y) - switching to ally mode")
+            Log.d(TAG, "Robot color changed at position ($x, $y) from ${Integer.toHexString(oldColor)} to ${Integer.toHexString(playerColor)}")
             return true
+        }
+        
+        // Handle initial conversion for unconverted robots
+        if (!isConverted) {
+            conversionProgress += 10f // Each paint action adds progress
+            
+            if (conversionProgress >= CONVERSION_THRESHOLD) {
+                isConverted = true
+                customPaintColor = playerColor
+                
+                // Reset AI state for converted behavior
+                currentTarget = null
+                isFollowingPatrol = true
+                clearPath()
+                
+                // Immediately paint around conversion spot to show the change
+                paintConversionSpot(paintSurface)
+                
+                Log.d(TAG, "Robot converted at position ($x, $y) - switching to ally mode with color ${Integer.toHexString(playerColor)}")
+                return true
+            }
         }
         
         return false
@@ -598,6 +623,11 @@ class Robot(
      * Check if robot is fully converted
      */
     fun isFullyConverted(): Boolean = isConverted
+    
+    /**
+     * Get the robot's current paint color
+     */
+    fun getPaintColor(): Int = customPaintColor
     
     /**
      * Get current robot position
@@ -632,7 +662,7 @@ class Robot(
     fun draw(canvas: Canvas) {
         // Set robot color based on conversion state
         robotPaint.color = if (isConverted) {
-            Color.GREEN // Converted robots are green
+            customPaintColor // Converted robots use custom paint color
         } else {
             Color.GRAY // Unconverted robots are gray
         }
@@ -885,7 +915,7 @@ class Robot(
                 level?.checkCollision(paintX, paintY) != true) {
                 
                 // Paint at current position with green color
-                paintSurface.paintAt(paintX, paintY, Color.GREEN)
+                paintSurface.paintAt(paintX, paintY, customPaintColor)
                 //Log.v(TAG, "Painted trail spot at ($paintX, $paintY)")
             }
         }
@@ -893,14 +923,14 @@ class Robot(
         // Also paint at the exact previous position to ensure no gaps
         if (fromX >= 0 && fromX < paintSurface.w && fromY >= 0 && fromY < paintSurface.h &&
             level?.checkCollision(fromX, fromY) != true) {
-            paintSurface.paintAt(fromX, fromY, Color.GREEN)
+            paintSurface.paintAt(fromX, fromY, customPaintColor)
             //Log.v(TAG, "Painted start position at ($fromX, $fromY)")
         }
         
         // Paint at current position too
         if (toX >= 0 && toX < paintSurface.w && toY >= 0 && toY < paintSurface.h &&
             level?.checkCollision(toX, toY) != true) {
-            paintSurface.paintAt(toX, toY, Color.GREEN)
+            paintSurface.paintAt(toX, toY, customPaintColor)
             //Log.v(TAG, "Painted end position at ($toX, $toY)")
         }
         
@@ -931,7 +961,7 @@ class Robot(
                     paintY >= 0 && paintY < paintSurface.h &&
                     level?.checkCollision(paintX, paintY) != true) {
                     
-                    paintSurface.paintAt(paintX, paintY, Color.GREEN)
+                    paintSurface.paintAt(paintX, paintY, customPaintColor)
                 }
             }
         }
@@ -955,7 +985,7 @@ class Robot(
                 if (paintX >= 0 && paintX < paintSurface.w && 
                     paintY >= 0 && paintY < paintSurface.h) {
                     
-                    paintSurface.paintAt(paintX, paintY, Color.GREEN)
+                    paintSurface.paintAt(paintX, paintY, customPaintColor)
                 }
             }
         }
@@ -1168,7 +1198,7 @@ class Robot(
                                 
                                 val distance = sqrt(dx.toFloat().pow(2) + dy.toFloat().pow(2))
                                 if (distance <= PAINT_SPOT_SIZE) {
-                                    paintSurface.paintAt(paintX, paintY, Color.GREEN)
+                                    paintSurface.paintAt(paintX, paintY, customPaintColor)
                                 }
                             }
                         }

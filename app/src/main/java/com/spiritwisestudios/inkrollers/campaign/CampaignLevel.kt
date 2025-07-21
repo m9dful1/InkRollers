@@ -281,7 +281,7 @@ class CampaignLevel(
         
         // Update robot spawners
         robotSpawners.forEach { spawner ->
-            spawner.update(1f / 60f, this)
+            spawner.update(1f / 60f, this, paintSurface)
         }
         
         // Update security devices
@@ -384,12 +384,8 @@ class CampaignLevel(
             return true
         }
         
-        // Check robot spawners
-        robotSpawners.forEach { spawner ->
-            if (spawner.checkCollision(x, y)) {
-                return true
-            }
-        }
+        // Robot spawners are NOT solid obstacles - players can move over them for interaction
+        // They are handled via handlePlayerInteraction() for conversion mechanics
         
         // Check security devices
         securityDevices.forEach { device ->
@@ -473,6 +469,27 @@ class CampaignLevel(
             }
         }
         
+        // Check robot spawner interactions (painting spawners for conversion)
+        robotSpawners.forEach { spawner ->
+            val spawnerBounds = spawner.getBounds()
+            // Expand interaction area slightly for easier interaction
+            val expandedBounds = RectF(
+                spawnerBounds.left - 10f,
+                spawnerBounds.top - 10f, 
+                spawnerBounds.right + 10f,
+                spawnerBounds.bottom + 10f
+            )
+            
+            if (expandedBounds.contains(playerX, playerY) && player.mode == 0) { // Paint mode
+                if (spawner.paintSpawner(player.getColor(), paintSurface)) {
+                    // Spawner was successfully converted
+                    audioManager?.playSound(AudioManager.SoundType.ROBOT_CONVERSION)
+                    campaignEffects.triggerBloomEffect(Pair(playerX, playerY))
+                    Log.d(TAG, "Player successfully converted robot spawner!")
+                }
+            }
+        }
+        
         // Check security device interactions
         securityDevices.forEach { device ->
             if (device.interactWithControlPanel(currentFrequency, playerX, playerY)) {
@@ -552,10 +569,14 @@ class CampaignLevel(
     fun getGradingStats(): Map<String, Any> {
         val convertedRobots = robots.count { it.isFullyConverted() }
         val totalRobots = robots.size
+        val convertedSpawners = robotSpawners.count { it.isFullyConverted() }
+        val totalSpawners = robotSpawners.size
         
         return mapOf(
             "robotsConverted" to convertedRobots,
             "totalRobots" to totalRobots,
+            "spawnersConverted" to convertedSpawners,
+            "totalSpawners" to totalSpawners,
             "doorsActivated" to activatedDoors,
             "totalDoors" to totalDoors,
             "reachedExit" to playerInExitZone

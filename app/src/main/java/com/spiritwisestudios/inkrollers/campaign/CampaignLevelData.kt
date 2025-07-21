@@ -195,6 +195,7 @@ object CampaignLevels {
      */
     fun getLevelData(levelId: String): CampaignLevelData? {
         return when (levelId) {
+            "debug_spawner" -> DEBUG_SPAWNER_LEVEL
             "level_1" -> LEVEL_1
             "level_2" -> LEVEL_2
             "level_3" -> LEVEL_3
@@ -208,8 +209,55 @@ object CampaignLevels {
      * Get all available level IDs
      */
     fun getAllLevelIds(): List<String> {
-        return listOf("level_1", "level_2", "level_3", "level_4a", "level_4b")
+        return listOf("debug_spawner", "level_1", "level_2", "level_3", "level_4a", "level_4b")
     }
+    
+    // Debug Level: Robot Spawner Testing - Simple maze with robot spawner for testing conversion
+    val DEBUG_SPAWNER_LEVEL = CampaignLevelData(
+        levelId = "debug_spawner",
+        levelName = "Debug: Spawner Test",
+        robotPositions = emptyList(), // No static robots, only spawner robots
+        robotSpawners = listOf(
+            RobotSpawnerData(
+                x = 100f,                           // Center of typical maze
+                y = 200f,                           // Center of typical maze
+                spawnInterval = 10000L,             // 10 seconds between spawns as requested
+                maxRobots = 5,                      // Allow up to 5 robots at once for testing
+                spawnedRobotUnpaintRadius = 50f,    // Standard unpaint radius
+                spawnedRobotPatrolPath = listOf(
+                    -100f to 0f,    // Move 100 units left from spawner
+                    100f to 0f,     // Move 100 units right from spawner
+                    0f to -100f,    // Move 100 units up from spawner
+                    0f to 100f      // Move 100 units down from spawner
+                ),
+                showSpawnRadius = true              // Show spawn radius for debugging
+            )
+        ),
+        securityDevices = emptyList(),              // No security devices for simple testing
+        hardenedPaintAreas = emptyList(),           // No hardened paint areas
+        doorActivators = emptyList(),               // No doors to unlock
+        exitZone = null,                            // No specific exit zone required
+        requiredCoverage = 0.1f,                    // Very low coverage requirement (10%)
+        timeLimit = null,                           // No time limit for stress-free testing
+        mazeComplexity = "LOW",                     // Simple maze as requested
+        requiresSinglePath = false,                 // Open maze layout
+        gradingConfig = LevelGradingConfig(
+            useBasicGrading = true,                 // Simple grading for debug level
+            baseCompletionScore = 100,
+            timeBonusConfig = TimeBonusConfig(
+                basicHalfTimeBonus = 25,
+                basicThreeQuarterTimeBonus = 15,
+                basicWithinTimeBonus = 10,
+                basicOvertimeBonus = 0
+            ),
+            robotBonusConfig = RobotBonusConfig(
+                maxRobotBonus = 50                  // Bonus for converting spawner
+            ),
+            secretsBonusConfig = SecretsBonusConfig(
+                maxSecretsBonus = 0                 // No secrets in debug level
+            )
+        )
+    )
     
     // Level 1: Tutorial - Simple linear maze with door puzzle
     val LEVEL_1 = CampaignLevelData(

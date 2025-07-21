@@ -71,6 +71,9 @@ class CampaignManager private constructor(private val context: Context) {
     fun getAvailableLevels(): List<String> {
         val available = mutableListOf<String>()
         
+        // Debug level is always available for testing
+        available.add("debug_spawner")
+        
         // Level 1 is always available
         available.add("level_1")
         

@@ -5,12 +5,14 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.util.Log
+import com.spiritwisestudios.inkrollers.PaintSurface
 import kotlin.math.*
 import kotlin.random.Random
 
 /**
  * Robot Spawner class for creating robots at timed intervals in campaign mode.
  * A stationary device that spawns robots with patrol paths around the spawner area.
+ * Can be converted by the player to spawn allied robots instead of enemy robots.
  */
 class RobotSpawner(
     private val spawnerData: RobotSpawnerData
@@ -20,6 +22,7 @@ class RobotSpawner(
         private const val SPAWNER_SIZE = 50f
         private const val SPAWN_RADIUS = 80f // How far from spawner robots can spawn
         private const val DEFAULT_PATROL_RADIUS = 120f // Default patrol area around spawner
+        private const val CONVERSION_THRESHOLD = 150f // Amount of paint needed to convert spawner (more than robot)
     }
 
     // Spawner state
@@ -28,6 +31,11 @@ class RobotSpawner(
     private var lastSpawnTime: Long = 0
     private var spawnedRobotCount: Int = 0
     private var isActive: Boolean = true
+    
+    // Conversion state
+    private var isConverted: Boolean = false
+    private var conversionProgress: Float = 0f
+    private var playerPaintColor: Int = Color.GREEN // Default color for unconverted spawners, updated when converted
     
     // Visual representation
     private val spawnerBodyPaint = Paint().apply {
@@ -56,6 +64,13 @@ class RobotSpawner(
         color = Color.CYAN
     }
     
+    private val conversionPaint = Paint().apply {
+        isAntiAlias = true
+        style = Paint.Style.STROKE
+        strokeWidth = 4f
+        color = Color.CYAN
+    }
+    
     // Spawn timing animation
     private var spawnAnimationTimer: Float = 0f
     private var isSpawning: Boolean = false
@@ -63,7 +78,7 @@ class RobotSpawner(
     /**
      * Update spawner state and check for robot spawning
      */
-    fun update(deltaTime: Float, campaignLevel: CampaignLevel) {
+    fun update(deltaTime: Float, campaignLevel: CampaignLevel, paintSurface: PaintSurface? = null) {
         if (!isActive) return
         
         val currentTime = System.currentTimeMillis()
@@ -82,7 +97,7 @@ class RobotSpawner(
         if (timeSinceLastSpawn >= spawnerData.spawnInterval) {
             // Check if we haven't reached the maximum spawn limit
             if (spawnerData.maxRobots <= 0 || spawnedRobotCount < spawnerData.maxRobots) {
-                spawnRobot(campaignLevel)
+                spawnRobot(campaignLevel, paintSurface)
                 lastSpawnTime = currentTime
             }
         }
@@ -91,7 +106,7 @@ class RobotSpawner(
     /**
      * Spawn a new robot near the spawner
      */
-    private fun spawnRobot(campaignLevel: CampaignLevel) {
+    private fun spawnRobot(campaignLevel: CampaignLevel, paintSurface: PaintSurface?) {
         // Find a safe spawn position near the spawner
         val spawnPosition = findSafeSpawnPosition(campaignLevel)
         if (spawnPosition == null) {
@@ -111,7 +126,21 @@ class RobotSpawner(
         )
         
         // Create and add the robot to the campaign level
-        val newRobot = Robot(spawnPosition.first, spawnPosition.second, robotData)
+        // Pass the spawner's paint color if converted, or default green if not converted
+        val newRobot = Robot(spawnPosition.first, spawnPosition.second, robotData, 
+                           if (isConverted) playerPaintColor else Color.GREEN)
+        
+        // If spawner is converted, create the robot as already converted
+        if (isConverted) {
+            // Use the paint surface to convert the robot immediately
+            paintSurface?.let { surface ->
+                // Paint the robot multiple times to convert it immediately
+                repeat(15) { // Ensure full conversion (Robot.CONVERSION_THRESHOLD = 100f, each paint = 10f)
+                    newRobot.paintRobot(playerPaintColor, surface)
+                }
+            }
+        }
+        
         campaignLevel.addSpawnedRobot(newRobot)
         
         spawnedRobotCount++
@@ -186,6 +215,59 @@ class RobotSpawner(
     }
     
     /**
+     * Handle player painting the spawner for conversion or color change
+     */
+    fun paintSpawner(playerColor: Int, _paintSurface: PaintSurface): Boolean {
+        // Check if this is a color change for an already converted spawner
+        if (isConverted && playerPaintColor != playerColor) {
+            // Change spawner to new player color
+            playerPaintColor = playerColor
+            
+            // Update visual appearance to new color
+            spawnerBorderPaint.color = playerColor
+            spawnerDetailsPaint.color = playerColor
+            
+            // Don't update existing robots - they keep their original spawn color
+            // Only new robots will spawn with the new color
+            
+            Log.d(TAG, "Robot Spawner color changed at position ($x, $y) - new robots will spawn with color ${Integer.toHexString(playerColor)}")
+            return true
+        }
+        
+        // First-time conversion
+        if (!isConverted) {
+            conversionProgress += 15f // Each paint action adds progress
+            
+            if (conversionProgress >= CONVERSION_THRESHOLD) {
+                isConverted = true
+                playerPaintColor = playerColor
+                
+                // Update visual appearance
+                spawnerBorderPaint.color = playerColor
+                spawnerDetailsPaint.color = playerColor
+                
+                // Don't paint large circle around spawner - just change spawner color
+                Log.d(TAG, "Robot Spawner converted at position ($x, $y) - switching to ally mode with color ${Integer.toHexString(playerColor)}")
+                return true
+            }
+        }
+        
+        return false
+    }
+    
+
+    
+    /**
+     * Check if spawner is fully converted
+     */
+    fun isFullyConverted(): Boolean = isConverted
+    
+    /**
+     * Get the spawner's current paint color (only relevant when converted)
+     */
+    fun getPaintColor(): Int = playerPaintColor
+    
+    /**
      * Draw the robot spawner on the canvas
      */
     fun draw(canvas: Canvas) {
@@ -201,7 +283,7 @@ class RobotSpawner(
             spawnerBodyPaint
         )
         
-        // Draw border
+        // Draw border (color changes based on conversion state)
         canvas.drawRect(
             x - halfSize,
             y - halfSize,
@@ -210,10 +292,25 @@ class RobotSpawner(
             spawnerBorderPaint
         )
         
-        // Draw spawner details (antenna/core)
+        // Draw spawner details (antenna/core) - color changes when converted
         canvas.drawCircle(x, y, 8f, spawnerDetailsPaint)
         canvas.drawRect(x - 15f, y - 2f, x + 15f, y + 2f, spawnerDetailsPaint)
         canvas.drawRect(x - 2f, y - 15f, x + 2f, y + 15f, spawnerDetailsPaint)
+        
+        // Draw conversion progress if being converted
+        if (!isConverted && conversionProgress > 0f) {
+            val progressAngle = (conversionProgress / CONVERSION_THRESHOLD) * 360f
+            canvas.drawArc(
+                x - halfSize - 8f,
+                y - halfSize - 8f,
+                x + halfSize + 8f,
+                y + halfSize + 8f,
+                -90f, // Start at top
+                progressAngle,
+                false,
+                conversionPaint
+            )
+        }
         
         // Draw spawn animation effect
         if (isSpawning) {
