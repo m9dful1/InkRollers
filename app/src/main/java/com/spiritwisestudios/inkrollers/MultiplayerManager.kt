@@ -935,8 +935,8 @@ class MultiplayerManager {
                 Log.d(TAG, "sendMatchStart: Storing playerCount=$playerCount in game node for $currentGameId")
                 gameRef!!.child("playerCount").setValue(playerCount)
                     .addOnCompleteListener {
-                        // Write a synchronized startTime (3 seconds in the future to align with countdown end)
-                        val startTime = System.currentTimeMillis() + 3000L
+                        // Write a synchronized startTime (5 seconds in the future to align with countdown end + network buffer)
+                        val startTime = System.currentTimeMillis() + 5000L
                         val updates = mapOf(
                             "started" to true,
                             "startTime" to startTime,
@@ -958,7 +958,7 @@ class MultiplayerManager {
             override fun onCancelled(error: DatabaseError) {
                 Log.w(TAG, "sendMatchStart: Failed to get player count", error.toException())
                 // Fallback: still try to start
-                val startTime = System.currentTimeMillis() + 3000L // Align with countdown end
+                val startTime = System.currentTimeMillis() + 5000L // Align with countdown end + network buffer
                 val updates = mapOf(
                     "started" to true,
                     "startTime" to startTime,

@@ -45,9 +45,12 @@ class GameModeManager(
             // Use current time instead of future time to avoid stuck timer
             startTime = currentTime
             Log.w(TAG, "GameModeManager: Corrected startTime to currentTime to avoid timer freeze")
-        } else if (timeDiff > 10000L) { // More than 10 seconds in the future
-            Log.w(TAG, "GameModeManager: startTime is ${timeDiff}ms in the future. This might cause timing issues.")
+        } else if (timeDiff > 1000L) { // More than 1 second in the future - be more aggressive
+            Log.w(TAG, "GameModeManager: startTime is ${timeDiff}ms in the future. Correcting to avoid UI sync issues.")
             Log.w(TAG, "GameModeManager: currentTime=$currentTime, startTime=$startTime")
+            // Correct any future start time to prevent UI display issues
+            startTime = currentTime
+            Log.i(TAG, "GameModeManager: Corrected future startTime to currentTime for UI stability")
         } else if (timeDiff < -durationMs) { // Start time is so far in the past that match should have ended
             Log.e(TAG, "GameModeManager: startTime is ${-timeDiff}ms in the past (match duration: ${durationMs}ms). Match will end immediately!")
             Log.e(TAG, "GameModeManager: currentTime=$currentTime, startTime=$startTime")
@@ -113,20 +116,28 @@ class GameModeManager(
         val elapsed = currentTime - startTime
         val remaining = (durationMs - elapsed).coerceAtLeast(0L)
         
+        // Additional safeguard: prevent impossible remaining times that exceed duration
+        val validRemaining = remaining.coerceAtMost(durationMs)
+        
         // Debug logging to track timing issues
         if (remaining > durationMs) {
             Log.w(TAG, "timeRemainingMs: Remaining time ($remaining) is greater than duration ($durationMs). This suggests a timing issue.")
             Log.w(TAG, "timeRemainingMs: currentTime=$currentTime, startTime=$startTime, elapsed=$elapsed")
-            // Clamp to duration if something went wrong
-            return durationMs.coerceAtLeast(0L)
+            Log.w(TAG, "timeRemainingMs: Clamping to duration ($durationMs) to prevent UI confusion")
+        }
+        
+        // Additional protection against negative elapsed times causing UI issues
+        if (elapsed < 0) {
+            Log.w(TAG, "timeRemainingMs: Negative elapsed time (${elapsed}ms) detected. Timer sync issue - returning full duration.")
+            return durationMs
         }
         
         // Log verbose timing info occasionally
         if (updateCallCount % 300 == 0L) { // Every ~5 seconds at 60fps
-            Log.v(TAG, "timeRemainingMs: currentTime=$currentTime, startTime=$startTime, elapsed=$elapsed, durationMs=$durationMs, remaining=$remaining")
+            Log.v(TAG, "timeRemainingMs: currentTime=$currentTime, startTime=$startTime, elapsed=$elapsed, durationMs=$durationMs, validRemaining=$validRemaining")
         }
         
-        return remaining
+        return validRemaining
     }
     
     /**

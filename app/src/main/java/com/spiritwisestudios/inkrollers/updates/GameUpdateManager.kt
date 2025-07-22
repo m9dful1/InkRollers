@@ -300,8 +300,14 @@ class GameUpdateManager {
             // Detect timer freeze conditions
             detectTimerFreeze(mgr, currentTimerValue)
             
-            // Update countdown timer display
-            timerHudView?.updateTime(currentTimerValue)
+            // Update countdown timer display on UI thread to prevent display freezing
+            Handler(Looper.getMainLooper()).post {
+                try {
+                    timerHudView?.updateTime(currentTimerValue)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error updating timer display on main thread", e)
+                }
+            }
 
             // Check if finished *after* updating the manager
             if (mgr.isFinished()) {
@@ -309,7 +315,15 @@ class GameUpdateManager {
                     endNotified = true
                     Log.i(TAG, "Timer expired, ending match")
                     onStopGameLoop?.invoke()
-                    onMatchEnd?.invoke("timer_expired")
+                    
+                    // Ensure match end callback happens on main thread for UI dialogs
+                    Handler(Looper.getMainLooper()).post {
+                        try {
+                            onMatchEnd?.invoke("timer_expired")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error invoking onMatchEnd on main thread", e)
+                        }
+                    }
                 }
             } else {
                 // Throttled HUD Update
@@ -372,7 +386,15 @@ class GameUpdateManager {
             if (!endNotified) {
                 endNotified = true
                 onStopGameLoop?.invoke()
-                onMatchEnd?.invoke("timer_freeze_forced_end")
+                
+                // Ensure forced match end also happens on main thread for UI dialogs
+                Handler(Looper.getMainLooper()).post {
+                    try {
+                        onMatchEnd?.invoke("timer_freeze_forced_end")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error invoking forced onMatchEnd on main thread", e)
+                    }
+                }
             }
             return
         }
