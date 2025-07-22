@@ -107,8 +107,17 @@ class RematchCoordinator(
      * Set up the match end callback for GameView to show rematch dialog
      */
     fun setupMatchEndCallback() {
-        gameView.onMatchEnd = { didWin ->
+        gameView.onMatchEnd = { result ->
             Handler(Looper.getMainLooper()).post { 
+                // Convert result string to didWin boolean
+                val didWin = when (result.lowercase()) {
+                    "win", "victory" -> true
+                    "lose", "loss", "defeat" -> false
+                    else -> {
+                        Log.w(TAG, "Unexpected match end result: $result, defaulting to loss")
+                        false
+                    }
+                }
                 showRematchDialog(didWin)
             }
         }

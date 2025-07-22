@@ -59,9 +59,23 @@ class GameUpdateManager {
     private var timerRecoveryAttempts: Int = 0
     private var lastGameModeManagerDiagnostics: String = ""
     
+    // Thread-safe timer value storage for main thread access
+    @Volatile
+    private var currentTimerValueMs: Long = 0L
+    @Volatile 
+    private var shouldUpdateTimer: Boolean = false
+    
     // Callbacks for game events
     var onMatchEnd: ((String) -> Unit)? = null
     var onStopGameLoop: (() -> Unit)? = null
+    
+    /**
+     * Get current timer value - thread-safe access from main UI thread
+     * Returns -1 if no timer is active
+     */
+    fun getCurrentTimerValue(): Long {
+        return if (shouldUpdateTimer) currentTimerValueMs else -1L
+    }
     
     /**
      * Initialize the update manager with game parameters
@@ -300,13 +314,20 @@ class GameUpdateManager {
             // Detect timer freeze conditions
             detectTimerFreeze(mgr, currentTimerValue)
             
-            // Update countdown timer display on UI thread to prevent display freezing
-            Handler(Looper.getMainLooper()).post {
-                try {
-                    timerHudView?.updateTime(currentTimerValue)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error updating timer display on main thread", e)
-                }
+            // SIMPLE THREAD-SAFE TIMER VALUE STORAGE
+            // Just store the value - no complex Handler threading
+            currentTimerValueMs = currentTimerValue
+            shouldUpdateTimer = true
+            
+            // Log periodically to monitor that values are being stored
+            if (currentTimerValue > 0 && currentTimerValue % 30000 < 1000) { // Every 30 seconds
+                Log.d(TAG, "Timer value stored for main thread: ${currentTimerValue}ms remaining")
+            }
+            
+            // Debug logging for timer issues - log more frequently at start
+            val seconds = (currentTimerValue / 1000).coerceAtLeast(0L)
+            if (seconds >= 175 || seconds % 10 == 0L) { // First 5 seconds or every 10 seconds
+                Log.d(TAG, "DEBUG: Timer stored - ${currentTimerValue}ms (${seconds}s), shouldUpdate=${shouldUpdateTimer}")
             }
 
             // Check if finished *after* updating the manager
@@ -335,6 +356,50 @@ class GameUpdateManager {
             }
         } ?: run {
             Log.w(TAG, "updateGameMode: GameModeManager is null!")
+        }
+    }
+    
+    /**
+     * Update timer display - can be called from any thread
+     * This eliminates cross-thread Handler complexity by handling thread dispatch internally
+     */
+    fun updateTimerOnMainThread(timerHudView: TimerHudView?) {
+        if (shouldUpdateTimer && timerHudView != null) {
+            val timerValue = currentTimerValueMs
+            
+            if (Looper.myLooper() == Looper.getMainLooper()) {
+                // Already on main thread - update directly
+                try {
+                    timerHudView.updateTime(timerValue)
+                    shouldUpdateTimer = false // Reset flag after successful update
+                    
+                    // Log success periodically
+                    if (timerValue > 0 && timerValue % 30000 < 1000) { // Every 30 seconds
+                        Log.d(TAG, "Timer UI updated directly on main thread: ${timerValue}ms remaining")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error updating timer on main thread: ${timerValue}ms", e)
+                }
+            } else {
+                // Not on main thread - post to main thread
+                try {
+                    Handler(Looper.getMainLooper()).post {
+                        try {
+                            timerHudView.updateTime(timerValue)
+                            shouldUpdateTimer = false // Reset flag after successful update
+                            
+                            // Log success periodically
+                            if (timerValue > 0 && timerValue % 30000 < 1000) { // Every 30 seconds
+                                Log.d(TAG, "Timer UI updated via Handler post: ${timerValue}ms remaining")
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error in Handler.post timer update: ${timerValue}ms", e)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to post timer update to main thread: ${timerValue}ms", e)
+                }
+            }
         }
     }
     

@@ -217,7 +217,7 @@ class MainActivity : AppCompatActivity() {
     // Set up rematch coordinator to handle match end
     rematchCoordinator.setupMatchEndCallback()
   }
-
+  
   /**
    * Enables full screen immersive mode by hiding status bar and navigation bar
    */
@@ -322,6 +322,7 @@ class MainActivity : AppCompatActivity() {
   override fun onDestroy() {
       // Dismiss dialogs to avoid leaks/crashes
       dialogManager.dismissAllDialogs()
+      
       super.onDestroy()
       
       Log.d(TAG, "onDestroy called. IsIntentionalExit: $isIntentionalExit, IsFinishing: $isFinishing")
@@ -443,6 +444,10 @@ class MainActivity : AppCompatActivity() {
           gameView.startGameMode(selectedGameMode, matchDurationMs, startTime)
           gameView.startGameLoop()
           Log.d(TAG, "Match started successfully with game mode: $selectedGameMode")
+          
+          // NOTE: Timer updates now handled directly in GameView.draw() for better reliability
+          // MainActivity Handler-based timer updates were unreliable due to lifecycle issues
+          Log.d(TAG, "Timer updates handled by GameView draw loop (60fps polling)")
       } catch (e: Exception) {
           Log.e(TAG, "Error starting match", e)
           Toast.makeText(this, "Error starting game. Please try again.", Toast.LENGTH_LONG).show()

@@ -73,8 +73,12 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
   private var campaignPerformanceMonitor: com.spiritwisestudios.inkrollers.campaign.PerformanceMonitor? = null
   
   // New field for match end listener
-  var onMatchEnd: ((Boolean) -> Unit)? = null
+  var onMatchEnd: ((String) -> Unit)? = null
   
+  // Timer polling for reliable UI updates (independent of MainActivity Handler)
+  private var lastTimerPollTime: Long = 0L
+  private val timerPollInterval: Long = 250L // Poll every 250ms (4 FPS)
+
   // Coroutine scope for background tasks
   private val viewJob = Job()
   private val viewScope = CoroutineScope(Dispatchers.Default + viewJob)
@@ -257,6 +261,30 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
   
   override fun draw(c:Canvas){
     super.draw(c)
+    
+    // RELIABLE TIMER POLLING - runs at 60fps, independent of MainActivity Handler
+    // This eliminates the MainActivity Handler issues that were causing timer freezes
+    val currentTime = System.currentTimeMillis()
+    if (currentTime - lastTimerPollTime >= timerPollInterval) {
+      lastTimerPollTime = currentTime
+      
+      try {
+        // Get timer value directly from GameUpdateManager (thread-safe @Volatile variables)
+        val timerValue = gameUpdateManager.getCurrentTimerValue()
+        if (timerValue >= 0 && timerHudView != null) {
+          // Update timer directly on main thread - draw() guaranteed to run on main thread
+          timerHudView!!.updateTime(timerValue)
+          
+          // Debug log occasionally (every 30 seconds)
+          if (timerValue > 0 && timerValue % 30000 < 1000) {
+            Log.d(TAG, "GameView timer polling updated: ${timerValue}ms remaining")
+          }
+        }
+      } catch (e: Exception) {
+        Log.e(TAG, "Error in GameView timer polling", e)
+      }
+    }
+    
     // Delegate all rendering to GameRenderer
     gameRenderer.render(
         canvas = c,
@@ -727,6 +755,13 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
     if (::surface.isInitialized) surface.clear()
     gameUpdateManager.reset()
   }
+  
+  /**
+   * Get the GameUpdateManager for direct access (e.g., timer polling from main thread)
+   */
+  fun getGameUpdateManager(): GameUpdateManager {
+    return gameUpdateManager
+  }
 
   /** Assign the timer HUD for showing match countdown. */
   fun setTimerHudView(view: TimerHudView) {
@@ -972,7 +1007,7 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
           // Switch to main thread to call the listener
           withContext(Dispatchers.Main) {
               Log.i(TAG, "finishMatch: didWin=$didWin, calling onMatchEnd")
-              onMatchEnd?.invoke(didWin)
+              onMatchEnd?.invoke(if (didWin) "win" else "lose")
           }
       }
   }
