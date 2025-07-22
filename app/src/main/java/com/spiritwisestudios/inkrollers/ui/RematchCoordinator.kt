@@ -151,12 +151,17 @@ class RematchCoordinator(
         // 1. Stop the old game thread and wait for it
         gameView.stopThread()
         
-        // 2. Clear non-player Firebase state
+        // 2. Clear Firebase listeners and re-establish them
+        Log.d(TAG, "Resetting Firebase listeners for rematch...")
+        // Clear existing listeners but don't reset game references (we're staying in same game)
+        multiplayerManager.resetListenersForRematch()
+        
+        // 3. Clear non-player Firebase state
         Log.d(TAG, "Clearing Firebase paint/rematch state...")
         multiplayerManager.clearPaintActions()
         multiplayerManager.clearRematchAnswers()
         
-        // 3. Load profiles and reset player states
+        // 4. Load profiles and reset player states
         resetPlayerStatesForRematch(onComplete)
     }
     
@@ -247,6 +252,10 @@ class RematchCoordinator(
                 
                 gameView.setLocalPlayerId(localPlayerId, defaultColor, defaultName)
             }
+            
+            // Re-setup rematch listener for the next potential rematch
+            Log.d(TAG, "Re-setting up rematch listener after rematch reset")
+            multiplayerManager.setupRematchListener()
             
             onComplete()
         }

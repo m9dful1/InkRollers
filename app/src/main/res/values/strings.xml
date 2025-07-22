@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Ink Rollers</string>
+    
+    <!-- Attribution labels for AppOps tracking -->
+    <string name="attribution_analytics">Analytics and performance tracking</string>
+    <string name="attribution_multiplayer">Multiplayer game features</string>
+    <string name="attribution_audio">Audio and sound effects</string>
+</resources> 

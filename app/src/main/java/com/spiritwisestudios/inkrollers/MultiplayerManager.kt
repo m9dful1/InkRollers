@@ -626,6 +626,27 @@ class MultiplayerManager {
         Log.v(TAG, "Updating partial state for $localPlayerId: ${updateMap.keys}") // Verbose log
     }
 
+    /**
+     * Reset Firebase listeners specifically for rematch (reuses same game node)
+     */
+    fun resetListenersForRematch() {
+        if (playersRef == null) {
+            Log.w(TAG, "resetListenersForRematch: playersRef is null, cannot reset listeners")
+            return
+        }
+        
+        Log.d(TAG, "REMATCH LISTENER RESET: Player $localPlayerId resetting Firebase listeners for game: $currentGameId")
+        Log.d(TAG, "REMATCH LISTENER RESET: Current gameRef path: ${gameRef?.toString()}")
+        Log.d(TAG, "REMATCH LISTENER RESET: Current playersRef path: ${playersRef?.toString()}")
+        
+        clearListeners() // Clear existing listeners
+        
+        // Re-establish listeners on the same game references
+        setupFirebaseListeners()
+        
+        Log.d(TAG, "REMATCH LISTENER RESET: Completed listener reset for player $localPlayerId in game $currentGameId")
+    }
+
     fun setupFirebaseListeners() {
         if (playersRef == null) return
         clearListeners() // Ensure no old listeners are active
@@ -1197,6 +1218,7 @@ class MultiplayerManager {
                                 val yesCount = rematchSnap.children.count { it.getValue(Boolean::class.java) == true }
                                 if (yesCount.toLong() == expectedRematchCount) {
                                     Log.d(TAG, "rematchInProgressListener: All players answered YES, proceeding with rematch for $currentGameId")
+                                    Log.d(TAG, "REMATCH STARTING: Player $localPlayerId in game $currentGameId - staying in same game")
                                     onRematchStartSignal?.invoke()
                                     if (localPlayerId == "player0") {
                                         Handler(android.os.Looper.getMainLooper()).postDelayed({
