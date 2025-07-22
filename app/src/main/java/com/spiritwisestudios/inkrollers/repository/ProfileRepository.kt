@@ -61,4 +61,30 @@ object ProfileRepository {
         val profileRef = profilesRef.child(uid)
         profileRef.child("isOnline").setValue(false)
     }
+
+    /** Updates the player's current lobby ID in their profile. */
+    fun updatePlayerLobby(uid: String, lobbyId: String?, onComplete: (Boolean) -> Unit) {
+        if (uid.isEmpty()) {
+            onComplete(false)
+            return
+        }
+        val profileRef = profilesRef.child(uid)
+        profileRef.child("currentLobbyId").setValue(lobbyId)
+            .addOnSuccessListener { onComplete(true) }
+            .addOnFailureListener { onComplete(false) }
+    }
+
+    /** Configures onDisconnect to clear the player's lobby ID. */
+    fun setLobbyOnDisconnect(uid: String) {
+        if (uid.isEmpty()) return
+        val lobbyRef = profilesRef.child(uid).child("currentLobbyId")
+        lobbyRef.onDisconnect().setValue(null)
+    }
+
+    /** Cancels any pending onDisconnect operations for the player's lobby ID. */
+    fun cancelLobbyOnDisconnect(uid: String) {
+        if (uid.isEmpty()) return
+        val lobbyRef = profilesRef.child(uid).child("currentLobbyId")
+        lobbyRef.onDisconnect().cancel()
+    }
 } 

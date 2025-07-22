@@ -10,6 +10,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.ktx.auth
 import android.os.Handler
 import java.util.Date
+import com.spiritwisestudios.inkrollers.model.PlayerColorPalette
 
 // Data class to hold game settings read by clients
 data class GameSettings(val durationMs: Long, val complexity: String, val gameMode: String)
@@ -503,8 +504,12 @@ class MultiplayerManager {
                     
                     mazeSeed = snapshot.child("mazeSeed").getValue(Long::class.java) ?: System.currentTimeMillis()
 
-                    // Add player1 to the game
-                    playersRef?.child(localPlayerId!!)?.setValue(initialPlayerState)?.addOnSuccessListener {
+                    // Check for color conflicts and resolve before adding player1
+                    val player0State = playersNode.child("player0").getValue(PlayerState::class.java)
+                    val resolvedPlayerState = resolveColorConflict(initialPlayerState, player0State)
+
+                    // Add player1 to the game with resolved color
+                    playersRef?.child(localPlayerId!!)?.setValue(resolvedPlayerState)?.addOnSuccessListener {
                         Log.d(TAG, "Successfully added player1 to game $gameId")
 
                         // Update player count atomically
@@ -1365,5 +1370,49 @@ class MultiplayerManager {
                 onDatabaseError?.invoke("Stale game cleanup failed: ${error.message}")
             }
         })
+    }
+
+    /**
+     * Resolve color conflict between joining player and existing players
+     * Uses same logic as RematchCoordinator for consistency
+     */
+    private fun resolveColorConflict(joiningPlayerState: PlayerState, existingPlayerState: PlayerState?): PlayerState {
+        if (existingPlayerState == null) {
+            Log.d(TAG, "No existing player state found, using joining player's original color")
+            return joiningPlayerState
+        }
+
+        val existingColor = existingPlayerState.color
+        val joiningColor = joiningPlayerState.color
+
+        // If colors don't conflict, no need to change
+        if (existingColor != joiningColor) {
+            Log.d(TAG, "No color conflict detected (existing: $existingColor, joining: $joiningColor)")
+            return joiningPlayerState
+        }
+
+        Log.d(TAG, "Color conflict detected! Both players want color $joiningColor")
+
+        // Load joining player's profile to get favorite colors for fallback
+        val currentUser = auth.currentUser
+        if (currentUser != null) {
+            // Since we can't do async operations here, we'll use a simplified fallback approach
+            // that matches the RematchCoordinator's fallback logic
+            
+            // Try to get the player's second favorite color from their profile
+            // For now, we'll implement a simple fallback to default colors
+            val fallbackColor = PlayerColorPalette.COLORS.firstOrNull { it != existingColor } 
+                ?: (if (existingColor == 0xFF39FF14.toInt()) 0xFF1F51FF.toInt() else 0xFF39FF14.toInt()) // NEON_BLUE if existing is NEON_GREEN, else NEON_GREEN
+
+            Log.d(TAG, "Assigning fallback color $fallbackColor to joining player")
+            
+            return joiningPlayerState.copy(color = fallbackColor)
+        }
+
+        // Final fallback - use blue if existing player has green, otherwise use green
+        val defaultFallback = if (existingColor == 0xFF39FF14.toInt()) 0xFF1F51FF.toInt() else 0xFF39FF14.toInt()
+        Log.d(TAG, "Using default fallback color $defaultFallback")
+        
+        return joiningPlayerState.copy(color = defaultFallback)
     }
 } 

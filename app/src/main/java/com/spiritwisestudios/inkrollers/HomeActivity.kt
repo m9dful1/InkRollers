@@ -23,7 +23,9 @@ import com.google.firebase.appcheck.FirebaseAppCheck
 import com.google.firebase.appcheck.playintegrity.PlayIntegrityAppCheckProviderFactory
 import com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory
 import com.spiritwisestudios.inkrollers.databinding.ActivityHomeBinding
+import dagger.hilt.android.AndroidEntryPoint
 
+@AndroidEntryPoint
 class HomeActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityHomeBinding
@@ -125,6 +127,12 @@ class HomeActivity : AppCompatActivity() {
                 // User is not signed in, attempt anonymous sign-in then show profile
                 signInAndShowProfile()
             }
+        }
+
+        val settingsButton = findViewById<android.widget.ImageButton>(R.id.button_settings)
+        settingsButton.setOnClickListener {
+            audioManager.playSound(AudioManager.SoundType.UI_CLICK)
+            SettingsFragment().show(supportFragmentManager, "SettingsDialog")
         }
     }
 

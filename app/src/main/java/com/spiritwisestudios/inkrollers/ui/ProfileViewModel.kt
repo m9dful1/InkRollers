@@ -6,8 +6,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.spiritwisestudios.inkrollers.repository.ProfileRepository
 import com.spiritwisestudios.inkrollers.model.PlayerProfile
+import com.google.firebase.database.FirebaseDatabase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
 @HiltViewModel
@@ -196,6 +198,13 @@ class ProfileViewModel @Inject constructor(
             for (uid in friendUids) {
                 val friendProfile = profileRepository.loadPlayerProfile(uid)
                 if (friendProfile != null) {
+                    // Check if friend has a current lobby and if it's joinable
+                    val (isLobbyJoinable, currentLobbyId) = if (!friendProfile.currentLobbyId.isNullOrEmpty()) {
+                        checkLobbyJoinable(friendProfile.currentLobbyId!!)
+                    } else {
+                        Pair(false, null)
+                    }
+                    
                     friendDisplays.add(
                         FriendDisplay(
                             uid = friendProfile.uid,
@@ -203,7 +212,9 @@ class ProfileViewModel @Inject constructor(
                             friendCode = friendProfile.friendCode,
                             winCount = friendProfile.winCount,
                             lossCount = friendProfile.lossCount,
-                            isOnline = friendProfile.isOnline
+                            isOnline = friendProfile.isOnline,
+                            currentLobbyId = currentLobbyId,
+                            isLobbyJoinable = isLobbyJoinable
                         )
                     )
                 }
@@ -212,6 +223,25 @@ class ProfileViewModel @Inject constructor(
             _friendProfiles.value = friendDisplays
         } catch (e: Exception) {
             _errorMessage.value = "Error loading friends: ${e.message}"
+        }
+    }
+    
+    private suspend fun checkLobbyJoinable(lobbyId: String): Pair<Boolean, String?> {
+        return try {
+            val gameRef = FirebaseDatabase.getInstance().getReference("games").child(lobbyId)
+            val snapshot = gameRef.get().await()
+            
+            if (snapshot.exists()) {
+                val isStarted = snapshot.child("started").getValue(Boolean::class.java) ?: false
+                val playerCount = snapshot.child("players").childrenCount
+                val isJoinable = !isStarted && playerCount < 4
+                
+                Pair(isJoinable, lobbyId)
+            } else {
+                Pair(false, null)
+            }
+        } catch (e: Exception) {
+            Pair(false, null)
         }
     }
     

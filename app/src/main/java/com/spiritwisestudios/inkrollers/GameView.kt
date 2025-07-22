@@ -367,7 +367,7 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
                val startPos = currentLevel!!.getPlayerStartPosition(playerIndex)
                // Use provided color or fallback to default colors
                val defaultColor = if (playerIndex == 0) Color.parseColor("#39FF14") else Color.parseColor("#1F51FF")
-               val playerColor = playerColor ?: defaultColor
+               val resolvedColor = playerColor ?: defaultColor
                
                // Check if player already exists (e.g., from a very fast Firebase update after initGame)
                var localPlayer = players[id]
@@ -377,7 +377,7 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
                        surface,
                        startPos.first,
                        startPos.second,
-                       playerColor,
+                       resolvedColor,
                        multiplayerManager,
                        currentLevel, // Pass level reference
                        playerName, // Pass the provided player name
@@ -391,7 +391,9 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
                    localPlayer.x = startPos.first
                    localPlayer.y = startPos.second
                    localPlayer.playerName = playerName // Set player name for local player directly
-                   // Potentially update color/other fields if needed, though less likely
+                   // CRITICAL FIX: Update local player color from provided playerColor
+                   localPlayer.setColor(resolvedColor)
+                   Log.d(TAG, "Updated local player $id color to $resolvedColor")
                }
                
                // Update Firebase with the correct initial normalized position
@@ -458,6 +460,9 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
               player.mode = newState.mode
               player.ink = newState.ink
               player.playerName = newState.playerName
+              // CRITICAL FIX: Update player color from PlayerState
+              player.setColor(newState.color)
+              Log.d(TAG, "Updated remote player $playerId color to ${newState.color}")
           }
       }
        // Commented out per-frame logs to reduce clutter
@@ -483,6 +488,12 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
         // We must not process state changes for ourself that come from the network,
         // as our local state is the source of truth. This prevents network race
         // conditions from overriding local actions (like mode changes).
+        // EXCEPTION: Allow color updates for local player to handle conflict resolution
+        val localPlayer = players[localPlayerId]
+        if (localPlayer != null && localPlayer.getColor() != newState.color) {
+            Log.d(TAG, "Updating local player color from ${localPlayer.getColor()} to ${newState.color} due to conflict resolution")
+            localPlayer.setColor(newState.color)
+        }
         return
       }
 

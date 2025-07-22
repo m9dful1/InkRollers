@@ -268,6 +268,10 @@ class Player(
   fun getInkPercent(): Float = ink / MAX_INK
   fun getModeText(): String = if (mode == 0) "PAINT" else "FILL"
   fun getColor(): Int = paint.color
+  
+  fun setColor(color: Int) {
+      paint.color = color
+  }
   fun update(){}
   fun draw(c:Canvas){
     // Draw main player circle

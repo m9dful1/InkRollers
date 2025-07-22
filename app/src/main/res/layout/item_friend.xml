@@ -51,6 +51,21 @@
         app:layout_constraintTop_toTopOf="@id/text_friend_code"
         android:layout_marginStart="12dp"/>
 
+    <Button
+        android:id="@+id/btn_join_game"
+        android:layout_width="wrap_content"
+        android:layout_height="32dp"
+        android:text="Join"
+        android:textSize="12sp"
+        android:minWidth="60dp"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:visibility="gone"
+        app:layout_constraintEnd_toStartOf="@id/btn_remove_friend"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        android:layout_marginEnd="8dp"/>
+
     <ImageButton
         android:id="@+id/btn_remove_friend"
         android:layout_width="40dp"

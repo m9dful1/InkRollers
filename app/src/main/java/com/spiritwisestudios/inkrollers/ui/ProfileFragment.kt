@@ -134,9 +134,15 @@ class ProfileFragment : Fragment() {
         setupColorPickers()
 
         recyclerFriends.layoutManager = LinearLayoutManager(requireContext())
-        friendAdapter = FriendAdapter(friendDisplays) { friend ->
-            viewModel.removeFriend(friend.uid)
-        }
+        friendAdapter = FriendAdapter(
+            friendDisplays,
+            onRemove = { friend -> viewModel.removeFriend(friend.uid) },
+            onJoin = { gameId -> 
+                // Navigate to join game - for now just show a toast
+                Toast.makeText(requireContext(), "Joining game: $gameId", Toast.LENGTH_SHORT).show()
+                // TODO: Implement actual game joining logic
+            }
+        )
         recyclerFriends.adapter = friendAdapter
     }
 
