@@ -1212,6 +1212,14 @@ AndroidManifest.xml
     - Addressed and fixed a subtle bug in test logic where mock setups for `PaintSurface.getPixelColor` did not account for player position changes before the color check, ensuring accurate testing of ink refill conditions.
 
 **2025-12-21**
+- **✅ Campaign Mode Button Text Fix COMPLETED:**
+    - **UI Consistency:** Fixed campaign mode fill/paint button to match multiplayer mode behavior exactly.
+    - **Button Text Issue:** Resolved conflicting implementation where `updateModeDisplay()` was overwriting correct button text ("REFILL"/"REFILLING") with internal mode names ("PAINT"/"FILL").
+    - **Root Cause:** Campaign mode was calling `Player.getModeText()` which returns internal mode names instead of user-friendly button labels.
+    - **Solution:** Removed conflicting `updateModeDisplay()` calls from touch listener in `CampaignLevelActivity.kt`, allowing manual button text setting to work correctly.
+    - **Expected Behavior:** Button now shows "REFILL" in paint mode and "REFILLING" while actively refilling, matching multiplayer mode exactly.
+    - **Implementation Details:** Removed 3 calls to `updateModeDisplay()` from `ACTION_DOWN`, `ACTION_UP`, and `ACTION_CANCEL` touch events in the campaign button handler.
+
 - **Fixed Single-Path Maze Generation for Campaign Tutorial:**
     - **Critical Fix:** Resolved maze generation algorithm that was breaking connectivity for single-path tutorial levels.
     - **Root Cause:** The `generateMaze()` function was always applying 180-degree rotational symmetry, which was designed for competitive multiplayer balance but broke proper entrance-to-exit connectivity for tutorial levels.

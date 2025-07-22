@@ -214,7 +214,6 @@ class CampaignLevelActivity : AppCompatActivity() {
                         localPlayer.changeModeIfNeeded(1)
                         binding.buttonModeToggle.setBackgroundColor(android.graphics.Color.parseColor("#FF9800"))
                         binding.buttonModeToggle.text = "REFILLING"
-                        updateModeDisplay()
                         // Add haptic feedback
                         view.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
                     } else {
@@ -229,7 +228,6 @@ class CampaignLevelActivity : AppCompatActivity() {
                         localPlayer.changeModeIfNeeded(0)
                         binding.buttonModeToggle.setBackgroundColor(android.graphics.Color.parseColor("#2196F3"))
                         binding.buttonModeToggle.text = "REFILL"
-                        updateModeDisplay()
                     } else {
                         Log.w(TAG, "Cannot switch to PAINT mode - local player is null")
                     }
@@ -242,7 +240,6 @@ class CampaignLevelActivity : AppCompatActivity() {
                         localPlayer.changeModeIfNeeded(0)
                         binding.buttonModeToggle.setBackgroundColor(android.graphics.Color.parseColor("#2196F3"))
                         binding.buttonModeToggle.text = "REFILL"
-                        updateModeDisplay()
                     } else {
                         Log.w(TAG, "Cannot switch to PAINT mode - local player is null (cancel)")
                     }
