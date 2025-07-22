@@ -1135,7 +1135,7 @@ class MultiplayerManager {
      * and re-attached in restartMatch.
      */
     fun setupRematchListener() {
-        Log.d(TAG, "setupRematchListener called for game $currentGameId")
+        Log.d(TAG, "REMATCH SETUP: setupRematchListener called for player $localPlayerId in game $currentGameId")
         if (rematchRef == null) rematchRef = gameRef?.child(REMATCH_NODE)
         if (rematchInProgressRef == null) rematchInProgressRef = gameRef?.child("rematchInProgress")
         // Remove previous listener if any to avoid duplicates
@@ -1171,6 +1171,7 @@ class MultiplayerManager {
     }
 
     private fun attachRematchListener() {
+        Log.d(TAG, "REMATCH SETUP: attachRematchListener called - setting up Firebase listeners for player $localPlayerId in game $currentGameId")
         rematchListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 Log.d(TAG, "Rematch listener onDataChange: ${snapshot.childrenCount} answers received.")

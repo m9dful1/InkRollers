@@ -358,6 +358,10 @@ class GameSetupController @Inject constructor(
      * Sets up listeners for joiners
      */
     private fun setupJoinerListeners() {
+        // Set up rematch listener for joiners (same as host)
+        Log.d(TAG, "Joiner: Setting up rematch listener")
+        multiplayerManager.setupRematchListener()
+        
         multiplayerManager.onMatchStartRequested = {
             // Only trigger once
             multiplayerManager.onMatchStartRequested = null

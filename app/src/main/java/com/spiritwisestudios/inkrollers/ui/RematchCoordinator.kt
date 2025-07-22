@@ -91,11 +91,13 @@ class RematchCoordinator(
         // Listen for rematch start signal (after both YES)
         multiplayerManager.onRematchStartSignal = {
             Handler(Looper.getMainLooper()).post {
+                Log.d(TAG, "REMATCH START SIGNAL RECEIVED: Starting rematch flow for ${gameSetupController.getLocalPlayerId()}")
                 if (!rematchInProgressHandled) {
                     rematchInProgressHandled = true
+                    Log.d(TAG, "REMATCH START SIGNAL: Processing signal - starting rematch flow")
                     startRematchFlow()
                 } else {
-                    Log.d(TAG, "Rematch already in progress, ignoring duplicate signal.")
+                    Log.d(TAG, "REMATCH START SIGNAL: Rematch already in progress, ignoring duplicate signal.")
                 }
             }
         }

@@ -857,6 +857,14 @@ AndroidManifest.xml
 
 ### 13.3 Change Log
 **2025-12-21**
+- **✅ Multiplayer Rematch Functionality Fix COMPLETED:**
+    - **Issue Resolution:** Fixed critical bug where joining players would remain stuck in old game state after rematch while host would successfully join the reset game, creating a desynchronization between players.
+    - **Root Cause:** Joining players weren't getting rematch listeners set up during game initialization, so they never received the `onRematchStartSignal` callback to enter the rematch flow.
+    - **Listener Setup Fix:** Enhanced `GameSetupController.setupJoinerListeners()` to include `setupRematchListener()` call, ensuring both host and joining players have rematch listeners established from game start.
+    - **Firebase Listener Management:** Enhanced listener lifecycle management during rematch with `resetListenersForRematch()` method that properly clears and re-establishes listeners while maintaining the same game references.
+    - **Enhanced Debugging:** Added comprehensive logging to track rematch flow progression, listener setup, and Firebase synchronization with "REMATCH SETUP", "REMATCH START SIGNAL", and "REMATCH LISTENER RESET" prefixes for better issue diagnosis.
+    - **Cross-Player Synchronization:** Both players now properly reset and synchronize in the same reused Firebase game node during rematch, eliminating the stuck joining player issue.
+
 - **✅ Individual Robot Color Re-conversion System COMPLETED:**
     - **Dynamic Robot Color Changing:** Implemented ability for players to change robot colors multiple times during gameplay by painting converted robots with different colored ink.
     - **Enhanced paintRobot() Method:** Redesigned `Robot.kt`'s `paintRobot()` method to handle both:

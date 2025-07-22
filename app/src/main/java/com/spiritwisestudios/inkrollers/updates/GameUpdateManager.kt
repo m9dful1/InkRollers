@@ -32,6 +32,9 @@ class GameUpdateManager {
     
     companion object {
         private const val TAG = "GameUpdateManager"
+        private const val TIMER_STUCK_THRESHOLD = 30 // Consider timer stuck if same value for 30 consecutive checks
+        private const val TIMER_CHECK_INTERVAL_MS = 1000L // Check timer health every second
+        private const val MAX_TIMER_RECOVERY_ATTEMPTS = 3
     }
     
     // Update timing and throttling
@@ -49,6 +52,13 @@ class GameUpdateManager {
     private var isMatchReady: Boolean = false
     private var endNotified: Boolean = false
     
+    // Timer freeze detection and recovery
+    private var lastTimerValue: Long = -1L
+    private var timerStuckCount: Int = 0
+    private var lastTimerCheckTime: Long = 0L
+    private var timerRecoveryAttempts: Int = 0
+    private var lastGameModeManagerDiagnostics: String = ""
+    
     // Callbacks for game events
     var onMatchEnd: ((String) -> Unit)? = null
     var onStopGameLoop: (() -> Unit)? = null
@@ -63,7 +73,14 @@ class GameUpdateManager {
         isMatchReady = matchReady
         coverageUpdateFrames = coverageFrames
         endNotified = false
-        Log.d(TAG, "GameUpdateManager initialized")
+        
+        // Reset timer freeze detection state
+        lastTimerValue = -1L
+        timerStuckCount = 0
+        lastTimerCheckTime = System.currentTimeMillis()
+        timerRecoveryAttempts = 0
+        
+        Log.d(TAG, "GameUpdateManager initialized with matchReady=$matchReady")
     }
     
     /**
@@ -268,17 +285,29 @@ class GameUpdateManager {
         zoneHudView: ZoneHudView?,
         timerHudView: TimerHudView?
     ) {
-        if (!isMatchReady) return // Only check if match is flagged as ready
+        if (!isMatchReady) {
+            Log.v(TAG, "updateGameMode: Match not ready, skipping timer updates")
+            return // Only check if match is flagged as ready
+        }
         
         gameModeManager?.let { mgr ->
-            // Update countdown timer
-            timerHudView?.updateTime(mgr.timeRemainingMs())
-            mgr.update() // Update the manager's internal state (timer)
+            // Update the manager's internal state (timer) FIRST
+            mgr.update()
+            
+            // Get current timer value for freeze detection
+            val currentTimerValue = mgr.timeRemainingMs()
+            
+            // Detect timer freeze conditions
+            detectTimerFreeze(mgr, currentTimerValue)
+            
+            // Update countdown timer display
+            timerHudView?.updateTime(currentTimerValue)
 
             // Check if finished *after* updating the manager
             if (mgr.isFinished()) {
                 if (!endNotified) {
                     endNotified = true
+                    Log.i(TAG, "Timer expired, ending match")
                     onStopGameLoop?.invoke()
                     onMatchEnd?.invoke("timer_expired")
                 }
@@ -290,6 +319,87 @@ class GameUpdateManager {
                     updateModeSpecificHUD(mgr, currentLevel, surface, players, coverageHudView, zoneHudView)
                 }
             }
+        } ?: run {
+            Log.w(TAG, "updateGameMode: GameModeManager is null!")
+        }
+    }
+    
+    /**
+     * Detect timer freeze conditions and attempt recovery
+     */
+    private fun detectTimerFreeze(gameModeManager: GameModeManager, currentTimerValue: Long) {
+        val currentTime = System.currentTimeMillis()
+        
+        // Only check periodically to avoid spam
+        if (currentTime - lastTimerCheckTime < TIMER_CHECK_INTERVAL_MS) {
+            return
+        }
+        lastTimerCheckTime = currentTime
+        
+        // Check if timer value has changed
+        if (currentTimerValue == lastTimerValue && currentTimerValue > 0) {
+            timerStuckCount++
+            
+            if (timerStuckCount >= TIMER_STUCK_THRESHOLD) {
+                Log.w(TAG, "TIMER_FREEZE_DETECTED: Timer stuck at ${currentTimerValue}ms for ${timerStuckCount} checks")
+                
+                // Get diagnostics from GameModeManager
+                val diagnostics = gameModeManager.getTimerDiagnostics()
+                Log.w(TAG, "Timer diagnostics: $diagnostics")
+                
+                // Check if timer health is bad
+                if (!gameModeManager.isTimerHealthy()) {
+                    attemptTimerRecovery(gameModeManager, currentTimerValue)
+                }
+                
+                // Reset counter after logging
+                timerStuckCount = 0
+            }
+        } else {
+            // Timer is moving, reset stuck counter
+            timerStuckCount = 0
+        }
+        
+        lastTimerValue = currentTimerValue
+    }
+    
+    /**
+     * Attempt to recover from timer freeze condition
+     */
+    private fun attemptTimerRecovery(gameModeManager: GameModeManager, frozenValue: Long) {
+        if (timerRecoveryAttempts >= MAX_TIMER_RECOVERY_ATTEMPTS) {
+            Log.e(TAG, "Maximum timer recovery attempts reached ($MAX_TIMER_RECOVERY_ATTEMPTS), forcing match end")
+            if (!endNotified) {
+                endNotified = true
+                onStopGameLoop?.invoke()
+                onMatchEnd?.invoke("timer_freeze_forced_end")
+            }
+            return
+        }
+        
+        timerRecoveryAttempts++
+        
+        Log.w(TAG, "TIMER_RECOVERY_ATTEMPT #$timerRecoveryAttempts: Timer frozen at ${frozenValue}ms")
+        
+        try {
+            // Log current state for debugging
+            Log.w(TAG, "Recovery: Current diagnostics: ${gameModeManager.getTimerDiagnostics()}")
+            
+            // Force a manual update call - sometimes the update loop gets stuck
+            gameModeManager.update()
+            
+            // Check if recovery worked
+            val newValue = gameModeManager.timeRemainingMs()
+            if (newValue != frozenValue) {
+                Log.i(TAG, "TIMER_RECOVERY_SUCCESS: Timer recovered, now shows ${newValue}ms")
+                timerRecoveryAttempts = 0 // Reset on success
+                timerStuckCount = 0
+            } else {
+                Log.w(TAG, "TIMER_RECOVERY_FAILED: Timer still frozen at ${newValue}ms")
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception during timer recovery attempt #$timerRecoveryAttempts", e)
         }
     }
     
@@ -363,14 +473,28 @@ class GameUpdateManager {
     }
     
     /**
-     * Set match ready state
+     * Set match ready state and log the change for debugging
      */
     fun setMatchReady(ready: Boolean) {
+        val wasReady = isMatchReady
         isMatchReady = ready
-        if (ready) {
-            endNotified = false
+        Log.d(TAG, "setMatchReady: $wasReady -> $ready")
+        
+        if (ready && !wasReady) {
+            // Reset timer freeze detection when match becomes ready
+            lastTimerValue = -1L
+            timerStuckCount = 0
+            timerRecoveryAttempts = 0
+            Log.d(TAG, "Match ready: Reset timer freeze detection state")
         }
-        Log.d(TAG, "Match ready state set to: $ready")
+    }
+    
+    /**
+     * Get current timer freeze detection state for debugging
+     */
+    fun getTimerFreezeState(): String {
+        return "TimerFreezeState[matchReady=$isMatchReady, lastValue=${lastTimerValue}ms, " +
+               "stuckCount=$timerStuckCount, recoveryAttempts=$timerRecoveryAttempts]"
     }
     
     /**
