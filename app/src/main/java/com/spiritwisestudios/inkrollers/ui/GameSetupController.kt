@@ -44,6 +44,8 @@ class GameSetupController @Inject constructor(
     private var mazeComplexity: String = HomeActivity.COMPLEXITY_HIGH // Default High
     private var gameMode: String = HomeActivity.GAME_MODE_COVERAGE // Default Coverage
     private var isPrivateMatch: Boolean = false // Default to public
+    private var robotSpawnersEnabled: Boolean = false // Default to disabled
+    private var robotSpawnerCount: Int = 0 // Default to 0
     private var matchStartTime: Long? = null
 
     // Callbacks for setup events
@@ -70,7 +72,9 @@ class GameSetupController @Inject constructor(
         timeLimit: Int?,
         complexity: String?,
         gameMode: String?,
-        isPrivate: Boolean?
+        isPrivate: Boolean?,
+        spawnersEnabled: Boolean?,
+        spawnerCount: Int?
     ) {
         Log.d(TAG, "Received mode: $mode")
 
@@ -79,7 +83,9 @@ class GameSetupController @Inject constructor(
             mazeComplexity = complexity ?: HomeActivity.COMPLEXITY_HIGH
             this.gameMode = gameMode ?: HomeActivity.GAME_MODE_COVERAGE
             isPrivateMatch = isPrivate ?: false
-            Log.d(TAG, "Host selected settings: Duration=${matchDurationMs}ms, Complexity=$mazeComplexity, GameMode=${this.gameMode}, Private=$isPrivateMatch")
+            robotSpawnersEnabled = spawnersEnabled ?: false
+            robotSpawnerCount = spawnerCount ?: 0
+            Log.d(TAG, "Host selected settings: Duration=${matchDurationMs}ms, Complexity=$mazeComplexity, GameMode=${this.gameMode}, Private=$isPrivateMatch, RobotSpawners=$robotSpawnersEnabled, SpawnerCount=$robotSpawnerCount")
         }
 
         // Load player profile to get favorite color and name before starting game flow
@@ -141,6 +147,8 @@ class GameSetupController @Inject constructor(
         mazeComplexity = savedState.mazeComplexity
         gameMode = savedState.gameMode
         isPrivateMatch = savedState.isPrivateMatch
+        robotSpawnersEnabled = savedState.robotSpawnersEnabled
+        robotSpawnerCount = savedState.robotSpawnerCount
         
         // Create initial player state for rejoin
         val playerColor = savedState.playerColor ?: (if (savedState.localPlayerId == "player0") NEON_GREEN else NEON_BLUE)
@@ -203,7 +211,7 @@ class GameSetupController @Inject constructor(
      * Hosts a new game
      */
     private fun hostGame(initialState: PlayerState) {
-        multiplayerManager.hostGame(initialState, matchDurationMs, mazeComplexity, gameMode, isPrivateMatch) { success, gameId, gameSettings ->
+        multiplayerManager.hostGame(initialState, matchDurationMs, mazeComplexity, gameMode, isPrivateMatch, robotSpawnersEnabled, robotSpawnerCount) { success, gameId, gameSettings ->
             if (success && gameId != null) {
                 localPlayerId = multiplayerManager.localPlayerId
                 Log.d(TAG, "Host game successful. Game ID: $gameId. Settings: Duration=${gameSettings?.durationMs}, Complexity=${gameSettings?.complexity}, GameMode=${gameSettings?.gameMode}")
@@ -491,5 +499,7 @@ class GameSetupController @Inject constructor(
     }
     fun getMazeComplexity(): String = mazeComplexity
     fun getGameMode(): String = gameMode
+    fun getRobotSpawnersEnabled(): Boolean = robotSpawnersEnabled
+    fun getRobotSpawnerCount(): Int = robotSpawnerCount
     fun getMatchStartTime(): Long? = matchStartTime
 } 

@@ -31,6 +31,7 @@ import com.spiritwisestudios.inkrollers.effects.ParticleManager
 import com.spiritwisestudios.inkrollers.items.ItemManager
 import com.spiritwisestudios.inkrollers.items.ItemConfig
 import com.spiritwisestudios.inkrollers.items.GameViewPlayerManager
+import com.spiritwisestudios.inkrollers.multiplayer.RobotSpawnerManager
 
 class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
     SurfaceView(ctx,attrs),SurfaceHolder.Callback, MultiplayerManager.RemoteUpdateListener { // Implement listener
@@ -66,6 +67,7 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
   // Multiplayer specific fields
   private var multiplayerManager: MultiplayerManager? = null
   private var localPlayerId: String? = null
+  private var robotSpawnerManager: RobotSpawnerManager? = null
   
   // Campaign mode fields
   private var isCampaignMode: Boolean = false
@@ -255,7 +257,8 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
           timerHudView = timerHudView,
           localPlayerId = localPlayerId,
           particleManager = particleManager,
-          itemManager = itemManager
+          itemManager = itemManager,
+          robotSpawnerManager = robotSpawnerManager
       )
   }
   
@@ -294,7 +297,8 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
         joysticks = joysticks,
         localPlayerId = localPlayerId,
         particleManager = particleManager,
-        itemManager = itemManager
+        itemManager = itemManager,
+        robotSpawnerManager = robotSpawnerManager
     )
   }
 
@@ -694,6 +698,19 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
     
     // Ensure match isn't considered ready until startGameMode is called
     gameUpdateManager.setMatchReady(false)
+    
+    // Initialize robot spawner manager for multiplayer matches
+    robotSpawnerManager = null // Clear any previous instance
+    val gameSettings = multiplayerManager?.getGameSettings()
+    if (gameSettings != null && gameSettings.robotSpawnersEnabled && gameSettings.robotSpawnerCount > 0) {
+        val level = currentLevel
+        if (level != null) {
+            robotSpawnerManager = RobotSpawnerManager(surface, level, gameSettings.robotSpawnerCount, multiplayerManager)
+        }
+        Log.d(TAG, "RobotSpawnerManager initialized with ${gameSettings.robotSpawnerCount} spawners")
+    } else {
+        Log.d(TAG, "Robot spawners disabled for this match")
+    }
     
     // Create a new thread instance for the new game/match
     thread = GameThread(holder, this)

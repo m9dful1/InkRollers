@@ -16,6 +16,7 @@ import com.spiritwisestudios.inkrollers.PaintSurface
 import com.spiritwisestudios.inkrollers.VirtualJoystick
 import com.spiritwisestudios.inkrollers.effects.ParticleManager
 import com.spiritwisestudios.inkrollers.items.ItemManager
+import com.spiritwisestudios.inkrollers.multiplayer.RobotSpawnerManager
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -100,7 +101,8 @@ class GameRenderer(private val context: Context) {
         joysticks: ConcurrentHashMap<String, VirtualJoystick>,
         localPlayerId: String?,
         particleManager: ParticleManager? = null,
-        itemManager: ItemManager? = null
+        itemManager: ItemManager? = null,
+        robotSpawnerManager: RobotSpawnerManager? = null
     ) {
         try {
             // 1. Draw background
@@ -112,19 +114,25 @@ class GameRenderer(private val context: Context) {
             // 3. Draw level (maze walls)
             currentLevel?.let { drawLevel(canvas, it) }
             
-            // 4. Draw all players
+            // 4. Draw robot spawners (below players)
+            robotSpawnerManager?.let { drawRobotSpawners(canvas, it) }
+            
+            // 5. Draw all players
             drawPlayers(canvas, players)
             
-            // 5. Draw items (on top of players but below particles)
+            // 6. Draw spawned robots (on top of players)
+            robotSpawnerManager?.let { drawSpawnedRobots(canvas, it) }
+            
+            // 7. Draw items (on top of robots but below particles)
             itemManager?.let { drawItems(canvas, it) }
             
-            // 6. Draw particles (on top of items for better visibility)
+            // 8. Draw particles (on top of items for better visibility)
             particleManager?.let { drawParticles(canvas, it) }
             
-            // 7. Draw local joystick
+            // 9. Draw local joystick
             drawLocalJoystick(canvas, joysticks, localPlayerId)
             
-            // 8. Draw corner names
+            // 10. Draw corner names
             drawCornerNames(canvas, players)
             
         } catch (e: Exception) {
@@ -230,6 +238,20 @@ class GameRenderer(private val context: Context) {
      */
     private fun drawItems(canvas: Canvas, itemManager: ItemManager) {
         itemManager.draw(canvas)
+    }
+    
+    /**
+     * Draw robot spawners
+     */
+    private fun drawRobotSpawners(canvas: Canvas, robotSpawnerManager: RobotSpawnerManager) {
+        robotSpawnerManager.draw(canvas)
+    }
+    
+    /**
+     * Draw spawned robots
+     */
+    private fun drawSpawnedRobots(canvas: Canvas, robotSpawnerManager: RobotSpawnerManager) {
+        robotSpawnerManager.drawRobots(canvas)
     }
     
     /**

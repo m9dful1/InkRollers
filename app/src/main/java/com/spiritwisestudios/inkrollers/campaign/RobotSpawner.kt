@@ -15,7 +15,8 @@ import kotlin.random.Random
  * Can be converted by the player to spawn allied robots instead of enemy robots.
  */
 class RobotSpawner(
-    private val spawnerData: RobotSpawnerData
+    private val spawnerData: RobotSpawnerData,
+    private val deterministicSeed: Long? = null // Optional seed for deterministic multiplayer behavior
 ) {
     companion object {
         private const val TAG = "RobotSpawner"
@@ -25,10 +26,17 @@ class RobotSpawner(
         private const val CONVERSION_THRESHOLD = 150f // Amount of paint needed to convert spawner (more than robot)
     }
 
+    // Deterministic random generator for multiplayer synchronization
+    private val deterministicRandom = if (deterministicSeed != null) {
+        kotlin.random.Random(deterministicSeed)
+    } else {
+        kotlin.random.Random.Default
+    }
+
     // Spawner state
     private var x: Float = spawnerData.x
     private var y: Float = spawnerData.y
-    private var lastSpawnTime: Long = 0
+    private var lastSpawnTime: Long = System.currentTimeMillis() // Start timing from initialization
     private var spawnedRobotCount: Int = 0
     private var isActive: Boolean = true
     
@@ -78,7 +86,7 @@ class RobotSpawner(
     /**
      * Update spawner state and check for robot spawning
      */
-    fun update(deltaTime: Float, campaignLevel: CampaignLevel, paintSurface: PaintSurface? = null) {
+    fun update(deltaTime: Float, spawnableLevel: SpawnableLevel, paintSurface: PaintSurface? = null) {
         if (!isActive) return
         
         val currentTime = System.currentTimeMillis()
@@ -97,7 +105,7 @@ class RobotSpawner(
         if (timeSinceLastSpawn >= spawnerData.spawnInterval) {
             // Check if we haven't reached the maximum spawn limit
             if (spawnerData.maxRobots <= 0 || spawnedRobotCount < spawnerData.maxRobots) {
-                spawnRobot(campaignLevel, paintSurface)
+                spawnRobot(spawnableLevel, paintSurface)
                 lastSpawnTime = currentTime
             }
         }
@@ -106,16 +114,16 @@ class RobotSpawner(
     /**
      * Spawn a new robot near the spawner
      */
-    private fun spawnRobot(campaignLevel: CampaignLevel, paintSurface: PaintSurface?) {
+    private fun spawnRobot(spawnableLevel: SpawnableLevel, paintSurface: PaintSurface?) {
         // Find a safe spawn position near the spawner
-        val spawnPosition = findSafeSpawnPosition(campaignLevel)
+        val spawnPosition = findSafeSpawnPosition(spawnableLevel)
         if (spawnPosition == null) {
             Log.w(TAG, "Could not find safe spawn position near spawner at ($x, $y)")
             return
         }
         
         // Create patrol path around the spawner area
-        val patrolPath = generatePatrolPath(spawnPosition, campaignLevel)
+        val patrolPath = generatePatrolPath(spawnPosition, spawnableLevel)
         
         // Create robot data for the spawned robot
         val robotData = RobotData(
@@ -127,8 +135,10 @@ class RobotSpawner(
         
         // Create and add the robot to the campaign level
         // Pass the spawner's paint color if converted, or default green if not converted
+        // Create unique deterministic seed for each robot based on spawner seed and robot count
+        val robotSeed = deterministicSeed?.let { it + spawnedRobotCount }
         val newRobot = Robot(spawnPosition.first, spawnPosition.second, robotData, 
-                           if (isConverted) playerPaintColor else Color.GREEN)
+                           if (isConverted) playerPaintColor else Color.GREEN, robotSeed)
         
         // If spawner is converted, create the robot as already converted
         if (isConverted) {
@@ -141,7 +151,7 @@ class RobotSpawner(
             }
         }
         
-        campaignLevel.addSpawnedRobot(newRobot)
+        spawnableLevel.addSpawnedRobot(newRobot)
         
         spawnedRobotCount++
         isSpawning = true
@@ -153,20 +163,20 @@ class RobotSpawner(
     /**
      * Find a safe position to spawn a robot near the spawner
      */
-    private fun findSafeSpawnPosition(campaignLevel: CampaignLevel): Pair<Float, Float>? {
+    private fun findSafeSpawnPosition(spawnableLevel: SpawnableLevel): Pair<Float, Float>? {
         val maxAttempts = 20
         var attempts = 0
         
         while (attempts < maxAttempts) {
-            // Generate random position within spawn radius
-            val angle = Random.nextFloat() * 2f * PI.toFloat()
-            val distance = Random.nextFloat() * SPAWN_RADIUS
+            // Generate deterministic position within spawn radius
+            val angle = deterministicRandom.nextFloat() * 2f * PI.toFloat()
+            val distance = deterministicRandom.nextFloat() * SPAWN_RADIUS
             
             val spawnX = x + cos(angle) * distance
             val spawnY = y + sin(angle) * distance
             
             // Check if position is safe (no collision)
-            if (!campaignLevel.checkCollision(spawnX, spawnY)) {
+            if (!spawnableLevel.checkCollision(spawnX, spawnY)) {
                 return Pair(spawnX, spawnY)
             }
             
@@ -179,7 +189,7 @@ class RobotSpawner(
     /**
      * Generate a patrol path for spawned robots around the spawner area
      */
-    private fun generatePatrolPath(spawnPosition: Pair<Float, Float>, campaignLevel: CampaignLevel): List<Pair<Float, Float>> {
+    private fun generatePatrolPath(spawnPosition: Pair<Float, Float>, spawnableLevel: SpawnableLevel): List<Pair<Float, Float>> {
         val patrolPath = mutableListOf<Pair<Float, Float>>()
         
         // If custom patrol path is specified, use it (relative to spawner position)
@@ -187,7 +197,7 @@ class RobotSpawner(
             spawnerData.spawnedRobotPatrolPath.forEach { (relX, relY) ->
                 val absoluteX = x + relX
                 val absoluteY = y + relY
-                if (!campaignLevel.checkCollision(absoluteX, absoluteY)) {
+                if (!spawnableLevel.checkCollision(absoluteX, absoluteY)) {
                     patrolPath.add(Pair(absoluteX, absoluteY))
                 }
             }
@@ -199,7 +209,7 @@ class RobotSpawner(
                 val patrolX = x + cos(angle) * DEFAULT_PATROL_RADIUS
                 val patrolY = y + sin(angle) * DEFAULT_PATROL_RADIUS
                 
-                if (!campaignLevel.checkCollision(patrolX, patrolY)) {
+                if (!spawnableLevel.checkCollision(patrolX, patrolY)) {
                     patrolPath.add(Pair(patrolX, patrolY))
                 }
             }
@@ -392,5 +402,13 @@ class RobotSpawner(
         if (spawnedRobotCount > 0) {
             spawnedRobotCount--
         }
+    }
+    
+    /**
+     * Reset spawn timer to current time (prevents immediate spawning)
+     */
+    fun resetSpawnTimer() {
+        lastSpawnTime = System.currentTimeMillis()
+        Log.d(TAG, "Spawn timer reset - first spawn will occur in ${spawnerData.spawnInterval}ms")
     }
 } 

@@ -85,6 +85,18 @@
           "$paintId": {
             ".write": "auth != null"
           }
+        },
+        "robotSpawners": {
+          "$spawnerIndex": {
+            ".write": "auth != null",
+            ".validate": "newData.hasChildren(['normX', 'normY', 'isConverted', 'playerColor', 'isActive', 'spawnedRobotCount'])"
+          }
+        },
+        "robots": {
+          "$robotId": {
+            ".write": "auth != null",
+            ".validate": "newData.hasChildren(['id', 'normX', 'normY', 'isConverted', 'paintColor', 'isActive', 'spawnerIndex'])"
+          }
         }
       }
     }

@@ -13,7 +13,7 @@ import java.util.Date
 import com.spiritwisestudios.inkrollers.model.PlayerColorPalette
 
 // Data class to hold game settings read by clients
-data class GameSettings(val durationMs: Long, val complexity: String, val gameMode: String)
+data class GameSettings(val durationMs: Long, val complexity: String, val gameMode: String, val robotSpawnersEnabled: Boolean = false, val robotSpawnerCount: Int = 0)
 
 class MultiplayerManager {
 
@@ -24,6 +24,8 @@ class MultiplayerManager {
     private var initSnapshotListener: ValueEventListener? = null
     private var paintRef: DatabaseReference? = null
     private var rematchRef: DatabaseReference? = null
+    private var robotSpawnersRef: DatabaseReference? = null
+    private var robotsRef: DatabaseReference? = null
 
     // Add companion object back
     companion object {
@@ -164,8 +166,9 @@ class MultiplayerManager {
     // Public getter methods for accessing private state
     fun getCurrentUserUid(): String? = auth.currentUser?.uid
     fun getGameRef(): DatabaseReference? = gameRef
+    fun getGameSettings(): GameSettings? = gameSettings
 
-    fun hostGame(initialPlayerState: PlayerState, durationMs: Long, complexity: String, gameMode: String, isPrivate: Boolean, callback: (success: Boolean, gameId: String?, gameSettings: GameSettings?) -> Unit) {
+    fun hostGame(initialPlayerState: PlayerState, durationMs: Long, complexity: String, gameMode: String, isPrivate: Boolean, robotSpawnersEnabled: Boolean = false, robotSpawnerCount: Int = 0, callback: (success: Boolean, gameId: String?, gameSettings: GameSettings?) -> Unit) {
         clearListeners() // Clear any previous listeners
         
         // Ensure user is authenticated before proceeding
@@ -184,6 +187,8 @@ class MultiplayerManager {
         gameRef = database.getReference(GAMES_NODE).child(currentGameId!!)
         playersRef = gameRef?.child("players")
         paintRef = gameRef?.child(PAINT_NODE)
+        robotSpawnersRef = gameRef?.child("robotSpawners")
+        robotsRef = gameRef?.child("robots")
 
         Log.d(TAG, "Hosting game with ID: $currentGameId")
 
@@ -194,10 +199,10 @@ class MultiplayerManager {
         mazeSeed = System.currentTimeMillis()
         Log.d(TAG, "Generated maze seed: $mazeSeed")
         
-        createGameAfterConnectionTest(initialPlayerState, durationMs, complexity, gameMode, isPrivate, callback)
+        createGameAfterConnectionTest(initialPlayerState, durationMs, complexity, gameMode, isPrivate, robotSpawnersEnabled, robotSpawnerCount, callback)
     }
     
-    private fun createGameAfterConnectionTest(initialPlayerState: PlayerState, durationMs: Long, complexity: String, gameMode: String, isPrivate: Boolean, callback: (success: Boolean, gameId: String?, gameSettings: GameSettings?) -> Unit) {
+    private fun createGameAfterConnectionTest(initialPlayerState: PlayerState, durationMs: Long, complexity: String, gameMode: String, isPrivate: Boolean, robotSpawnersEnabled: Boolean, robotSpawnerCount: Int, callback: (success: Boolean, gameId: String?, gameSettings: GameSettings?) -> Unit) {
         try {
             // Use a map to set the initial game structure with player0
             val initialGameData = mapOf(
@@ -209,6 +214,8 @@ class MultiplayerManager {
                 "mazeComplexity" to complexity,   // Store maze complexity
                 "gameMode" to gameMode,
                 "isPrivate" to isPrivate, // Store private match status
+                "robotSpawnersEnabled" to robotSpawnersEnabled, // Store robot spawner settings
+                "robotSpawnerCount" to robotSpawnerCount,
                 CREATED_AT_NODE to ServerValue.TIMESTAMP, // Use constant
                 LAST_ACTIVITY_NODE to ServerValue.TIMESTAMP, // Add last activity
                 "started" to false, // Explicitly set initial started state
@@ -219,7 +226,7 @@ class MultiplayerManager {
             Log.d(TAG, "Complete game data structure: $initialGameData")
             
             // Create game settings for the host too for consistency
-            gameSettings = GameSettings(durationMs, complexity, gameMode)
+            gameSettings = GameSettings(durationMs, complexity, gameMode, robotSpawnersEnabled, robotSpawnerCount)
             
             // Write directly to the game node
             val setValueTask = gameRef?.setValue(initialGameData)
@@ -343,13 +350,17 @@ class MultiplayerManager {
                     gameRef = ref
                     playersRef = gameRef?.child("players")
                     paintRef = gameRef?.child(PAINT_NODE)
+                    robotSpawnersRef = gameRef?.child("robotSpawners")
+                    robotsRef = gameRef?.child("robots")
                     localPlayerId = expectedPlayerId
 
                     // Read game settings
                     val duration = snapshot.child("matchDurationMs").getValue(Long::class.java) ?: 60000L
                     val complexity = snapshot.child("mazeComplexity").getValue(String::class.java) ?: HomeActivity.COMPLEXITY_MEDIUM
                     val mode = snapshot.child("gameMode").getValue(String::class.java) ?: HomeActivity.GAME_MODE_COVERAGE
-                    gameSettings = GameSettings(duration, complexity, mode)
+                    val robotSpawnersEnabled = snapshot.child("robotSpawnersEnabled").getValue(Boolean::class.java) ?: false
+                    val robotSpawnerCount = snapshot.child("robotSpawnerCount").getValue(Int::class.java) ?: 0
+                    gameSettings = GameSettings(duration, complexity, mode, robotSpawnersEnabled, robotSpawnerCount)
                     
                     mazeSeed = snapshot.child("mazeSeed").getValue(Long::class.java) ?: System.currentTimeMillis()
 
@@ -494,13 +505,17 @@ class MultiplayerManager {
                     gameRef = ref
                     playersRef = gameRef?.child("players")
                     paintRef = gameRef?.child(PAINT_NODE)
+                    robotSpawnersRef = gameRef?.child("robotSpawners")
+                    robotsRef = gameRef?.child("robots")
                     localPlayerId = "player1" // Joiner is always player1
 
                     // Read game settings for the client
                     val duration = snapshot.child("matchDurationMs").getValue(Long::class.java) ?: 60000L
                     val complexity = snapshot.child("mazeComplexity").getValue(String::class.java) ?: HomeActivity.COMPLEXITY_MEDIUM
                     val mode = snapshot.child("gameMode").getValue(String::class.java) ?: HomeActivity.GAME_MODE_COVERAGE
-                    gameSettings = GameSettings(duration, complexity, mode)
+                    val robotSpawnersEnabled = snapshot.child("robotSpawnersEnabled").getValue(Boolean::class.java) ?: false
+                    val robotSpawnerCount = snapshot.child("robotSpawnerCount").getValue(Int::class.java) ?: 0
+                    gameSettings = GameSettings(duration, complexity, mode, robotSpawnersEnabled, robotSpawnerCount)
                     
                     mazeSeed = snapshot.child("mazeSeed").getValue(Long::class.java) ?: System.currentTimeMillis()
 
@@ -1414,5 +1429,118 @@ class MultiplayerManager {
         Log.d(TAG, "Using default fallback color $defaultFallback")
         
         return joiningPlayerState.copy(color = defaultFallback)
+    }
+    
+    // Robot Spawner Synchronization Methods
+    
+    /**
+     * Update robot spawner state in Firebase
+     */
+    fun updateRobotSpawnerState(spawnerIndex: Int, spawnerState: RobotSpawnerState) {
+        if (robotSpawnersRef == null) return
+        robotSpawnersRef?.child(spawnerIndex.toString())?.setValue(spawnerState)?.addOnFailureListener { e ->
+            Log.w(TAG, "Failed to update robot spawner $spawnerIndex state", e)
+            onDatabaseError?.invoke("Robot spawner update failed: ${e.message}")
+        }
+        updateLastActivityTimestamp()
+        Log.v(TAG, "Updated robot spawner $spawnerIndex state")
+    }
+    
+    /**
+     * Update robot state in Firebase
+     */
+    fun updateRobotState(robotId: String, robotState: RobotState) {
+        if (robotsRef == null) return
+        robotsRef?.child(robotId)?.setValue(robotState)?.addOnFailureListener { e ->
+            Log.w(TAG, "Failed to update robot $robotId state", e)
+            onDatabaseError?.invoke("Robot update failed: ${e.message}")
+        }
+        updateLastActivityTimestamp()
+        Log.v(TAG, "Updated robot $robotId state")
+    }
+    
+    /**
+     * Remove robot from Firebase
+     */
+    fun removeRobotState(robotId: String) {
+        if (robotsRef == null) return
+        robotsRef?.child(robotId)?.removeValue()?.addOnFailureListener { e ->
+            Log.w(TAG, "Failed to remove robot $robotId", e)
+            onDatabaseError?.invoke("Robot removal failed: ${e.message}")
+        }
+        updateLastActivityTimestamp()
+        Log.v(TAG, "Removed robot $robotId")
+    }
+    
+    /**
+     * Listen for robot spawner state changes
+     */
+    fun setRobotSpawnerStateListener(listener: (Int, RobotSpawnerState) -> Unit) {
+        if (robotSpawnersRef == null) return
+        
+        robotSpawnersRef?.addChildEventListener(object : ChildEventListener {
+            override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
+                val spawnerIndex = snapshot.key?.toInt() ?: return
+                val spawnerState = snapshot.getValue(RobotSpawnerState::class.java) ?: return
+                listener(spawnerIndex, spawnerState)
+            }
+            
+            override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {
+                val spawnerIndex = snapshot.key?.toInt() ?: return
+                val spawnerState = snapshot.getValue(RobotSpawnerState::class.java) ?: return
+                listener(spawnerIndex, spawnerState)
+            }
+            
+            override fun onChildRemoved(snapshot: DataSnapshot) {
+                // Robot spawners are not typically removed during gameplay
+            }
+            
+            override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
+            override fun onCancelled(error: DatabaseError) {
+                Log.w(TAG, "Robot spawner listener cancelled", error.toException())
+                onDatabaseError?.invoke("Robot spawner sync failed: ${error.message}")
+            }
+        })
+    }
+    
+    /**
+     * Listen for robot state changes
+     */
+    fun setRobotStateListener(listener: (String, RobotState?, Boolean) -> Unit) {
+        if (robotsRef == null) return
+        
+        robotsRef?.addChildEventListener(object : ChildEventListener {
+            override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
+                val robotId = snapshot.key ?: return
+                val robotState = snapshot.getValue(RobotState::class.java) ?: return
+                listener(robotId, robotState, false) // false = not removed
+            }
+            
+            override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {
+                val robotId = snapshot.key ?: return
+                val robotState = snapshot.getValue(RobotState::class.java) ?: return
+                listener(robotId, robotState, false) // false = not removed
+            }
+            
+            override fun onChildRemoved(snapshot: DataSnapshot) {
+                val robotId = snapshot.key ?: return
+                listener(robotId, null, true) // true = removed
+            }
+            
+            override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
+            override fun onCancelled(error: DatabaseError) {
+                Log.w(TAG, "Robot listener cancelled", error.toException())
+                onDatabaseError?.invoke("Robot sync failed: ${error.message}")
+            }
+        })
+    }
+    
+    /**
+     * Check if this device is the host (player0) of the current game
+     */
+    fun isHost(): Boolean {
+        val isHostResult = localPlayerId == "player0"
+        Log.v(TAG, "isHost() check: localPlayerId=$localPlayerId, result=$isHostResult")
+        return isHostResult
     }
 } 

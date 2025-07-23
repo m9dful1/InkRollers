@@ -20,6 +20,7 @@ import com.spiritwisestudios.inkrollers.TimerHudView
 import com.spiritwisestudios.inkrollers.ZoneOwnershipCalculator
 import com.spiritwisestudios.inkrollers.effects.ParticleManager
 import com.spiritwisestudios.inkrollers.items.ItemManager
+import com.spiritwisestudios.inkrollers.multiplayer.RobotSpawnerManager
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -115,11 +116,13 @@ class GameUpdateManager {
         timerHudView: TimerHudView?,
         localPlayerId: String?,
         particleManager: ParticleManager? = null,
-        itemManager: ItemManager? = null
+        itemManager: ItemManager? = null,
+        robotSpawnerManager: RobotSpawnerManager? = null
     ) {
         // Update different game systems
         updateLocalPlayer(deltaTime, localPlayer, localJoystick, currentLevel, multiplayerManager)
-        updateGameElements(deltaTime, currentLevel, surface)
+        updateGameElements(deltaTime, currentLevel, surface, robotSpawnerManager)
+        updateMultiplayerInteractions(localPlayer, robotSpawnerManager)
         updateParticles(deltaTime, particleManager)
         updateItems(deltaTime, itemManager, currentLevel, players, surface)
         updateHUDs(deltaTime, localPlayer, inkHudView)
@@ -173,11 +176,29 @@ class GameUpdateManager {
     }
     
     /**
+     * Update multiplayer robot spawner interactions
+     */
+    private fun updateMultiplayerInteractions(localPlayer: Player?, robotSpawnerManager: RobotSpawnerManager?) {
+        if (localPlayer != null && robotSpawnerManager != null && localPlayer.mode == 0) { // Paint mode only
+            val paintSurface = localPlayer.surface
+            robotSpawnerManager.handlePlayerInteraction(
+                localPlayer.x, 
+                localPlayer.y, 
+                localPlayer.getColor(), 
+                paintSurface
+            )
+        }
+    }
+    
+    /**
      * Update game elements like level and coverage statistics
      */
-    private fun updateGameElements(deltaTime: Float, currentLevel: Level?, surface: PaintSurface) {
+    private fun updateGameElements(deltaTime: Float, currentLevel: Level?, surface: PaintSurface, robotSpawnerManager: RobotSpawnerManager? = null) {
         // Update level
         currentLevel?.update()
+        
+        // Update robot spawners (multiplayer only)
+        robotSpawnerManager?.update(deltaTime)
         
         // Periodically update coverage stats
         frameCount++

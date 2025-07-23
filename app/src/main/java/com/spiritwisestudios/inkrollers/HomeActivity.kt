@@ -38,6 +38,8 @@ class HomeActivity : AppCompatActivity() {
         const val EXTRA_MAZE_COMPLEXITY = "com.spiritwisestudios.inkrollers.MAZE_COMPLEXITY"
         const val EXTRA_GAME_MODE = "com.spiritwisestudios.inkrollers.GAME_MODE"
         const val EXTRA_IS_PRIVATE_MATCH = "com.spiritwisestudios.inkrollers.EXTRA_IS_PRIVATE_MATCH"
+        const val EXTRA_ROBOT_SPAWNERS_ENABLED = "com.spiritwisestudios.inkrollers.EXTRA_ROBOT_SPAWNERS_ENABLED"
+        const val EXTRA_ROBOT_SPAWNER_COUNT = "com.spiritwisestudios.inkrollers.EXTRA_ROBOT_SPAWNER_COUNT"
         const val EXTRA_CAMPAIGN_LEVEL = "com.spiritwisestudios.inkrollers.CAMPAIGN_LEVEL"
         const val MODE_HOST = "HOST"
         const val MODE_JOIN = "JOIN"
@@ -238,15 +240,32 @@ class HomeActivity : AppCompatActivity() {
             .setSingleChoiceItems(matchTypeOptions, 0) { _, which -> // Default to Public (index 0)
                 isPrivate = (which == 1) // Private is index 1
             }
-            .setPositiveButton("Host Game") { _, _ ->
-                startGameActivity(MODE_HOST, null, timeLimit, complexity, gameMode, isPrivate)
+            .setPositiveButton("Continue") { _, _ ->
+                showRobotSpawnersDialog(timeLimit, complexity, gameMode, isPrivate)
             }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
-    private fun startGameActivity(mode: String, gameId: String? = null, timeLimit: Int = 3, complexity: String = COMPLEXITY_HIGH, gameMode: String = GAME_MODE_COVERAGE, isPrivate: Boolean = false) {
-        android.util.Log.d("HomeActivity", "Starting MainActivity with mode: $mode, gameId: $gameId, timeLimit: $timeLimit, mazeComplexity: $complexity, gameMode: $gameMode, isPrivate: $isPrivate")
+    private fun showRobotSpawnersDialog(timeLimit: Int, complexity: String, gameMode: String, isPrivate: Boolean) {
+        val spawnerOptions = arrayOf("Disabled", "1 Spawner", "2 Spawners", "3 Spawners", "4 Spawners", "5 Spawners")
+        var selectedSpawnerCount = 0 // Default to disabled
+
+        AlertDialog.Builder(this)
+            .setTitle("Robot Spawners")
+            .setSingleChoiceItems(spawnerOptions, 0) { _, which ->
+                selectedSpawnerCount = which
+            }
+            .setPositiveButton("Host Game") { _, _ ->
+                val spawnersEnabled = selectedSpawnerCount > 0
+                startGameActivity(MODE_HOST, null, timeLimit, complexity, gameMode, isPrivate, spawnersEnabled, selectedSpawnerCount)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun startGameActivity(mode: String, gameId: String? = null, timeLimit: Int = 3, complexity: String = COMPLEXITY_HIGH, gameMode: String = GAME_MODE_COVERAGE, isPrivate: Boolean = false, spawnersEnabled: Boolean = false, spawnerCount: Int = 0) {
+        android.util.Log.d("HomeActivity", "Starting MainActivity with mode: $mode, gameId: $gameId, timeLimit: $timeLimit, mazeComplexity: $complexity, gameMode: $gameMode, isPrivate: $isPrivate, spawnersEnabled: $spawnersEnabled, spawnerCount: $spawnerCount")
         val intent = Intent(this, MainActivity::class.java).apply {
             putExtra(EXTRA_MODE, mode)
             if (mode == MODE_JOIN && gameId != null) {
@@ -257,6 +276,8 @@ class HomeActivity : AppCompatActivity() {
                 putExtra(EXTRA_MAZE_COMPLEXITY, complexity)
                 putExtra(EXTRA_GAME_MODE, gameMode)
                 putExtra(EXTRA_IS_PRIVATE_MATCH, isPrivate)
+                putExtra(EXTRA_ROBOT_SPAWNERS_ENABLED, spawnersEnabled)
+                putExtra(EXTRA_ROBOT_SPAWNER_COUNT, spawnerCount)
             }
         }
         startActivity(intent)

@@ -16,7 +16,9 @@ class Robot(
     startX: Float, 
     startY: Float,
     private val robotData: RobotData,
-    private var customPaintColor: Int = Color.GREEN // Made mutable for dynamic color changes
+    private var customPaintColor: Int = Color.GREEN, // Made mutable for dynamic color changes
+    private val deterministicSeed: Long? = null, // Optional seed for deterministic multiplayer behavior
+    private val isRemoteControlled: Boolean = false // If true, robot position is controlled remotely
 ) {
     companion object {
         private const val TAG = "Robot"
@@ -30,6 +32,13 @@ class Robot(
         private const val TARGET_UPDATE_INTERVAL = 500L // Update target every 0.5 seconds - more responsive
         private const val PAINT_SPOT_SIZE = 8f // Small paint spots for strategic painting
         private const val PATHFINDING_STEP_SIZE = 15f // Step size for pathfinding
+    }
+    
+    // Deterministic random generator for multiplayer synchronization
+    private val deterministicRandom = if (deterministicSeed != null) {
+        kotlin.random.Random(deterministicSeed)
+    } else {
+        kotlin.random.Random.Default
     }
     
     // Robot state
@@ -83,6 +92,16 @@ class Robot(
      * Update robot state, movement, and actions
      */
     fun update(deltaTime: Float, paintSurface: PaintSurface, level: com.spiritwisestudios.inkrollers.Level? = null) {
+        // Skip AI updates for remote-controlled robots
+        if (isRemoteControlled) {
+            // Only handle paint actions for remote robots, position is set externally
+            if (!isConverted) {
+                removeNearbyPaint(paintSurface)
+            } else {
+                paintCurrentPosition(paintSurface, level)
+            }
+            return
+        }
         // Store previous position for trail painting
         val prevX = x
         val prevY = y
@@ -635,6 +654,14 @@ class Robot(
     fun getPosition(): Pair<Float, Float> = Pair(x, y)
     
     /**
+     * Set robot position (for multiplayer synchronization)
+     */
+    fun setPosition(newX: Float, newY: Float) {
+        x = newX
+        y = newY
+    }
+    
+    /**
      * Get robot's collision bounds for interaction detection
      */
     fun getBounds(): RectF {
@@ -1124,10 +1151,10 @@ class Robot(
             // Hit wall while escaping, try a different direction
             stuckCounter++
             if (stuckCounter < maxEscapeAttempts) {
-                // Try a new random direction
+                // Try a new deterministic direction
                 val possibleDirections = listOf(0, 45, 90, 135, 180, 225, 270, 315)
-                escapeDirection = possibleDirections.random() * PI.toFloat() / 180f
-                escapeDistance = 30f + (0..30).toList().random() // Shorter distance for subsequent attempts
+                escapeDirection = possibleDirections[deterministicRandom.nextInt(possibleDirections.size)] * PI.toFloat() / 180f
+                escapeDistance = 30f + deterministicRandom.nextInt(31) // Shorter distance for subsequent attempts
                 //Log.d(TAG, "Escape blocked, trying new direction: ${(escapeDirection * 180 / PI).toInt()}°")
             } else {
                 // Tried too many directions, give up and resume normal behavior

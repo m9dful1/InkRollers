@@ -16,7 +16,7 @@ class CampaignLevel(
     private val levelData: CampaignLevelData,
     private val topMargin: Int = 0,
     private val audioManager: AudioManager? = null
-) : Level {
+) : Level, SpawnableLevel {
     
     companion object {
         private const val TAG = "CampaignLevel"
@@ -629,7 +629,7 @@ class CampaignLevel(
     /**
      * Add a spawned robot to the campaign level (called by robot spawners)
      */
-    fun addSpawnedRobot(robot: Robot) {
+    override fun addSpawnedRobot(robot: Robot) {
         robots.add(robot)
         Log.d(TAG, "Added spawned robot at position ${robot.getPosition()} - Total robots: ${robots.size}")
     }
