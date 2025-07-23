@@ -310,10 +310,12 @@ class MainActivity : AppCompatActivity() {
               val complexity = intent.getStringExtra(HomeActivity.EXTRA_MAZE_COMPLEXITY)
               val gameMode = intent.getStringExtra(HomeActivity.EXTRA_GAME_MODE)
               val isPrivate = if (mode == HomeActivity.MODE_HOST) intent.getBooleanExtra(HomeActivity.EXTRA_IS_PRIVATE_MATCH, false) else null
+              val spawnersEnabled = if (mode == HomeActivity.MODE_HOST) intent.getBooleanExtra(HomeActivity.EXTRA_ROBOT_SPAWNERS_ENABLED, false) else null
+              val spawnerCount = if (mode == HomeActivity.MODE_HOST) intent.getIntExtra(HomeActivity.EXTRA_ROBOT_SPAWNER_COUNT, 0) else null
               
               Log.d(TAG, "Received mode: $mode")
               
-              gameSetupController.handleGameSetup(mode, gameId, timeLimit, complexity, gameMode, isPrivate)
+              gameSetupController.handleGameSetup(mode, gameId, timeLimit, complexity, gameMode, isPrivate, spawnersEnabled, spawnerCount)
           }
       }
   }
@@ -379,6 +381,8 @@ class MainActivity : AppCompatActivity() {
               mazeComplexity = gameSetupController.getMazeComplexity(),
               gameMode = gameSetupController.getGameMode(),
               isPrivateMatch = false, // Default since this info isn't tracked in GameSetupController
+              robotSpawnersEnabled = gameSetupController.getRobotSpawnersEnabled(),
+              robotSpawnerCount = gameSetupController.getRobotSpawnerCount(),
               isHost = (playerId == "player0"),
               playerColor = playerColor,
               playerName = playerName,
