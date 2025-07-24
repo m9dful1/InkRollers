@@ -1451,12 +1451,41 @@ class MultiplayerManager {
      */
     fun updateRobotState(robotId: String, robotState: RobotState) {
         if (robotsRef == null) return
-        robotsRef?.child(robotId)?.setValue(robotState)?.addOnFailureListener { e ->
-            Log.w(TAG, "Failed to update robot $robotId state", e)
-            onDatabaseError?.invoke("Robot update failed: ${e.message}")
+        
+        // Check if this is a position-only update that should ignore conversion progress
+        if (robotState.ignoreConversionProgress) {
+            Log.d(TAG, "PositionUpdate $robotId - position-only update, preserving conversion fields")
+            // For position-only updates, use updateChildren to only update specific fields
+            val positionOnlyUpdates = mapOf(
+                "normX" to robotState.normX,
+                "normY" to robotState.normY,
+                "lastUpdated" to System.currentTimeMillis()
+                // Deliberately NOT including updateType, conversionProgress, isConverted, paintColor, isActive, or ignoreConversionProgress
+                // This prevents overwriting ANY conversion-related fields
+            )
+            robotsRef?.child(robotId)?.updateChildren(positionOnlyUpdates)
+                ?.addOnFailureListener { e ->
+                    Log.w(TAG, "Failed to update robot $robotId position-only state", e)
+                    onDatabaseError?.invoke("Robot position update failed: ${e.message}")
+                }
+        } else {
+            // Normal update with conversion progress
+            if (robotState.isConverted) {
+                Log.d(TAG, "ConvertedRobot $robotId - writing converted state to Firebase: progress=${robotState.conversionProgress}")
+            } else {
+                Log.d(TAG, "Writing robot $robotId: isConverted=${robotState.isConverted}, progress=${robotState.conversionProgress}")
+            }
+            
+            // Stamp this state with the current time so receivers can resolve conflicts
+            robotState.lastUpdated = System.currentTimeMillis()
+
+            robotsRef?.child(robotId)?.setValue(robotState)
+                ?.addOnFailureListener { e ->
+                    Log.w(TAG, "Failed to update robot $robotId state", e)
+                    onDatabaseError?.invoke("Robot update failed: ${e.message}")
+                }
         }
         updateLastActivityTimestamp()
-        Log.v(TAG, "Updated robot $robotId state")
     }
     
     /**
@@ -1507,18 +1536,26 @@ class MultiplayerManager {
      * Listen for robot state changes
      */
     fun setRobotStateListener(listener: (String, RobotState?, Boolean) -> Unit) {
-        if (robotsRef == null) return
+        if (robotsRef == null) {
+            Log.w(TAG, "Cannot set robot state listener: robotsRef is null")
+            return
+        }
+        val robotsPath = robotsRef?.toString()
+        Log.d(TAG, "Setting up robot state listener on path: $robotsPath")
+        Log.d(TAG, "Current game ID: $currentGameId, Local player ID: $localPlayerId")
         
         robotsRef?.addChildEventListener(object : ChildEventListener {
             override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
                 val robotId = snapshot.key ?: return
                 val robotState = snapshot.getValue(RobotState::class.java) ?: return
+                Log.d(TAG, "Firebase: Robot $robotId added - isConverted=${robotState.isConverted}, progress=${robotState.conversionProgress}")
                 listener(robotId, robotState, false) // false = not removed
             }
             
             override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {
                 val robotId = snapshot.key ?: return
                 val robotState = snapshot.getValue(RobotState::class.java) ?: return
+                Log.d(TAG, "Firebase: Robot $robotId changed - isConverted=${robotState.isConverted}, progress=${robotState.conversionProgress}")
                 listener(robotId, robotState, false) // false = not removed
             }
             
@@ -1542,5 +1579,9 @@ class MultiplayerManager {
         val isHostResult = localPlayerId == "player0"
         Log.v(TAG, "isHost() check: localPlayerId=$localPlayerId, result=$isHostResult")
         return isHostResult
+    }
+
+    fun getRobotState(robotId: String): DatabaseReference? {
+        return robotsRef?.child(robotId)
     }
 } 

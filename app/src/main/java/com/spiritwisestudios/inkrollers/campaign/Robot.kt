@@ -16,7 +16,7 @@ class Robot(
     startX: Float, 
     startY: Float,
     private val robotData: RobotData,
-    private var customPaintColor: Int = Color.GREEN, // Made mutable for dynamic color changes
+    private var customPaintColor: Int = Color.GRAY, // Default gray for unconverted robots
     private val deterministicSeed: Long? = null, // Optional seed for deterministic multiplayer behavior
     private val isRemoteControlled: Boolean = false // If true, robot position is controlled remotely
 ) {
@@ -642,6 +642,22 @@ class Robot(
      * Check if robot is fully converted
      */
     fun isFullyConverted(): Boolean = isConverted
+    
+    /**
+     * Get current conversion progress (0.0 to 1.0)
+     */
+    fun getConversionProgress(): Float = conversionProgress / CONVERSION_THRESHOLD
+    
+    /**
+     * Set conversion progress from remote state (for multiplayer sync)
+     */
+    fun setConversionProgress(progress: Float) {
+        conversionProgress = (progress * CONVERSION_THRESHOLD).coerceIn(0f, CONVERSION_THRESHOLD)
+        if (conversionProgress >= CONVERSION_THRESHOLD && !isConverted) {
+            isConverted = true
+            Log.d(TAG, "Robot at ($x, $y) converted via remote sync")
+        }
+    }
     
     /**
      * Get the robot's current paint color

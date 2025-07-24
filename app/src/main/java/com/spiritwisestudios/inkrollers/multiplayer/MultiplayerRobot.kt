@@ -29,8 +29,8 @@ class MultiplayerRobot(
         private const val TAG = "MultiplayerRobot"
         private const val ROBOT_RADIUS = 30f
         private const val MOVE_SPEED = 50f
-        private const val SYNC_INTERVAL = 100L // Sync every 100ms for tight synchronization
-        private const val POSITION_TOLERANCE = 5f // Allow small position differences
+        private const val SYNC_INTERVAL = 10L // Unified sync interval for all robots
+        private const val POSITION_TOLERANCE = 3f // Tighter tolerance for smoother movement
     }
     
     // Core robot instance for rendering and basic functionality
@@ -42,6 +42,7 @@ class MultiplayerRobot(
     private var remoteTargetX = startX
     private var remoteTargetY = startY
     private var isReceivingRemoteUpdates = false
+    private var lastRemoteConversionTime = 0L // Track when robot was last converted remotely
     
     // Deterministic AI state (uses game time instead of real time for consistency)
     private var gameTime = 0f
@@ -61,6 +62,8 @@ class MultiplayerRobot(
             // Sync to other devices periodically
             val currentTime = System.currentTimeMillis()
             if (currentTime - lastSyncTime >= SYNC_INTERVAL) {
+                val isConverted = coreRobot.isFullyConverted()
+                // Always sync position - conversion state protection is handled at Firebase level
                 syncToRemote()
                 lastSyncTime = currentTime
             }
@@ -253,17 +256,36 @@ class MultiplayerRobot(
      */
     private fun syncToRemote() {
         val position = coreRobot.getPosition()
-        val robotState = RobotState(
-            id = robotId,
-            normX = position.first / 1000f, // Convert to normalized coordinates
-            normY = position.second / 1000f,
-            isConverted = coreRobot.isFullyConverted(),
-            paintColor = coreRobot.getPaintColor(),
-            isActive = true,
-            spawnerIndex = spawnerIndex
-        )
+        val isConverted = coreRobot.isFullyConverted()
         
-        multiplayerManager?.updateRobotState(robotId, robotState)
+        if (isConverted) {
+            // For converted robots, sync position only with preserved conversion state
+            Log.v(TAG, "ConvertedRobot $robotId - syncing position only, preserving conversion state")
+            val robotState = RobotState(
+                id = robotId,
+                normX = position.first / 1000f,
+                normY = position.second / 1000f,
+                isConverted = true, // Keep as converted to prevent progress reset
+                paintColor = coreRobot.getPaintColor(), // Keep original converted color
+                isActive = true,
+                spawnerIndex = spawnerIndex,
+                conversionProgress = coreRobot.getConversionProgress() // Keep actual progress
+            )
+            multiplayerManager?.updateRobotState(robotId, robotState)
+        } else {
+            // For unconverted robots, sync everything normally
+            val robotState = RobotState(
+                id = robotId,
+                normX = position.first / 1000f,
+                normY = position.second / 1000f,
+                isConverted = false,
+                paintColor = coreRobot.getPaintColor(),
+                isActive = true,
+                spawnerIndex = spawnerIndex,
+                conversionProgress = coreRobot.getConversionProgress()
+            )
+            multiplayerManager?.updateRobotState(robotId, robotState)
+        }
     }
     
     /**
@@ -277,11 +299,17 @@ class MultiplayerRobot(
         remoteTargetX = robotState.normX * 1000f
         remoteTargetY = robotState.normY * 1000f
         
-        // Update conversion state if different
-        if (coreRobot.isFullyConverted() != robotState.isConverted && robotState.isConverted) {
-            // Convert robot to match remote state
-            // This would require access to paintSurface
-            Log.d(TAG, "Robot $robotId converted remotely")
+        // Check if robot was converted remotely
+        val wasConverted = coreRobot.isFullyConverted()
+        val isNowConverted = robotState.isConverted
+        
+        // Update conversion progress and state
+        coreRobot.setConversionProgress(robotState.conversionProgress)
+        
+        // Track when robot was converted remotely to prevent sync conflicts
+        if (!wasConverted && isNowConverted) {
+            lastRemoteConversionTime = System.currentTimeMillis()
+            Log.d(TAG, "Robot $robotId converted remotely - blocking sync for 2 seconds")
         }
     }
     
