@@ -1438,9 +1438,40 @@ class MultiplayerManager {
      */
     fun updateRobotSpawnerState(spawnerIndex: Int, spawnerState: RobotSpawnerState) {
         if (robotSpawnersRef == null) return
-        robotSpawnersRef?.child(spawnerIndex.toString())?.setValue(spawnerState)?.addOnFailureListener { e ->
-            Log.w(TAG, "Failed to update robot spawner $spawnerIndex state", e)
-            onDatabaseError?.invoke("Robot spawner update failed: ${e.message}")
+        
+        // Check if this is a status-only update that should ignore conversion progress
+        if (spawnerState.ignoreConversionProgress) {
+            Log.d(TAG, "StatusUpdate spawner$spawnerIndex - status-only update, preserving conversion fields")
+            // For status-only updates, use updateChildren to only update specific fields
+            val statusOnlyUpdates = mapOf(
+                "normX" to spawnerState.normX,
+                "normY" to spawnerState.normY,
+                "isActive" to spawnerState.isActive,
+                "spawnedRobotCount" to spawnerState.spawnedRobotCount,
+                "lastUpdated" to System.currentTimeMillis()
+                // Deliberately NOT including updateType, isConverted, playerColor
+                // This prevents overwriting ANY conversion-related fields
+            )
+            robotSpawnersRef?.child(spawnerIndex.toString())?.updateChildren(statusOnlyUpdates)
+                ?.addOnFailureListener { e ->
+                    Log.w(TAG, "Failed to update robot spawner $spawnerIndex status-only state", e)
+                    onDatabaseError?.invoke("Robot spawner status update failed: ${e.message}")
+                }
+        } else {
+            // Normal update with conversion progress
+            if (spawnerState.isConverted) {
+                Log.d(TAG, "ConvertedSpawner spawner$spawnerIndex - writing converted state to Firebase")
+            } else {
+                Log.d(TAG, "Writing spawner $spawnerIndex: isConverted=${spawnerState.isConverted}")
+            }
+            
+            // Stamp this state with the current time so receivers can resolve conflicts
+            spawnerState.lastUpdated = System.currentTimeMillis()
+
+            robotSpawnersRef?.child(spawnerIndex.toString())?.setValue(spawnerState)?.addOnFailureListener { e ->
+                Log.w(TAG, "Failed to update robot spawner $spawnerIndex state", e)
+                onDatabaseError?.invoke("Robot spawner update failed: ${e.message}")
+            }
         }
         updateLastActivityTimestamp()
         Log.v(TAG, "Updated robot spawner $spawnerIndex state")

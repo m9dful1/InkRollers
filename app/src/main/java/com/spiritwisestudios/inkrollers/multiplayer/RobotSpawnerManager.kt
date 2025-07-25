@@ -76,12 +76,19 @@ class RobotSpawnerManager(
     // Track recent conversions to prevent sync conflicts
     private val recentConversions = mutableMapOf<String, Long>() // robotId -> conversion timestamp
     private val recentRemoteConversions = mutableMapOf<String, Long>() // robotId -> remote conversion timestamp
+    private val lastSyncedRobotStates = mutableMapOf<String, RobotState>() // robotId -> last synced state
     
     // Track robots being actively converted by other players - host should NOT sync these at all
     private val robotsBeingConvertedByOthers = mutableSetOf<String>() // robotId set
     
     // Track recent conversion updates sent to Firebase to prevent immediate overwrites
     private val recentConversionUpdates = mutableMapOf<String, Long>() // robotId -> timestamp when conversion update was sent
+    
+    // Spawner race condition protection (similar to robot protection)
+    private val recentSpawnerConversions = mutableMapOf<Int, Long>() // spawnerIndex -> conversion timestamp
+    private val recentRemoteSpawnerConversions = mutableMapOf<Int, Long>() // spawnerIndex -> remote conversion timestamp
+    private val spawnersBeingConvertedByOthers = mutableSetOf<Int>() // spawnerIndex set
+    private val recentSpawnerConversionUpdates = mutableMapOf<Int, Long>() // spawnerIndex -> timestamp when conversion update was sent
     
     // Spawner initialization state
     private var spawnersInitialized = false
@@ -109,7 +116,29 @@ class RobotSpawnerManager(
         multiplayerManager?.let { manager ->
             // Set up listeners for remote state changes
             manager.setRobotSpawnerStateListener { spawnerIndex, spawnerState ->
-                // Log.d(TAG, "Received remote spawner state update: spawner $spawnerIndex")
+                Log.d(TAG, "Received remote spawner state update: spawner $spawnerIndex updateType=${spawnerState.updateType} isConverted=${spawnerState.isConverted} color=${Integer.toHexString(spawnerState.playerColor)}")
+                
+                // Only process conversion-specific logic for conversion updates
+                if (spawnerState.updateType == "conversion") {
+                    // Check if this is a conversion that should block local sync
+                    val localSpawner = if (spawnerIndex < spawners.size) spawners[spawnerIndex] else null
+                    
+                    if (localSpawner != null && !localSpawner.isFullyConverted() && spawnerState.isConverted) {
+                        // Local spawner was converted by remote player - track this to prevent conflicts
+                        recentRemoteSpawnerConversions[spawnerIndex] = System.currentTimeMillis()
+                        spawnersBeingConvertedByOthers.add(spawnerIndex)
+                        Log.d(TAG, "ConversionUpdate: Local spawner $spawnerIndex converted by remote player - will block local sync")
+                    }
+                    
+                    // CRITICAL: Track ANY conversion update to prevent race conditions
+                    // Block ALL sync for this spawner when conversion is active
+                    spawnersBeingConvertedByOthers.add(spawnerIndex)
+                    Log.d(TAG, "RACE CONDITION FIX: Blocking ALL sync for spawner $spawnerIndex during active conversion")
+                } else {
+                    // Status update - don't trigger conversion processing
+                    Log.v(TAG, "StatusUpdate: Spawner $spawnerIndex status update, skipping conversion logic")
+                }
+                
                 updateRemoteSpawnerState(spawnerIndex, spawnerState)
             }
             
@@ -118,7 +147,7 @@ class RobotSpawnerManager(
                     Log.d(TAG, "Received remote robot removal: $robotId")
                     removeRemoteRobot(robotId)
                 } else if (robotState != null) {
-                    Log.d(TAG, "Received remote robot state update: $robotId updateType=${robotState.updateType} isConverted=${robotState.isConverted} progress=${robotState.conversionProgress} color=${Integer.toHexString(robotState.paintColor)}")
+                    Log.d(TAG, "ConvertedRobot $robotId - Received remote robot state update: updateType=${robotState.updateType} isConverted=${robotState.isConverted} progress=${robotState.conversionProgress} color=${Integer.toHexString(robotState.paintColor)}")
                     
                     // Only process conversion-specific logic for conversion updates
                     if (robotState.updateType == "conversion") {
@@ -131,20 +160,26 @@ class RobotSpawnerManager(
                             recentRemoteConversions[robotId] = System.currentTimeMillis()
                             Log.d(TAG, "ConversionUpdate: Remote robot $robotId converted remotely - will block local sync")
                         } else if (hasLocalRobotWithSameId && robotState.isConverted) {
-                            // Local robot was converted by remote player - block local sync to prevent overwriting
+                            // Local robot was converted by remote player - track conversion time but don't permanently block
                             recentRemoteConversions[robotId] = System.currentTimeMillis()
-                            robotsBeingConvertedByOthers.add(robotId) // Add to tracking set
-                            Log.d(TAG, "ConversionUpdate: Local robot $robotId converted by remote player - will block local sync")
+                            // Don't add to robotsBeingConvertedByOthers for completed conversions - allow re-conversion
+                            Log.d(TAG, "ConversionUpdate: Local robot $robotId converted by remote player - tracking conversion time")
                         } else if (hasLocalRobotWithSameId && robotState.conversionProgress > 0.0f) {
                             // Local robot is being converted by remote player - track to prevent interference
                             robotsBeingConvertedByOthers.add(robotId)
                             Log.d(TAG, "ConversionUpdate: Local robot $robotId being converted by remote player (${(robotState.conversionProgress * 100).toInt()}%) - blocking host sync")
                         }
                         
-                        // CRITICAL: Track ANY conversion update to prevent race conditions
-                        // Block ALL sync for this robot when conversion is active
-                        robotsBeingConvertedByOthers.add(robotId)
-                        Log.d(TAG, "RACE CONDITION FIX: Blocking ALL sync for robot $robotId during active conversion (progress=${(robotState.conversionProgress * 100).toInt()}%)")
+                        // CRITICAL: Only block sync for robots that are actively being converted (not fully converted)
+                        // Don't block sync for robots that have completed conversion - they should be re-convertible
+                        if (robotState.conversionProgress < 1.0f) {
+                            robotsBeingConvertedByOthers.add(robotId)
+                            Log.d(TAG, "RACE CONDITION FIX: Blocking sync for robot $robotId during active conversion (progress=${(robotState.conversionProgress * 100).toInt()}%)")
+                        } else if (robotState.isConverted) {
+                            // Robot is fully converted - don't block sync, but track the conversion time
+                            recentRemoteConversions[robotId] = System.currentTimeMillis()
+                            Log.d(TAG, "CONVERSION COMPLETE: Robot $robotId fully converted remotely - allowing future re-conversion")
+                        }
                     } else {
                         // Position update - don't trigger conversion processing
                         Log.v(TAG, "PositionUpdate: Robot $robotId position update, skipping conversion logic")
@@ -641,6 +676,12 @@ class RobotSpawnerManager(
         recentConversions.clear() // Clean up conversion tracking
         robotsBeingConvertedByOthers.clear() // Clean up race condition tracking
         recentConversionUpdates.clear() // Clean up conversion update tracking
+        lastSyncedRobotStates.clear() // Clean up last synced states
+        // Clean up spawner race condition tracking
+        recentSpawnerConversions.clear()
+        recentRemoteSpawnerConversions.clear()
+        spawnersBeingConvertedByOthers.clear()
+        recentSpawnerConversionUpdates.clear()
     }
     
     /**
@@ -673,42 +714,63 @@ class RobotSpawnerManager(
                 val currentColor = robot.getPaintColor()
                 val isAlreadyConverted = robot.isFullyConverted()
                 
-                // Skip if robot is already converted to the same color
+                // Skip if robot is already converted to the same color - NO SYNC NEEDED
                 if (isAlreadyConverted && currentColor == playerColor) {
-                    Log.d(TAG, "Robot $robotId already converted to target color ${Integer.toHexString(playerColor)} - skipping")
+                    Log.d(TAG, "ConvertedRobot $robotId already converted to target color ${Integer.toHexString(playerColor)} - skipping sync")
+                    Log.d(TAG, "ConvertedRobot $robotId COLOR SKIP: current=${Integer.toHexString(currentColor)} == target=${Integer.toHexString(playerColor)}")
                     return@forEach
                 }
                 
                 val paintResult = robot.paintRobot(playerColor, paintSurface)
                 val progress = robot.getConversionProgress()
-                Log.d(TAG, "Paint attempt on $robotType robot $robotId: result=$paintResult, isConverted=${robot.isFullyConverted()}, progress=$progress")
-                Log.d(TAG, "Robot $robotId colors: current=${Integer.toHexString(currentColor)}, target=${Integer.toHexString(playerColor)}")
+                val newColor = robot.getPaintColor()
+                Log.d(TAG, "ConvertedRobot $robotId - Paint attempt on $robotType robot: result=$paintResult, isConverted=${robot.isFullyConverted()}, progress=$progress")
+                Log.d(TAG, "ConvertedRobot $robotId colors: before=${Integer.toHexString(currentColor)}, target=${Integer.toHexString(playerColor)}, after=${Integer.toHexString(newColor)}")
                 
-                // Always count as interaction and sync progress
-                interactionOccurred = true
-                
-                if (paintResult) {
-                    // Robot was successfully converted or changed
-                    Log.d(TAG, "ConvertedRobot $robotId - successfully converted $robotType to color ${Integer.toHexString(playerColor)}")
-                } else {
-                    // Paint resulted in progress even if not fully converted
-                    Log.d(TAG, "Paint progress on $robotType robot $robotId: ${(progress * 100).toInt()}% complete")
-                }
-                
-                // Sync to Firebase to share conversion progress
-                if (localRobots.contains(robot)) {
-                    // For local robots, sync normally
-                    syncRobotState(robot)
-                } else {
-                    // For remote robots, sync conversion progress to communicate with host
-                    Log.d(TAG, "ConvertedRobot $robotId - syncing conversion progress (${(progress * 100).toInt()}%) to Firebase")
-                    syncRemoteRobotConversion(robotId, robot, playerColor)
+                // Only count as interaction and sync if there was actual change
+                if (paintResult || progress != 0f) {
+                    interactionOccurred = true
+                    
+                    if (paintResult) {
+                        // Robot was successfully converted or changed - sync the change
+                        Log.d(TAG, "ConvertedRobot $robotId - successfully converted $robotType to color ${Integer.toHexString(playerColor)}")
+                        
+                        // Sync to Firebase to share conversion change
+                        // CRITICAL FIX: Use conversion-specific sync for both local and remote robots
+                        // This ensures proper conversion communication to all players
+                        if (localRobots.contains(robot)) {
+                            // For local robots, use conversion sync like joining player does
+                            Log.d(TAG, "ConvertedRobot $robotId - syncing LOCAL robot conversion change to Firebase")
+                            syncLocalRobotConversion(robotId, robot, playerColor)
+                        } else {
+                            // For remote robots, sync conversion change to communicate with host
+                            Log.d(TAG, "ConvertedRobot $robotId - syncing REMOTE robot conversion change to Firebase")
+                            syncRemoteRobotConversion(robotId, robot, playerColor)
+                        }
+                    } else {
+                        // Paint resulted in progress but no conversion yet - sync progress only if significant change
+                        Log.d(TAG, "Paint progress on $robotType robot $robotId: ${(progress * 100).toInt()}% complete")
+                        
+                        // Only sync progress updates occasionally to reduce Firebase load
+                        val lastSyncTime = recentConversionUpdates[robotId] ?: 0L
+                        val timeSinceLastSync = System.currentTimeMillis() - lastSyncTime
+                        if (timeSinceLastSync > 500L) { // Sync at most every 500ms
+                            if (localRobots.contains(robot)) {
+                                // CRITICAL FIX: Use conversion sync for local robot progress updates too
+                                Log.d(TAG, "ConvertedRobot $robotId - syncing LOCAL robot progress update to Firebase")
+                                syncLocalRobotConversion(robotId, robot, playerColor)
+                            } else {
+                                Log.d(TAG, "ConvertedRobot $robotId - syncing REMOTE robot progress update to Firebase")
+                                syncRemoteRobotConversion(robotId, robot, playerColor)
+                            }
+                        }
+                    }
                 }
             }
         }
         
         // Check robot spawner interactions (painting spawners for conversion)
-        spawners.forEach { spawner ->
+        spawners.forEachIndexed { spawnerIndex, spawner ->
             val spawnerBounds = spawner.getBounds()
             // Expand interaction area slightly for easier interaction
             val expandedBounds = android.graphics.RectF(
@@ -720,8 +782,9 @@ class RobotSpawnerManager(
             
             if (expandedBounds.contains(playerX, playerY)) {
                 if (spawner.paintSpawner(playerColor, paintSurface)) {
-                    // Spawner was successfully converted - sync to Firebase
-                    syncSpawnerStates()
+                    // Spawner was successfully converted - sync conversion to Firebase
+                    Log.d(TAG, "ConvertedSpawner spawner$spawnerIndex - successfully converted to color ${Integer.toHexString(playerColor)}")
+                    syncSpawnerConversion(spawnerIndex, spawner, playerColor)
                     interactionOccurred = true
                 }
             }
@@ -802,6 +865,42 @@ class RobotSpawnerManager(
                 currentTime - timestamp > 5000 // Remove entries older than 5 seconds
             }
             
+            // Clean up old spawner remote conversion tracking entries
+            recentRemoteSpawnerConversions.entries.removeAll { (_, timestamp) ->
+                currentTime - timestamp > 5000 // Remove entries older than 5 seconds
+            }
+            
+            // Clean up spawners being converted by others - check if conversion completed or timed out
+            val spawnersToRemove = mutableSetOf<Int>()
+            spawnersBeingConvertedByOthers.forEach { spawnerIndex ->
+                if (spawnerIndex < 0 || spawnerIndex >= spawners.size) {
+                    // Spawner no longer exists - remove from tracking
+                    spawnersToRemove.add(spawnerIndex)
+                    Log.v(TAG, "CLEANUP: Removing spawner $spawnerIndex from conversion tracking - spawner no longer exists")
+                } else {
+                    val spawner = spawners[spawnerIndex]
+                    if (spawner.isFullyConverted()) {
+                        // Spawner is fully converted - no longer need to block sync
+                        spawnersToRemove.add(spawnerIndex)
+                        Log.v(TAG, "CLEANUP: Removing spawner $spawnerIndex from conversion tracking - conversion completed")
+                    } else {
+                        // Check if conversion has been inactive for too long (timeout)
+                        val lastRemoteConversionTime = recentRemoteSpawnerConversions[spawnerIndex]
+                        if (lastRemoteConversionTime != null && (currentTime - lastRemoteConversionTime) > 15000) {
+                            // 15 seconds timeout - likely conversion abandoned
+                            spawnersToRemove.add(spawnerIndex)
+                            Log.v(TAG, "CLEANUP: Removing spawner $spawnerIndex from conversion tracking - conversion timeout")
+                        }
+                    }
+                }
+            }
+            spawnersBeingConvertedByOthers.removeAll(spawnersToRemove)
+            
+            // Clean up old spawner conversion update tracking entries
+            recentSpawnerConversionUpdates.entries.removeAll { (_, timestamp) ->
+                currentTime - timestamp > 5000 // Remove entries older than 5 seconds
+            }
+            
             // Log.v(TAG, "Synced positions for ${localRobots.size} local robots")
         }
         
@@ -815,27 +914,95 @@ class RobotSpawnerManager(
     }
     
     /**
-     * Sync all spawner states to Firebase
+     * Sync all spawner states to Firebase with race condition protection
      */
     private fun syncSpawnerStates() {
+        if (!syncInitialized) return
+        
         spawners.forEachIndexed { index, spawner ->
-            val spawnerPos = spawner.getPosition()
-            val (normX, normY) = if (level is com.spiritwisestudios.inkrollers.MazeLevel) {
-                level.screenToMazeCoord(spawnerPos.first, spawnerPos.second)
-            } else {
-                Pair(spawnerPos.first, spawnerPos.second)
-            }
-            
-            val spawnerState = RobotSpawnerState(
+            syncSpawnerState(index, spawner)
+        }
+    }
+    
+    /**
+     * Sync individual spawner state to Firebase with race condition protection
+     */
+    private fun syncSpawnerState(spawnerIndex: Int, spawner: RobotSpawner) {
+        if (!syncInitialized) return
+        
+        // CRITICAL: Check if this spawner is being converted by another player - don't sync at all
+        if (spawnersBeingConvertedByOthers.contains(spawnerIndex)) {
+            Log.v(TAG, "RACE CONDITION FIX: Skipping sync for spawner $spawnerIndex - being converted by another player")
+            return
+        }
+        
+        // CRITICAL: Check if a conversion update was recently sent - don't overwrite immediately
+        val recentConversionTime = recentSpawnerConversionUpdates[spawnerIndex]
+        if (recentConversionTime != null && (System.currentTimeMillis() - recentConversionTime) < 2000) {
+            Log.v(TAG, "RACE CONDITION FIX: Skipping sync for spawner $spawnerIndex - conversion update sent ${System.currentTimeMillis() - recentConversionTime}ms ago")
+            return
+        }
+        
+        // CRITICAL: Check if this spawner was recently converted remotely
+        val recentRemoteConversionTime = recentRemoteSpawnerConversions[spawnerIndex]
+        val wasRecentlyConvertedRemotely = recentRemoteConversionTime != null && 
+            (System.currentTimeMillis() - recentRemoteConversionTime) < 10000
+        
+        val spawnerPos = spawner.getPosition()
+        val (normX, normY) = if (level is com.spiritwisestudios.inkrollers.MazeLevel) {
+            level.screenToMazeCoord(spawnerPos.first, spawnerPos.second)
+        } else {
+            Pair(spawnerPos.first, spawnerPos.second)
+        }
+        
+        val now = System.currentTimeMillis()
+        val isConverted = spawner.isFullyConverted()
+        
+        if (wasRecentlyConvertedRemotely) {
+            // Recently converted spawners: Status-only sync, DON'T send conversion state to prevent overwriting
+            Log.v(TAG, "ConvertedSpawner spawner$spawnerIndex - status-only sync, NOT sending conversion state to prevent overwrite (${System.currentTimeMillis() - recentRemoteConversionTime!!}ms ago)")
+            val state = RobotSpawnerState(
                 normX = normX,
                 normY = normY,
-                isConverted = spawner.isFullyConverted(),
+                isConverted = spawner.isFullyConverted(), // Use actual current state
+                playerColor = spawner.getPaintColor(), // Keep current color
+                isActive = spawner.isActive(),
+                spawnedRobotCount = spawner.getSpawnedRobotCount(),
+                lastUpdated = now,
+                updateType = "status", // Mark as status-only update
+                ignoreConversionProgress = true // Flag to ignore conversion state on receiving end
+            )
+            multiplayerManager?.updateRobotSpawnerState(spawnerIndex, state)
+        } else if (isConverted) {
+            // Converted spawners (not recently converted remotely): Use status-only sync to avoid conflicts
+            Log.v(TAG, "ConvertedSpawner spawner$spawnerIndex - status-only sync for converted spawner")
+            val state = RobotSpawnerState(
+                normX = normX,
+                normY = normY,
+                isConverted = true,
                 playerColor = spawner.getPaintColor(),
                 isActive = spawner.isActive(),
-                spawnedRobotCount = spawner.getSpawnedRobotCount()
+                spawnedRobotCount = spawner.getSpawnedRobotCount(),
+                lastUpdated = now,
+                updateType = "status", // Mark as status update for converted spawners
+                ignoreConversionProgress = true // Don't overwrite conversion state
             )
-            
-            multiplayerManager?.updateRobotSpawnerState(index, spawnerState)
+            multiplayerManager?.updateRobotSpawnerState(spawnerIndex, state)
+        } else {
+            // Unconverted spawners: Always use status-only sync to avoid interfering with active conversions
+            Log.v(TAG, "UnconvertedSpawner spawner$spawnerIndex - status-only sync")
+            val state = RobotSpawnerState(
+                normX = normX,
+                normY = normY,
+                isConverted = spawner.isFullyConverted(), // Use actual state
+                playerColor = spawner.getPaintColor(),
+                isActive = spawner.isActive(),
+                spawnedRobotCount = spawner.getSpawnedRobotCount(),
+                lastUpdated = now,
+                updateType = "status", // Mark as status update
+                ignoreConversionProgress = true // Don't overwrite conversion state - let conversion updates handle this
+            )
+            multiplayerManager?.updateRobotSpawnerState(spawnerIndex, state)
         }
     }
     
@@ -847,17 +1014,45 @@ class RobotSpawnerManager(
         
         val spawner = spawners[spawnerIndex]
         
-        // Update spawner conversion state if different
-        if (spawner.isFullyConverted() != spawnerState.isConverted) {
+        // Only process conversion logic for conversion updates, not status updates
+        if (spawnerState.updateType == "conversion" && !spawnerState.ignoreConversionProgress) {
+            Log.d(TAG, "ConvertedSpawner spawner$spawnerIndex - received remote CONVERSION update (isConverted: ${spawnerState.isConverted})")
+            
+            // Update spawner conversion state - handle both conversion state changes AND color changes
             if (spawnerState.isConverted) {
-                // Convert spawner to match remote state
-                repeat(10) { // Ensure full conversion
-                    spawner.paintSpawner(spawnerState.playerColor, surface)
+                // Remote spawner is converted - check if we need to apply conversion or color change
+                if (!spawner.isFullyConverted()) {
+                    // Local spawner not converted yet - apply full conversion
+                    Log.d(TAG, "ConvertedSpawner spawner$spawnerIndex - applying remote conversion to unconverted local spawner")
+                    repeat(10) { // Ensure full conversion
+                        spawner.paintSpawner(spawnerState.playerColor, surface)
+                    }
+                    Log.d(TAG, "ConvertedSpawner spawner$spawnerIndex - local spawner converted from remote update")
+                } else if (spawner.getPaintColor() != spawnerState.playerColor) {
+                    // Both spawners are converted but different colors - apply color change
+                    Log.d(TAG, "ConvertedSpawner spawner$spawnerIndex - applying color change from ${Integer.toHexString(spawner.getPaintColor())} to ${Integer.toHexString(spawnerState.playerColor)}")
+                    repeat(10) { // Ensure full conversion to new color
+                        spawner.paintSpawner(spawnerState.playerColor, surface)
+                    }
+                    Log.d(TAG, "ConvertedSpawner spawner$spawnerIndex - local spawner color changed from remote update")
+                } else {
+                    Log.v(TAG, "ConvertedSpawner spawner$spawnerIndex - local spawner already matches remote state")
                 }
+            }
+            
+            // CRITICAL FIX: Mark as recently converted to prevent periodic sync overwrite
+            recentRemoteSpawnerConversions[spawnerIndex] = System.currentTimeMillis()
+            Log.d(TAG, "ConvertedSpawner spawner$spawnerIndex - marked as recently converted remotely to prevent sync overwrite")
+        } else {
+            // Status update or ignore conversion flag - don't process conversion logic
+            if (spawnerState.ignoreConversionProgress) {
+                Log.v(TAG, "StatusUpdate: Spawner $spawnerIndex status update with ignoreConversionProgress=true")
+            } else {
+                Log.v(TAG, "StatusUpdate: Spawner $spawnerIndex received status update, skipping conversion processing")
             }
         }
         
-        // Update active state
+        // Always update active state (this is safe to update)
         if (spawner.isActive() != spawnerState.isActive) {
             if (spawnerState.isActive) {
                 spawner.enable()
@@ -866,7 +1061,45 @@ class RobotSpawnerManager(
             }
         }
         
-        // Log.v(TAG, "Updated remote spawner $spawnerIndex state")
+        Log.v(TAG, "Updated remote spawner $spawnerIndex state")
+    }
+    
+    /**
+     * Sync local robot conversion state to Firebase when host player converts their own robot
+     * This ensures conversion is properly communicated to joining players
+     */
+    private fun syncLocalRobotConversion(robotId: String, robot: Robot, playerColor: Int) {
+        if (!syncInitialized) return
+        
+        Log.d(TAG, "ConvertedRobot $robotId - syncing LOCAL robot conversion to Firebase")
+        
+        // Track this as a conversion to prevent overwrites
+        recentConversions[robotId] = System.currentTimeMillis()
+        
+        val robotPos = robot.getPosition()
+        // Convert screen coordinates to normalized coordinates (0.0 to 1.0)
+        val normX = robotPos.first / surface.w.toFloat()
+        val normY = robotPos.second / surface.h.toFloat()
+        
+        val robotState = RobotState(
+            id = robotId,
+            normX = normX,
+            normY = normY,
+            isConverted = robot.isFullyConverted(), // Use actual conversion state
+            paintColor = playerColor, // Use the player's color for conversion
+            isActive = true,
+            spawnerIndex = findSpawnerIndex(robot),
+            conversionProgress = robot.getConversionProgress(),
+            lastUpdated = System.currentTimeMillis(),
+            updateType = "conversion" // Mark as conversion update - CRITICAL for joining player to process
+        )
+        
+        multiplayerManager?.updateRobotState(robotId, robotState)
+        
+        // Track this conversion update to prevent immediate overwrites
+        recentConversionUpdates[robotId] = System.currentTimeMillis()
+        
+        Log.d(TAG, "ConvertedRobot $robotId - LOCAL robot sync completed to color ${Integer.toHexString(playerColor)}")
     }
     
     /**
@@ -907,6 +1140,77 @@ class RobotSpawnerManager(
     }
     
     /**
+     * Sync spawner conversion state to Firebase when player converts spawner
+     */
+    private fun syncSpawnerConversion(spawnerIndex: Int, spawner: RobotSpawner, playerColor: Int) {
+        if (!syncInitialized) return
+        
+        Log.d(TAG, "ConvertedSpawner spawner$spawnerIndex - syncing conversion to Firebase")
+        
+        // Track this as a conversion to prevent host from overwriting
+        recentSpawnerConversions[spawnerIndex] = System.currentTimeMillis()
+        
+        val spawnerPos = spawner.getPosition()
+        val (normX, normY) = if (level is com.spiritwisestudios.inkrollers.MazeLevel) {
+            level.screenToMazeCoord(spawnerPos.first, spawnerPos.second)
+        } else {
+            Pair(spawnerPos.first, spawnerPos.second)
+        }
+        
+        val spawnerState = RobotSpawnerState(
+            normX = normX,
+            normY = normY,
+            isConverted = true, // Always mark as converted to prevent reset
+            playerColor = playerColor, // Use the player's color for conversion
+            isActive = spawner.isActive(),
+            spawnedRobotCount = spawner.getSpawnedRobotCount(),
+            lastUpdated = System.currentTimeMillis(),
+            updateType = "conversion" // Mark as conversion update
+        )
+        
+        multiplayerManager?.updateRobotSpawnerState(spawnerIndex, spawnerState)
+        
+        // Track this conversion update to prevent immediate overwrites
+        recentSpawnerConversionUpdates[spawnerIndex] = System.currentTimeMillis()
+        
+        Log.d(TAG, "ConvertedSpawner spawner$spawnerIndex - sync completed to color ${Integer.toHexString(playerColor)}")
+    }
+    
+    /**
+     * Sync newly spawned converted robot state to Firebase with full conversion information
+     * This ensures joining players receive the correct conversion state for robots spawned from converted spawners
+     */
+    private fun syncNewlySpawnedConvertedRobot(robotId: String, robot: Robot) {
+        if (!syncInitialized) return
+        
+        Log.d(TAG, "SpawnedConvertedRobot $robotId - syncing newly spawned converted robot to Firebase")
+        
+        val robotPos = robot.getPosition()
+        // Convert screen coordinates to normalized coordinates (0.0 to 1.0)
+        val normX = robotPos.first / surface.w.toFloat()
+        val normY = robotPos.second / surface.h.toFloat()
+        
+        // Use full robot state sync with conversion information
+        val robotState = RobotState(
+            id = robotId,
+            normX = normX,
+            normY = normY,
+            isConverted = true, // Robot is converted from spawner
+            paintColor = robot.getPaintColor(), // Use the robot's converted color
+            isActive = true,
+            spawnerIndex = findSpawnerIndex(robot),
+            conversionProgress = robot.getConversionProgress(), // Should be 1.0f for fully converted
+            lastUpdated = System.currentTimeMillis(),
+            updateType = "spawn", // Special update type for newly spawned converted robots
+            ignoreConversionProgress = false // DO NOT ignore - this is the initial conversion state
+        )
+        
+        multiplayerManager?.updateRobotState(robotId, robotState)
+        
+        Log.d(TAG, "SpawnedConvertedRobot $robotId - sync completed with color ${Integer.toHexString(robot.getPaintColor())} and progress ${robot.getConversionProgress()}")
+    }
+    
+    /**
      * Sync robot state to Firebase when robot is created or changes
      */
     private fun syncRobotState(robot: Robot) {
@@ -916,14 +1220,14 @@ class RobotSpawnerManager(
         
         // CRITICAL: Check if this robot is being converted by another player - don't sync at all
         if (robotsBeingConvertedByOthers.contains(robotId)) {
-            Log.v(TAG, "RACE CONDITION FIX: Skipping sync for robot $robotId - being converted by another player")
+            Log.v(TAG, "ConvertedRobot $robotId RACE CONDITION FIX: Skipping sync - being converted by another player")
             return
         }
         
         // CRITICAL: Check if a conversion update was recently sent - don't overwrite immediately
         val recentConversionTime = recentConversionUpdates[robotId]
         if (recentConversionTime != null && (System.currentTimeMillis() - recentConversionTime) < 2000) {
-            Log.v(TAG, "RACE CONDITION FIX: Skipping sync for robot $robotId - conversion update sent ${System.currentTimeMillis() - recentConversionTime}ms ago")
+            Log.v(TAG, "ConvertedRobot $robotId RACE CONDITION FIX: Skipping sync - conversion update sent ${System.currentTimeMillis() - recentConversionTime}ms ago")
             return
         }
         
@@ -937,22 +1241,46 @@ class RobotSpawnerManager(
         val isConverted = robot.isFullyConverted()
         
         if (wasRecentlyConvertedRemotely) {
-            // Recently converted robots: Sync position only, DON'T send conversion progress to prevent overwriting
-            Log.v(TAG, "ConvertedRobot $robotId - position-only sync, NOT sending conversion progress to prevent overwrite (${System.currentTimeMillis() - recentRemoteConversionTime!!}ms ago)")
-            val state = RobotState(
-                id = robotId,
-                normX = pos.first / surface.w.toFloat(),
-                normY = pos.second / surface.h.toFloat(),
-                isConverted = robot.isFullyConverted(), // Use actual current state
-                paintColor = robot.getPaintColor(), // Keep current color
-                isActive = true,
-                spawnerIndex = findSpawnerIndex(robot),
-                conversionProgress = robot.getConversionProgress(), // Include progress but mark to ignore
-                lastUpdated = now,
-                updateType = "position", // Mark as position-only update
-                ignoreConversionProgress = true // Flag to ignore conversion progress on receiving end
-            )
-            multiplayerManager?.updateRobotState(robotId, state)
+            // Check if local robot color has changed since remote conversion
+            val lastSyncedState = lastSyncedRobotStates[robotId]
+            val localColorChanged = lastSyncedState == null || robot.getPaintColor() != lastSyncedState.paintColor
+            
+            if (localColorChanged && isConverted) {
+                // Local robot color changed - send conversion update to overwrite remote state
+                Log.d(TAG, "ConvertedRobot $robotId - local color changed, sending conversion update despite recent remote conversion")
+                val state = RobotState(
+                    id = robotId,
+                    normX = pos.first / surface.w.toFloat(),
+                    normY = pos.second / surface.h.toFloat(),
+                    isConverted = true,
+                    paintColor = robot.getPaintColor(),
+                    isActive = true,
+                    spawnerIndex = findSpawnerIndex(robot),
+                    conversionProgress = robot.getConversionProgress(),
+                    lastUpdated = now,
+                    updateType = "conversion" // Mark as conversion update
+                )
+                multiplayerManager?.updateRobotState(robotId, state)
+                lastSyncedRobotStates[robotId] = state
+            } else {
+                // No color change - sync position only, DON'T send conversion progress to prevent overwriting
+                Log.v(TAG, "ConvertedRobot $robotId - position-only sync, NOT sending conversion progress to prevent overwrite (${System.currentTimeMillis() - recentRemoteConversionTime!!}ms ago)")
+                val state = RobotState(
+                    id = robotId,
+                    normX = pos.first / surface.w.toFloat(),
+                    normY = pos.second / surface.h.toFloat(),
+                    isConverted = robot.isFullyConverted(), // Use actual current state
+                    paintColor = robot.getPaintColor(), // Keep current color
+                    isActive = true,
+                    spawnerIndex = findSpawnerIndex(robot),
+                    conversionProgress = robot.getConversionProgress(), // Include progress but mark to ignore
+                    lastUpdated = now,
+                    updateType = "position", // Mark as position-only update
+                    ignoreConversionProgress = true // Flag to ignore conversion progress on receiving end
+                )
+                multiplayerManager?.updateRobotState(robotId, state)
+                lastSyncedRobotStates[robotId] = state
+            }
         } else if (isConverted) {
             // Converted robots (not recently converted remotely): Use position-only sync to avoid conflicts
             Log.v(TAG, "ConvertedRobot $robotId - position-only sync for converted robot")
@@ -970,6 +1298,7 @@ class RobotSpawnerManager(
                 ignoreConversionProgress = true // Don't overwrite conversion state
             )
             multiplayerManager?.updateRobotState(robotId, state)
+            lastSyncedRobotStates[robotId] = state
         } else {
             // Unconverted robots: Always use position-only sync to avoid interfering with active conversions
             val robotProgress = robot.getConversionProgress()
@@ -988,6 +1317,7 @@ class RobotSpawnerManager(
                 ignoreConversionProgress = true // Don't overwrite conversion progress - let conversion updates handle this
             )
             multiplayerManager?.updateRobotState(robotId, state)
+            lastSyncedRobotStates[robotId] = state
         }
     }
     
@@ -999,33 +1329,54 @@ class RobotSpawnerManager(
         val existingLocalRobot = robotIdMap.entries.find { it.value == robotId }?.key
         if (existingLocalRobot != null && localRobots.contains(existingLocalRobot)) {
             
-            // Only process conversion logic for conversion updates, not position updates
-            if (robotState.updateType == "conversion" && !robotState.ignoreConversionProgress) {
-                Log.d(TAG, "ConvertedRobot $robotId - received remote CONVERSION update for LOCAL robot (progress: ${robotState.conversionProgress}, isConverted: ${robotState.isConverted})")
+            // Only process conversion logic for conversion updates and spawn updates, not position updates
+            if ((robotState.updateType == "conversion" || robotState.updateType == "spawn") && !robotState.ignoreConversionProgress) {
+                Log.d(TAG, "ConvertedRobot $robotId - received remote ${robotState.updateType.uppercase()} update for LOCAL robot (progress: ${robotState.conversionProgress}, isConverted: ${robotState.isConverted})")
+                Log.d(TAG, "ConvertedRobot $robotId - RECEIVED COLORS: local=${Integer.toHexString(existingLocalRobot.getPaintColor())} vs remote=${Integer.toHexString(robotState.paintColor)}")
                 
-                // Apply conversion progress to local robot (from joining player's interaction)
+                // Apply conversion progress to local robot - handle both conversion state changes AND color changes
                 if (robotState.isConverted) {
-                    // If robot is marked as converted, ensure progress is 1.0f
-                    Log.d(TAG, "ConvertedRobot $robotId - applying remote conversion completion to LOCAL robot")
-                    existingLocalRobot.setConversionProgress(1.0f)
-                    if (existingLocalRobot.getPaintColor() != robotState.paintColor) {
+                    // Remote robot is converted - check if we need to apply conversion or color change
+                    if (!existingLocalRobot.isFullyConverted()) {
+                        // Local robot not converted yet - apply full conversion
+                        Log.d(TAG, "ConvertedRobot $robotId - applying remote conversion to unconverted LOCAL robot")
+                        existingLocalRobot.setConversionProgress(1.0f)
+                        if (existingLocalRobot.getPaintColor() != robotState.paintColor) {
+                            existingLocalRobot.paintRobot(robotState.paintColor, surface)
+                        }
+                        Log.d(TAG, "ConvertedRobot $robotId - LOCAL robot converted from remote update")
+                        
+                        // Mark as recently converted to prevent sync overwrite
+                        recentRemoteConversions[robotId] = System.currentTimeMillis()
+                        Log.d(TAG, "ConvertedRobot $robotId - marked as recently converted remotely to prevent sync overwrite")
+                    } else if (existingLocalRobot.getPaintColor() != robotState.paintColor) {
+                        // Both robots are converted but different colors - apply color change
+                        Log.d(TAG, "ConvertedRobot $robotId - applying color change from ${Integer.toHexString(existingLocalRobot.getPaintColor())} to ${Integer.toHexString(robotState.paintColor)}")
                         existingLocalRobot.paintRobot(robotState.paintColor, surface)
+                        Log.d(TAG, "ConvertedRobot $robotId - LOCAL robot color changed from remote update")
+                        
+                        // Mark as recently converted to prevent sync overwrite
+                        recentRemoteConversions[robotId] = System.currentTimeMillis()
+                        Log.d(TAG, "ConvertedRobot $robotId - marked as recently converted remotely to prevent sync overwrite")
+                    } else {
+                        // Both robots converted with same color - no change needed, don't mark as recently converted
+                        Log.v(TAG, "ConvertedRobot $robotId - LOCAL robot already matches remote state, no action needed")
+                        Log.d(TAG, "ConvertedRobot $robotId - COLOR COMPARISON: local=${Integer.toHexString(existingLocalRobot.getPaintColor())} vs remote=${Integer.toHexString(robotState.paintColor)}")
                     }
-                    Log.d(TAG, "ConvertedRobot $robotId - LOCAL robot conversion applied from remote update")
                 } else {
                     // Apply the actual progress for unconverted robots - but never reduce progress during conversion
                     val currentProgress = existingLocalRobot.getConversionProgress()
                     if (robotState.conversionProgress >= currentProgress) {
                         existingLocalRobot.setConversionProgress(robotState.conversionProgress)
                         Log.d(TAG, "ConvertedRobot $robotId - applied progress ${robotState.conversionProgress} to LOCAL robot (was ${currentProgress})")
+                        
+                        // Mark as recently converted to prevent sync overwrite only if progress changed
+                        recentRemoteConversions[robotId] = System.currentTimeMillis()
+                        Log.d(TAG, "ConvertedRobot $robotId - marked as recently converted remotely to prevent sync overwrite")
                     } else {
                         Log.v(TAG, "ConvertedRobot $robotId - ignoring progress reduction from ${currentProgress} to ${robotState.conversionProgress}")
                     }
                 }
-                
-                // CRITICAL FIX: Mark as recently converted to prevent periodic sync overwrite
-                recentRemoteConversions[robotId] = System.currentTimeMillis()
-                Log.d(TAG, "ConvertedRobot $robotId - marked as recently converted remotely to prevent sync overwrite")
             } else {
                 // Position update or ignore conversion flag - don't process conversion logic
                 if (robotState.ignoreConversionProgress) {
@@ -1071,16 +1422,22 @@ class RobotSpawnerManager(
             // Update conversion progress and state - but only if not flagged to ignore
             if (!robotState.ignoreConversionProgress) {
                 val robotWasAlreadyConverted = existingRobot.isFullyConverted()
+                val currentColor = existingRobot.getPaintColor()
+                val newColor = robotState.paintColor
                 
-                if (robotWasAlreadyConverted) {
-                    // Robot is already converted - only update position, preserve conversion state
-                    Log.v(TAG, "ConvertedRobot $robotId - remote robot already converted, only updating position")
+                if (robotWasAlreadyConverted && currentColor == newColor) {
+                    // Robot is already converted to the same color - only update position
+                    Log.v(TAG, "ConvertedRobot $robotId - remote robot already converted to same color, only updating position")
                 } else if (robotState.isConverted) {
-                    // Robot is being converted now - apply conversion
-                    Log.v(TAG, "ConvertedRobot $robotId - applying conversion to remote robot")
+                    // Robot is being converted to a new color - apply conversion (even if already converted to different color)
+                    if (robotWasAlreadyConverted && currentColor != newColor) {
+                        Log.d(TAG, "ConvertedRobot $robotId - applying color change from ${Integer.toHexString(currentColor)} to ${Integer.toHexString(newColor)}")
+                    } else {
+                        Log.v(TAG, "ConvertedRobot $robotId - applying conversion to remote robot")
+                    }
                     existingRobot.setConversionProgress(1.0f)
-                    if (existingRobot.getPaintColor() != robotState.paintColor) {
-                        existingRobot.paintRobot(robotState.paintColor, surface)
+                    if (currentColor != newColor) {
+                        existingRobot.paintRobot(newColor, surface)
                     }
                 } else {
                     // Apply the actual progress for unconverted robots
@@ -1123,6 +1480,7 @@ class RobotSpawnerManager(
         if (!robotState.ignoreConversionProgress) {
             if (robotState.isConverted) {
                 // If robot is marked as converted, ensure progress is 1.0f
+                Log.d(TAG, "CreateRemoteRobot $robotId - applying conversion from ${robotState.updateType} update: color=${Integer.toHexString(robotState.paintColor)}")
                 remoteRobot.setConversionProgress(1.0f)
                 if (remoteRobot.getPaintColor() != robotState.paintColor) {
                     remoteRobot.paintRobot(robotState.paintColor, surface)
@@ -1218,10 +1576,16 @@ class RobotSpawnerManager(
         val isConverted = robot.isFullyConverted()
         val paintColor = robot.getPaintColor()
         
-        // Log.d(TAG, "Added LOCAL robot $robotId at (${robotPos.first}, ${robotPos.second}), converted: $isConverted, color: ${Integer.toHexString(paintColor)}")
+        Log.d(TAG, "ConvertedRobot $robotId - Added LOCAL robot at (${robotPos.first}, ${robotPos.second}), converted: $isConverted, color: ${Integer.toHexString(paintColor)}")
         // Log.d(TAG, "Robot counts - Total: ${allSpawnedRobots.size}, Local: ${localRobots.size}, Remote: ${remoteRobots.size}")
         
-        syncRobotState(robot) // Sync to Firebase when robot is added
+        // CRITICAL FIX: For newly spawned converted robots, use full sync to ensure joining player gets conversion state
+        if (isConverted) {
+            Log.d(TAG, "SpawnedConvertedRobot $robotId - using full sync for newly spawned converted robot")
+            syncNewlySpawnedConvertedRobot(robotId, robot)
+        } else {
+            syncRobotState(robot) // Use regular sync for unconverted robots
+        }
         
         // Debug robot state when new robots are added
         // debugRobotState()

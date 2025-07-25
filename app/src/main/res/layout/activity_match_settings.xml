@@ -17,10 +17,10 @@
             android:id="@+id/card_info"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginStart="16dp"
-            android:layout_marginEnd="8dp"
-            android:layout_marginTop="16dp"
-            android:layout_marginBottom="16dp"
+            android:layout_marginStart="@dimen/match_settings_card_margin"
+            android:layout_marginEnd="@dimen/match_settings_item_margin"
+            android:layout_marginTop="@dimen/match_settings_card_margin"
+            android:layout_marginBottom="@dimen/match_settings_card_margin"
             app:cardCornerRadius="16dp"
             app:cardElevation="8dp"
             app:cardBackgroundColor="#FFC0C0C0"
@@ -40,26 +40,28 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="16dp"
+                android:padding="@dimen/match_settings_card_padding"
                 android:layout_margin="2dp">
 
                 <!-- Info Title -->
                 <TextView
+                    android:id="@+id/info_title"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="Game Info"
-                    android:textSize="18sp"
+                    android:textSize="@dimen/match_settings_info_title_text_size"
                     android:textStyle="bold"
                     android:textColor="@android:color/black"
                     android:gravity="center"
-                    android:layout_marginBottom="16dp" />
+                    android:layout_marginBottom="@dimen/match_settings_card_margin" />
 
                 <!-- Info Content -->
                 <TextView
+                    android:id="@+id/info_content"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="Configure your match settings:\n\n• Time Limit: How long the match will last\n\n• Maze Complexity: Affects maze generation difficulty\n\n• Game Mode: Coverage (paint territory) or Zones (control areas)\n\n• Robot Spawners: Add AI opponents to the match\n\n• Private: Requires Game ID to join"
-                    android:textSize="13sp"
+                    android:textSize="@dimen/match_settings_info_content_text_size"
                     android:textColor="@android:color/black"
                     android:lineSpacingMultiplier="1.2" />
 
@@ -72,10 +74,10 @@
             android:id="@+id/card_settings"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:layout_marginEnd="16dp"
-            android:layout_marginTop="16dp"
-            android:layout_marginBottom="16dp"
+            android:layout_marginStart="@dimen/match_settings_item_margin"
+            android:layout_marginEnd="@dimen/match_settings_card_margin"
+            android:layout_marginTop="@dimen/match_settings_card_margin"
+            android:layout_marginBottom="@dimen/match_settings_card_margin"
             app:cardCornerRadius="16dp"
             app:cardElevation="8dp"
             app:cardBackgroundColor="#FFC0C0C0"
@@ -95,7 +97,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="16dp"
+                android:padding="@dimen/match_settings_card_padding"
                 android:layout_margin="2dp">
 
                 <!-- Title -->
@@ -103,11 +105,11 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="Match Settings"
-                    android:textSize="22sp"
+                    android:textSize="@dimen/match_settings_title_text_size"
                     android:textStyle="bold"
                     android:textColor="@android:color/black"
                     android:gravity="center"
-                    android:layout_marginBottom="18dp" />
+                    android:layout_marginBottom="@dimen/match_settings_card_margin" />
 
                 <!-- Time Limit Setting -->
                 <LinearLayout
@@ -115,23 +117,50 @@
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
-                    android:layout_marginBottom="12dp">
+                    android:layout_marginBottom="@dimen/match_settings_item_margin">
 
-                    <TextView
+                    <LinearLayout
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Time Limit:"
-                        android:textSize="16sp"
-                        android:textStyle="bold"
-                        android:textColor="@android:color/black"
-                        android:layout_marginEnd="8dp" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginEnd="@dimen/match_settings_item_margin">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Time Limit:"
+                            android:textSize="@dimen/match_settings_label_text_size"
+                            android:textStyle="bold"
+                            android:textColor="@android:color/black" />
+
+                        <TextView
+                            android:id="@+id/help_time_limit"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="?"
+                            android:textSize="@dimen/match_settings_help_button_text_size"
+                            android:textStyle="bold"
+                            android:textColor="@android:color/black"
+                            android:background="@drawable/help_button_background"
+                            android:layout_marginStart="@dimen/match_settings_item_margin"
+                            android:paddingStart="6dp"
+                            android:paddingEnd="6dp"
+                            android:paddingTop="2dp"
+                            android:paddingBottom="2dp"
+                            android:minWidth="@dimen/match_settings_help_button_size"
+                            android:minHeight="@dimen/match_settings_help_button_size"
+                            android:clickable="true"
+                            android:focusable="true" />
+
+                    </LinearLayout>
 
                     <Spinner
                         android:id="@+id/spinner_time_limit"
                         android:layout_width="0dp"
                         android:layout_weight="1.5"
-                        android:layout_height="42dp"
+                        android:layout_height="@dimen/match_settings_spinner_height"
                         android:background="@drawable/spinner_background"
                         android:padding="8dp" />
 
@@ -143,23 +172,50 @@
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
-                    android:layout_marginBottom="12dp">
+                    android:layout_marginBottom="@dimen/match_settings_item_margin">
 
-                    <TextView
+                    <LinearLayout
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Complexity:"
-                        android:textSize="16sp"
-                        android:textStyle="bold"
-                        android:textColor="@android:color/black"
-                        android:layout_marginEnd="8dp" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginEnd="@dimen/match_settings_item_margin">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Complexity:"
+                            android:textSize="@dimen/match_settings_label_text_size"
+                            android:textStyle="bold"
+                            android:textColor="@android:color/black" />
+
+                        <TextView
+                            android:id="@+id/help_complexity"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="?"
+                            android:textSize="@dimen/match_settings_help_button_text_size"
+                            android:textStyle="bold"
+                            android:textColor="@android:color/black"
+                            android:background="@drawable/help_button_background"
+                            android:layout_marginStart="@dimen/match_settings_item_margin"
+                            android:paddingStart="6dp"
+                            android:paddingEnd="6dp"
+                            android:paddingTop="2dp"
+                            android:paddingBottom="2dp"
+                            android:minWidth="@dimen/match_settings_help_button_size"
+                            android:minHeight="@dimen/match_settings_help_button_size"
+                            android:clickable="true"
+                            android:focusable="true" />
+
+                    </LinearLayout>
 
                     <Spinner
                         android:id="@+id/spinner_complexity"
                         android:layout_width="0dp"
                         android:layout_weight="1.5"
-                        android:layout_height="42dp"
+                        android:layout_height="@dimen/match_settings_spinner_height"
                         android:background="@drawable/spinner_background"
                         android:padding="8dp" />
 
@@ -171,23 +227,50 @@
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
-                    android:layout_marginBottom="12dp">
+                    android:layout_marginBottom="@dimen/match_settings_item_margin">
 
-                    <TextView
+                    <LinearLayout
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Game Mode:"
-                        android:textSize="16sp"
-                        android:textStyle="bold"
-                        android:textColor="@android:color/black"
-                        android:layout_marginEnd="8dp" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginEnd="@dimen/match_settings_item_margin">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Game Mode:"
+                            android:textSize="@dimen/match_settings_label_text_size"
+                            android:textStyle="bold"
+                            android:textColor="@android:color/black" />
+
+                        <TextView
+                            android:id="@+id/help_game_mode"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="?"
+                            android:textSize="@dimen/match_settings_help_button_text_size"
+                            android:textStyle="bold"
+                            android:textColor="@android:color/black"
+                            android:background="@drawable/help_button_background"
+                            android:layout_marginStart="@dimen/match_settings_item_margin"
+                            android:paddingStart="6dp"
+                            android:paddingEnd="6dp"
+                            android:paddingTop="2dp"
+                            android:paddingBottom="2dp"
+                            android:minWidth="@dimen/match_settings_help_button_size"
+                            android:minHeight="@dimen/match_settings_help_button_size"
+                            android:clickable="true"
+                            android:focusable="true" />
+
+                    </LinearLayout>
 
                     <Spinner
                         android:id="@+id/spinner_game_mode"
                         android:layout_width="0dp"
                         android:layout_weight="1.5"
-                        android:layout_height="42dp"
+                        android:layout_height="@dimen/match_settings_spinner_height"
                         android:background="@drawable/spinner_background"
                         android:padding="8dp" />
 
@@ -199,23 +282,50 @@
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
-                    android:layout_marginBottom="12dp">
+                    android:layout_marginBottom="@dimen/match_settings_item_margin">
 
-                    <TextView
+                    <LinearLayout
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Spawners:"
-                        android:textSize="16sp"
-                        android:textStyle="bold"
-                        android:textColor="@android:color/black"
-                        android:layout_marginEnd="8dp" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginEnd="@dimen/match_settings_item_margin">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Spawners:"
+                            android:textSize="@dimen/match_settings_label_text_size"
+                            android:textStyle="bold"
+                            android:textColor="@android:color/black" />
+
+                        <TextView
+                            android:id="@+id/help_spawners"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="?"
+                            android:textSize="@dimen/match_settings_help_button_text_size"
+                            android:textStyle="bold"
+                            android:textColor="@android:color/black"
+                            android:background="@drawable/help_button_background"
+                            android:layout_marginStart="@dimen/match_settings_item_margin"
+                            android:paddingStart="6dp"
+                            android:paddingEnd="6dp"
+                            android:paddingTop="2dp"
+                            android:paddingBottom="2dp"
+                            android:minWidth="@dimen/match_settings_help_button_size"
+                            android:minHeight="@dimen/match_settings_help_button_size"
+                            android:clickable="true"
+                            android:focusable="true" />
+
+                    </LinearLayout>
 
                     <Spinner
                         android:id="@+id/spinner_robot_spawners"
                         android:layout_width="0dp"
                         android:layout_weight="1.5"
-                        android:layout_height="42dp"
+                        android:layout_height="@dimen/match_settings_spinner_height"
                         android:background="@drawable/spinner_background"
                         android:padding="8dp" />
 
@@ -227,7 +337,7 @@
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
-                    android:layout_marginBottom="18dp">
+                    android:layout_marginBottom="@dimen/match_settings_card_margin">
 
                     <CheckBox
                         android:id="@+id/checkbox_private"
@@ -235,14 +345,41 @@
                         android:layout_height="wrap_content"
                         android:layout_marginEnd="8dp" />
 
-                    <TextView
+                    <LinearLayout
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Private"
-                        android:textSize="16sp"
-                        android:textStyle="bold"
-                        android:textColor="@android:color/black" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Private"
+                            android:textSize="@dimen/match_settings_label_text_size"
+                            android:textStyle="bold"
+                            android:textColor="@android:color/black" />
+
+                        <TextView
+                            android:id="@+id/help_private"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="?"
+                            android:textSize="@dimen/match_settings_help_button_text_size"
+                            android:textStyle="bold"
+                            android:textColor="@android:color/black"
+                            android:background="@drawable/help_button_background"
+                            android:layout_marginStart="@dimen/match_settings_item_margin"
+                            android:paddingStart="6dp"
+                            android:paddingEnd="6dp"
+                            android:paddingTop="2dp"
+                            android:paddingBottom="2dp"
+                            android:minWidth="@dimen/match_settings_help_button_size"
+                            android:minHeight="@dimen/match_settings_help_button_size"
+                            android:clickable="true"
+                            android:focusable="true" />
+
+                    </LinearLayout>
 
                 </LinearLayout>
 
@@ -259,13 +396,12 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:text="Cancel"
-                        android:textSize="14sp"
+                        android:textSize="@dimen/match_settings_button_text_size"
                         android:textStyle="bold"
                         android:layout_marginEnd="6dp"
                         android:background="@drawable/cancel_button_background"
                         android:textColor="@android:color/white"
-                        android:paddingTop="10dp"
-                        android:paddingBottom="10dp" />
+                        android:minHeight="@dimen/match_settings_button_height" />
 
                     <Button
                         android:id="@+id/button_host_game"
@@ -273,13 +409,12 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:text="Host Game"
-                        android:textSize="14sp"
+                        android:textSize="@dimen/match_settings_button_text_size"
                         android:textStyle="bold"
                         android:layout_marginStart="6dp"
                         android:background="@drawable/play_button_background"
                         android:textColor="@android:color/white"
-                        android:paddingTop="10dp"
-                        android:paddingBottom="10dp" />
+                        android:minHeight="@dimen/match_settings_button_height" />
 
                 </LinearLayout>
 

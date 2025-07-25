@@ -1,3 +1,21 @@
 <resources>
     <dimen name="color_swatch_size">48dp</dimen>
+    
+    <!-- Match Settings Text Sizes - Base sizes for programmatic scaling -->
+    <dimen name="match_settings_title_text_size">22sp</dimen>
+    <dimen name="match_settings_info_title_text_size">18sp</dimen>
+    <dimen name="match_settings_info_content_text_size">14sp</dimen>
+    <dimen name="match_settings_label_text_size">16sp</dimen>
+    <dimen name="match_settings_button_text_size">14sp</dimen>
+    <dimen name="match_settings_help_button_text_size">14sp</dimen>
+    
+    <!-- Button Dimensions - Base MDPI values -->
+    <dimen name="match_settings_button_height">42dp</dimen>
+    <dimen name="match_settings_help_button_size">24dp</dimen>
+    <dimen name="match_settings_spinner_height">42dp</dimen>
+    
+    <!-- Margins and Padding - Base MDPI values -->
+    <dimen name="match_settings_card_margin">16dp</dimen>
+    <dimen name="match_settings_card_padding">16dp</dimen>
+    <dimen name="match_settings_item_margin">10dp</dimen>
 </resources> 

@@ -3,12 +3,15 @@ package com.spiritwisestudios.inkrollers
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.util.DisplayMetrics
+import android.util.TypedValue
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.spiritwisestudios.inkrollers.databinding.ActivityMatchSettingsBinding
 
@@ -35,8 +38,66 @@ class MatchSettingsActivity : AppCompatActivity() {
         // Initialize AudioManager
         audioManager = AudioManager.getInstance(this)
 
+        setupResponsiveTextSizes()
         setupDropdowns()
         setupButtons()
+        setupHelpButtons()
+    }
+
+    private fun setupResponsiveTextSizes() {
+        val displayMetrics = resources.displayMetrics
+        val densityDpi = displayMetrics.densityDpi
+        
+        // Calculate scaling factor based on device density
+        // Target: make text appear same physical size regardless of screen density
+        val scalingFactor = when {
+            densityDpi <= 160 -> 1.4f  // MDPI and below
+            densityDpi <= 240 -> 1.2f  // HDPI 
+            densityDpi <= 320 -> 1.0f  // XHDPI (baseline)
+            densityDpi <= 480 -> 0.85f // XXHDPI
+            else -> 0.7f               // XXXHDPI and above
+        }
+        
+        // Apply scaling to all text views
+        scaleTextView(binding.infoTitle, 18f, scalingFactor)
+        scaleTextView(binding.infoContent, 14f, scalingFactor)
+        
+        // Find and scale all TextViews in the settings card
+        scaleTextViewsInCard(scalingFactor)
+    }
+    
+    private fun scaleTextView(textView: TextView, baseSize: Float, scalingFactor: Float) {
+        textView.setTextSize(TypedValue.COMPLEX_UNIT_SP, baseSize * scalingFactor)
+    }
+    
+    private fun scaleTextViewsInCard(scalingFactor: Float) {
+        // Scale help buttons
+        scaleTextView(findViewById<TextView>(R.id.help_time_limit), 14f, scalingFactor)
+        scaleTextView(findViewById<TextView>(R.id.help_complexity), 14f, scalingFactor)
+        scaleTextView(findViewById<TextView>(R.id.help_game_mode), 14f, scalingFactor)
+        scaleTextView(findViewById<TextView>(R.id.help_spawners), 14f, scalingFactor)
+        scaleTextView(findViewById<TextView>(R.id.help_private), 14f, scalingFactor)
+        
+        // Scale all other text views recursively
+        scaleTextViewsRecursively(binding.root, scalingFactor)
+    }
+    
+    private fun scaleTextViewsRecursively(view: View, scalingFactor: Float) {
+        if (view is android.view.ViewGroup) {
+            for (i in 0 until view.childCount) {
+                val child = view.getChildAt(i)
+                scaleTextViewsRecursively(child, scalingFactor)
+            }
+        } else if (view is TextView) {
+            val text = view.text?.toString() ?: ""
+            when {
+                text == "Match Settings" -> scaleTextView(view, 22f, scalingFactor)
+                text.contains(":") || text == "Private" -> scaleTextView(view, 16f, scalingFactor)
+                view.id in listOf(R.id.help_time_limit, R.id.help_complexity, R.id.help_game_mode, R.id.help_spawners, R.id.help_private) -> {
+                    // Already handled above
+                }
+            }
+        }
     }
 
     private fun setupDropdowns() {
@@ -113,6 +174,57 @@ class MatchSettingsActivity : AppCompatActivity() {
             audioManager.playSound(AudioManager.SoundType.UI_CLICK)
             finish()
         }
+        
+        // Scale button text as well
+        val displayMetrics = resources.displayMetrics
+        val densityDpi = displayMetrics.densityDpi
+        val scalingFactor = when {
+            densityDpi <= 160 -> 1.4f
+            densityDpi <= 240 -> 1.2f  
+            densityDpi <= 320 -> 1.0f
+            densityDpi <= 480 -> 0.85f
+            else -> 0.7f
+        }
+        
+        scaleTextView(binding.buttonHostGame, 14f, scalingFactor)
+        scaleTextView(binding.buttonCancel, 14f, scalingFactor)
+    }
+
+    private fun setupHelpButtons() {
+        binding.helpTimeLimit.setOnClickListener {
+            audioManager.playSound(AudioManager.SoundType.UI_CLICK)
+            updateInfoCard("Time Limit", "Time Limit sets how long the match will last. Choose from:\n\n• 3 minutes - Quick match\n\n• 5 minutes - Standard match\n\n• 7 minutes - Extended match\n\nLonger matches allow for more strategic gameplay and territory expansion.")
+        }
+
+        binding.helpComplexity.setOnClickListener {
+            audioManager.playSound(AudioManager.SoundType.UI_CLICK)
+            updateInfoCard("Maze Complexity", "Maze Complexity affects how intricate the generated maze will be:\n\n• Low - Simple paths, fewer walls\n\n• Medium - Moderate complexity\n\n• High - Complex maze with many corridors\n\nHigher complexity creates more challenging navigation but offers more strategic options.")
+        }
+
+        binding.helpGameMode.setOnClickListener {
+            audioManager.playSound(AudioManager.SoundType.UI_CLICK)
+            updateInfoCard("Game Mode", "Game Mode determines the victory condition:\n\n• Coverage - Paint as much territory as possible. Winner has the most painted area.\n\n• Zones - Control specific zones on the map. Winner controls the most zones.\n\nEach mode requires different strategies and playstyles.")
+        }
+
+        binding.helpSpawners.setOnClickListener {
+            audioManager.playSound(AudioManager.SoundType.UI_CLICK)
+            updateInfoCard("Robot Spawners", "Robot Spawners add AI-controlled opponents to the match:\n\n• 0 - No AI robots (player vs player only)\n\n• 1-5 - Number of AI robots that will spawn\n\nAI robots will compete for territory and add unpredictability to matches. Higher numbers create more chaotic gameplay.")
+        }
+
+        binding.helpPrivate.setOnClickListener {
+            audioManager.playSound(AudioManager.SoundType.UI_CLICK)
+            updateInfoCard("Private Match", "Private Match setting controls who can join your game:\n\n• Unchecked - Public match that anyone can join\n\n• Checked - Private match requiring a Game ID\n\nPrivate matches are perfect for playing with specific friends, while public matches allow random opponents to join.")
+        }
+    }
+
+    private fun updateInfoCard(title: String, text: String) {
+        binding.infoTitle.text = title
+        binding.infoContent.text = text
+    }
+    
+    private fun resetInfoCard() {
+        binding.infoTitle.text = "Game Info"
+        binding.infoContent.text = "Configure your match settings:\n\n• Time Limit: How long the match will last\n\n• Maze Complexity: Affects maze generation difficulty\n\n• Game Mode: Coverage (paint territory) or Zones (control areas)\n\n• Robot Spawners: Add AI opponents to the match\n\n• Private: Requires Game ID to join"
     }
 
     private fun startGameWithSettings() {
@@ -127,6 +239,12 @@ class MatchSettingsActivity : AppCompatActivity() {
         }
         startActivity(intent)
         finish()
+    }
+
+    override fun onBackPressed() {
+        super.onBackPressed()
+        // Reset info card when going back
+        resetInfoCard()
     }
 
     /**
