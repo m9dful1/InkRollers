@@ -1303,6 +1303,24 @@ class MultiplayerManager {
         }
     }
 
+    fun clearRobotStates() {
+        Log.d(TAG, "Clearing robot states for game $currentGameId")
+        robotsRef?.removeValue()?.addOnCompleteListener { task ->
+            if (!task.isSuccessful) {
+                Log.w(TAG, "Failed to clear robot states for $currentGameId", task.exception)
+            }
+        }
+    }
+
+    fun clearRobotSpawnerStates() {
+        Log.d(TAG, "Clearing robot spawner states for game $currentGameId")
+        robotSpawnersRef?.removeValue()?.addOnCompleteListener { task ->
+            if (!task.isSuccessful) {
+                Log.w(TAG, "Failed to clear robot spawner states for $currentGameId", task.exception)
+            }
+        }
+    }
+
 
 
     private fun updateLastActivityTimestamp() {

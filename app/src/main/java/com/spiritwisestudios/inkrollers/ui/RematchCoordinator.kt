@@ -168,8 +168,10 @@ class RematchCoordinator(
         multiplayerManager.resetListenersForRematch()
         
         // 3. Clear non-player Firebase state
-        Log.d(TAG, "Clearing Firebase paint/rematch state...")
+        Log.d(TAG, "Clearing Firebase paint/rematch/robot state...")
         multiplayerManager.clearPaintActions()
+        multiplayerManager.clearRobotStates()
+        multiplayerManager.clearRobotSpawnerStates()
         multiplayerManager.clearRematchAnswers()
         
         // 4. Load profiles and reset player states

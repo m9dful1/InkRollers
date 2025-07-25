@@ -700,6 +700,7 @@ class GameView @JvmOverloads constructor(ctx:Context,attrs:AttributeSet?=null):
     gameUpdateManager.setMatchReady(false)
     
     // Initialize robot spawner manager for multiplayer matches
+    robotSpawnerManager?.deactivateAll() // Clear all spawned robots and disable spawners
     robotSpawnerManager = null // Clear any previous instance
     val gameSettings = multiplayerManager?.getGameSettings()
     if (gameSettings != null && gameSettings.robotSpawnersEnabled && gameSettings.robotSpawnerCount > 0) {

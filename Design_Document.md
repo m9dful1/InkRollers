@@ -1353,6 +1353,37 @@ AndroidManifest.xml
     - **Enhanced Debug Logging:** Added "ConvertedRobot" prefix to all conversion-related logs for better debugging and issue tracking
     - **Verification:** Successfully tested complete bidirectional robot re-conversion with proper visual synchronization - robots can be converted and re-converted between host (yellow) and joining player (purple) colors seamlessly.
 
+**2025-07-25**
+- **✅ Rematch Robot Persistence Bug Fix COMPLETED:**
+    - **Issue Resolution:** Fixed critical multiplayer bug where spawned robots remained visible and active after both players initiated a rematch, despite the level being reset. Robots would persist across matches, accumulating over multiple rematches.
+    - **Root Cause Analysis:** During rematch flow, `robotSpawnerManager?.deactivateAll()` was called to clear local robot collections, but Firebase robot state (`robotsRef` and `robotSpawnersRef`) was not cleared. When the game restarted, robots reloaded from Firebase and reappeared.
+    - **Technical Solution - Firebase State Clearing:**
+        - **Added Robot State Cleanup Methods:** Created `clearRobotStates()` and `clearRobotSpawnerStates()` methods in `MultiplayerManager.kt:1306-1322`
+        - **Enhanced Rematch Flow:** Updated `RematchCoordinator.kt:173-174` to clear Firebase robot state during rematch reset alongside paint actions
+        - **Complete State Reset:** Both local memory (`deactivateAll()`) and Firebase persistence are now properly cleared during rematch
+    - **Implementation Details:**
+        ```kotlin
+        // MultiplayerManager.kt - New cleanup methods
+        fun clearRobotStates() {
+            robotsRef?.removeValue()
+        }
+        
+        fun clearRobotSpawnerStates() {
+            robotSpawnersRef?.removeValue()  
+        }
+        
+        // RematchCoordinator.kt - Enhanced reset flow
+        multiplayerManager.clearPaintActions()
+        multiplayerManager.clearRobotStates()        // NEW
+        multiplayerManager.clearRobotSpawnerStates() // NEW
+        multiplayerManager.clearRematchAnswers()
+        ```
+    - **Fix Locations:**
+        - `GameView.kt:703`: Enhanced local robot clearing with proper `deactivateAll()` call
+        - `MultiplayerManager.kt:1306-1322`: Added Firebase robot state cleanup methods
+        - `RematchCoordinator.kt:173-174`: Integrated Firebase robot clearing into rematch flow
+    - **Verification:** Robots and spawners are now properly cleared from both local memory and Firebase during rematch, ensuring clean level resets without robot persistence across matches.
+
 **2025-07-24**
 - **✅ Multiplayer Robot Conversion Synchronization COMPLETED:**
     - **Race Condition Resolution:** Fixed critical multiplayer synchronization issue where host's frequent position updates (10ms intervals) were overwriting joining player's robot conversion progress before it could be processed.
