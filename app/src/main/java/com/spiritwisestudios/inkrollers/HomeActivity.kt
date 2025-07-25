@@ -11,7 +11,6 @@ import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.os.Build
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.spiritwisestudios.inkrollers.campaign.CampaignActivity
 import com.spiritwisestudios.inkrollers.ui.ProfileFragment
@@ -98,7 +97,9 @@ class HomeActivity : AppCompatActivity() {
 
         binding.buttonHostGame.setOnClickListener {
             audioManager.playSound(AudioManager.SoundType.UI_CLICK)
-            showMatchSettingsDialog()
+            // Launch the new MatchSettingsActivity instead of dialogs
+            val intent = Intent(this, MatchSettingsActivity::class.java)
+            startActivity(intent)
         }
 
         binding.buttonJoinGame.setOnClickListener {
@@ -186,85 +187,8 @@ class HomeActivity : AppCompatActivity() {
         audioManager.pauseAudio()
     }
 
-    private fun showMatchSettingsDialog() {
-        val timeOptions = arrayOf("3 minutes", "5 minutes", "7 minutes")
-        val timeValues = intArrayOf(3, 5, 7)
-        var selectedTimeLimit = timeValues[0] // Default to 3 minutes
 
-        AlertDialog.Builder(this)
-            .setTitle("Set Time Limit")
-            .setItems(timeOptions) { _, which ->
-                selectedTimeLimit = timeValues[which]
-                showComplexityDialog(selectedTimeLimit)
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun showComplexityDialog(timeLimit: Int) {
-        val complexityOptions = arrayOf("Low", "Medium", "High")
-        val complexityValues = arrayOf(COMPLEXITY_LOW, COMPLEXITY_MEDIUM, COMPLEXITY_HIGH)
-        var selectedComplexity = complexityValues[2] // Default to High
-
-        AlertDialog.Builder(this)
-            .setTitle("Set Maze Complexity")
-            .setItems(complexityOptions) { _, which ->
-                selectedComplexity = complexityValues[which]
-                showGameModeDialog(timeLimit, selectedComplexity)
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun showGameModeDialog(timeLimit: Int, complexity: String) {
-        val gameModeOptions = arrayOf("Coverage", "Zones")
-        val gameModeValues = arrayOf(GAME_MODE_COVERAGE, GAME_MODE_ZONES)
-        var selectedGameMode = gameModeValues[0] // Default to Coverage
-
-        AlertDialog.Builder(this)
-            .setTitle("Select Game Mode")
-            .setItems(gameModeOptions) { _, which ->
-                selectedGameMode = gameModeValues[which]
-                showMatchTypeDialog(timeLimit, complexity, selectedGameMode) // Proceed to match type
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-    
-    private fun showMatchTypeDialog(timeLimit: Int, complexity: String, gameMode: String) {
-        val matchTypeOptions = arrayOf("Public (Joinable by random)", "Private (Requires Game ID)")
-        var isPrivate = false // Default to public
-
-        AlertDialog.Builder(this)
-            .setTitle("Select Match Type")
-            .setSingleChoiceItems(matchTypeOptions, 0) { _, which -> // Default to Public (index 0)
-                isPrivate = (which == 1) // Private is index 1
-            }
-            .setPositiveButton("Continue") { _, _ ->
-                showRobotSpawnersDialog(timeLimit, complexity, gameMode, isPrivate)
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun showRobotSpawnersDialog(timeLimit: Int, complexity: String, gameMode: String, isPrivate: Boolean) {
-        val spawnerOptions = arrayOf("Disabled", "1 Spawner", "2 Spawners", "3 Spawners", "4 Spawners", "5 Spawners")
-        var selectedSpawnerCount = 0 // Default to disabled
-
-        AlertDialog.Builder(this)
-            .setTitle("Robot Spawners")
-            .setSingleChoiceItems(spawnerOptions, 0) { _, which ->
-                selectedSpawnerCount = which
-            }
-            .setPositiveButton("Host Game") { _, _ ->
-                val spawnersEnabled = selectedSpawnerCount > 0
-                startGameActivity(MODE_HOST, null, timeLimit, complexity, gameMode, isPrivate, spawnersEnabled, selectedSpawnerCount)
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun startGameActivity(mode: String, gameId: String? = null, timeLimit: Int = 3, complexity: String = COMPLEXITY_HIGH, gameMode: String = GAME_MODE_COVERAGE, isPrivate: Boolean = false, spawnersEnabled: Boolean = false, spawnerCount: Int = 0) {
+    private fun startGameActivity(mode: String, gameId: String? = null, timeLimit: Int = 3, complexity: String = COMPLEXITY_LOW, gameMode: String = GAME_MODE_COVERAGE, isPrivate: Boolean = false, spawnersEnabled: Boolean = false, spawnerCount: Int = 0) {
         android.util.Log.d("HomeActivity", "Starting MainActivity with mode: $mode, gameId: $gameId, timeLimit: $timeLimit, mazeComplexity: $complexity, gameMode: $gameMode, isPrivate: $isPrivate, spawnersEnabled: $spawnersEnabled, spawnerCount: $spawnerCount")
         val intent = Intent(this, MainActivity::class.java).apply {
             putExtra(EXTRA_MODE, mode)

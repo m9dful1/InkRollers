@@ -1,0 +1,180 @@
+package com.spiritwisestudios.inkrollers
+
+import android.content.Intent
+import android.os.Build
+import android.os.Bundle
+import android.view.View
+import android.view.WindowInsets
+import android.view.WindowInsetsController
+import android.view.WindowManager
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
+import androidx.appcompat.app.AppCompatActivity
+import com.spiritwisestudios.inkrollers.databinding.ActivityMatchSettingsBinding
+
+class MatchSettingsActivity : AppCompatActivity() {
+
+    private lateinit var binding: ActivityMatchSettingsBinding
+    private lateinit var audioManager: AudioManager
+
+    // Settings values
+    private var selectedTimeLimit = 3
+    private var selectedComplexity = HomeActivity.COMPLEXITY_LOW
+    private var selectedGameMode = HomeActivity.GAME_MODE_COVERAGE
+    private var selectedRobotSpawners = 0
+    private var isPrivateMatch = false
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityMatchSettingsBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        // Enable full screen immersive mode
+        enableFullScreenMode()
+
+        // Initialize AudioManager
+        audioManager = AudioManager.getInstance(this)
+
+        setupDropdowns()
+        setupButtons()
+    }
+
+    private fun setupDropdowns() {
+        // Time Limit Dropdown
+        val timeOptions = arrayOf("3 minutes", "5 minutes", "7 minutes")
+        val timeValues = intArrayOf(3, 5, 7)
+        val timeAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, timeOptions)
+        timeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        binding.spinnerTimeLimit.adapter = timeAdapter
+        binding.spinnerTimeLimit.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                selectedTimeLimit = timeValues[position]
+                audioManager.playSound(AudioManager.SoundType.UI_CLICK)
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        // Maze Complexity Dropdown
+        val complexityOptions = arrayOf("Low", "Medium", "High")
+        val complexityValues = arrayOf(HomeActivity.COMPLEXITY_LOW, HomeActivity.COMPLEXITY_MEDIUM, HomeActivity.COMPLEXITY_HIGH)
+        val complexityAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, complexityOptions)
+        complexityAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        binding.spinnerComplexity.adapter = complexityAdapter
+        binding.spinnerComplexity.setSelection(0) // Default to Low
+        binding.spinnerComplexity.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                selectedComplexity = complexityValues[position]
+                audioManager.playSound(AudioManager.SoundType.UI_CLICK)
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        // Game Mode Dropdown
+        val gameModeOptions = arrayOf("Coverage", "Zones")
+        val gameModeValues = arrayOf(HomeActivity.GAME_MODE_COVERAGE, HomeActivity.GAME_MODE_ZONES)
+        val gameModeAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, gameModeOptions)
+        gameModeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        binding.spinnerGameMode.adapter = gameModeAdapter
+        binding.spinnerGameMode.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                selectedGameMode = gameModeValues[position]
+                audioManager.playSound(AudioManager.SoundType.UI_CLICK)
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        // Robot Spawners Dropdown
+        val spawnerOptions = arrayOf("0", "1", "2", "3", "4", "5")
+        val spawnerAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, spawnerOptions)
+        spawnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        binding.spinnerRobotSpawners.adapter = spawnerAdapter
+        binding.spinnerRobotSpawners.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                selectedRobotSpawners = position
+                audioManager.playSound(AudioManager.SoundType.UI_CLICK)
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        // Private Match Checkbox
+        binding.checkboxPrivate.setOnCheckedChangeListener { _, isChecked ->
+            isPrivateMatch = isChecked
+            audioManager.playSound(AudioManager.SoundType.UI_CLICK)
+        }
+    }
+
+    private fun setupButtons() {
+        binding.buttonHostGame.setOnClickListener {
+            audioManager.playSound(AudioManager.SoundType.UI_CLICK)
+            startGameWithSettings()
+        }
+
+        binding.buttonCancel.setOnClickListener {
+            audioManager.playSound(AudioManager.SoundType.UI_CLICK)
+            finish()
+        }
+    }
+
+    private fun startGameWithSettings() {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            putExtra(HomeActivity.EXTRA_MODE, HomeActivity.MODE_HOST)
+            putExtra(HomeActivity.EXTRA_TIME_LIMIT_MINUTES, selectedTimeLimit)
+            putExtra(HomeActivity.EXTRA_MAZE_COMPLEXITY, selectedComplexity)
+            putExtra(HomeActivity.EXTRA_GAME_MODE, selectedGameMode)
+            putExtra(HomeActivity.EXTRA_IS_PRIVATE_MATCH, isPrivateMatch)
+            putExtra(HomeActivity.EXTRA_ROBOT_SPAWNERS_ENABLED, selectedRobotSpawners > 0)
+            putExtra(HomeActivity.EXTRA_ROBOT_SPAWNER_COUNT, selectedRobotSpawners)
+        }
+        startActivity(intent)
+        finish()
+    }
+
+    /**
+     * Enables full screen immersive mode by hiding status bar and navigation bar
+     */
+    private fun enableFullScreenMode() {
+        // Allow content to extend into display cutout areas on Android P and above
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val lp = window.attributes
+            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            window.attributes = lp
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // Android 11+ (API 30+)
+            window.setDecorFitsSystemWindows(false)
+            window.insetsController?.let { controller ->
+                controller.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+                controller.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        } else {
+            // For Android 10 (API 29) and below
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = (
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_FULLSCREEN
+            )
+        }
+        
+        // Keep screen on during app usage
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            // Re-enable full screen mode when window regains focus
+            enableFullScreenMode()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Re-enable full screen mode when returning to the activity
+        enableFullScreenMode()
+    }
+}
