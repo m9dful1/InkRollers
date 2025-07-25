@@ -77,52 +77,5 @@
         android:layout_marginTop="8dp"
         android:layout_marginEnd="16dp"/>
 
-    <!-- Submenu Layout (Initially Gone) -->
-    <LinearLayout
-        android:id="@+id/layout_submenu"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="25dp"
-        android:orientation="vertical"
-        android:visibility="gone"
-        tools:visibility="visible" 
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintBottom_toTopOf="@+id/button_play"
-        android:translationY="32dp">
-
-        <Button
-            android:id="@+id/button_host_game"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Host New Game" />
-
-        <EditText
-            android:id="@+id/editText_game_id"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:background="@android:color/white"
-            android:padding="12dp"
-            android:hint="Enter Game ID or leave blank for random game"
-            android:inputType="textCapCharacters"
-            android:maxLength="6"
-            android:maxLines="1" />
-
-        <Button
-            android:id="@+id/button_join_game"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="Join Game" />
-
-        <Button
-            android:id="@+id/button_campaign"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="Single Player Campaign" />
-
-    </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout> 

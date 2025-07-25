@@ -46,5 +46,17 @@
         android:exported="false"
         android:screenOrientation="sensorLandscape" />
 
+    <!-- GameModeSelectionActivity for choosing single vs multiplayer -->
+    <activity
+        android:name=".GameModeSelectionActivity"
+        android:exported="false"
+        android:screenOrientation="sensorLandscape" />
+
+    <!-- MultiplayerModeActivity for choosing host vs join -->
+    <activity
+        android:name=".MultiplayerModeActivity"
+        android:exported="false"
+        android:screenOrientation="sensorLandscape" />
+
   </application>
 </manifest>

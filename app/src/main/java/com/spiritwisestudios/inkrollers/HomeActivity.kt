@@ -89,36 +89,13 @@ class HomeActivity : AppCompatActivity() {
             val animation = android.view.animation.AnimationUtils.loadAnimation(this, R.anim.button_press)
             binding.buttonPlay.startAnimation(animation)
             
-            // Hide Play button and show submenu after a short delay
+            // Navigate to GameModeSelectionActivity after a short delay
             Handler(Looper.getMainLooper()).postDelayed({
-                binding.layoutSubmenu.visibility = View.VISIBLE
+                val intent = Intent(this, GameModeSelectionActivity::class.java)
+                startActivity(intent)
             }, 100)
         }
 
-        binding.buttonHostGame.setOnClickListener {
-            audioManager.playSound(AudioManager.SoundType.UI_CLICK)
-            // Launch the new MatchSettingsActivity instead of dialogs
-            val intent = Intent(this, MatchSettingsActivity::class.java)
-            startActivity(intent)
-        }
-
-        binding.buttonJoinGame.setOnClickListener {
-            audioManager.playSound(AudioManager.SoundType.UI_CLICK)
-            val gameId = binding.editTextGameId.text.toString().trim()
-            if (gameId.isEmpty()) {
-                // Join a random available game
-                startGameActivity(MODE_JOIN, null)
-            } else if (gameId.length == 6) { // Specific game ID entered
-                startGameActivity(MODE_JOIN, gameId)
-            } else {
-                Toast.makeText(this, "Please enter a valid 6-character Game ID or leave blank to join random game", Toast.LENGTH_SHORT).show()
-            }
-        }
-
-        binding.buttonCampaign.setOnClickListener {
-            audioManager.playSound(AudioManager.SoundType.UI_CLICK)
-            startCampaignActivity()
-        }
 
         binding.buttonProfile.setOnClickListener {
             audioManager.playSound(AudioManager.SoundType.UI_CLICK)
@@ -214,12 +191,7 @@ class HomeActivity : AppCompatActivity() {
     }
 
     override fun onBackPressed() {
-        if (binding.layoutSubmenu.visibility == View.VISIBLE) {
-            binding.layoutSubmenu.visibility = View.GONE
-            binding.buttonPlay.visibility = View.VISIBLE
-        } else {
-            super.onBackPressed()
-        }
+        super.onBackPressed()
     }
 
     /**

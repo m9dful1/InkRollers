@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/title_bg"
+    android:fillViewport="true"
+    tools:context=".GameModeSelectionActivity">
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <!-- Information/Tips Card on the Left -->
+        <androidx.cardview.widget.CardView
+            android:id="@+id/card_info"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/match_settings_card_margin"
+            android:layout_marginEnd="@dimen/match_settings_item_margin"
+            android:layout_marginTop="@dimen/match_settings_card_margin"
+            android:layout_marginBottom="@dimen/match_settings_card_margin"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="8dp"
+            app:cardBackgroundColor="#FFC0C0C0"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toStartOf="@+id/card_options"
+            app:layout_constraintWidth_percent="0.28">
+
+            <!-- Dark gray border/stroke -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/settings_card_border" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="@dimen/match_settings_card_padding"
+                android:layout_margin="2dp">
+
+                <!-- Info Title -->
+                <TextView
+                    android:id="@+id/info_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Game Modes"
+                    android:textSize="@dimen/match_settings_info_title_text_size"
+                    android:textStyle="bold"
+                    android:textColor="@android:color/black"
+                    android:gravity="center"
+                    android:layout_marginBottom="@dimen/match_settings_card_margin" />
+
+                <!-- Info Content -->
+                <TextView
+                    android:id="@+id/info_content"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Choose your game experience:\n\n• Single Player Campaign: Play through story missions and challenges against AI opponents\n\n• Multi-Player Match: Join or host online matches against other players worldwide"
+                    android:textSize="@dimen/match_settings_info_content_text_size"
+                    android:textColor="@android:color/black"
+                    android:lineSpacingMultiplier="1.2" />
+
+            </LinearLayout>
+
+        </androidx.cardview.widget.CardView>
+
+        <!-- Main Options Card on the Right -->
+        <androidx.cardview.widget.CardView
+            android:id="@+id/card_options"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/match_settings_item_margin"
+            android:layout_marginEnd="@dimen/match_settings_card_margin"
+            android:layout_marginTop="@dimen/match_settings_card_margin"
+            android:layout_marginBottom="@dimen/match_settings_card_margin"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="8dp"
+            app:cardBackgroundColor="#FFC0C0C0"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toEndOf="@+id/card_info"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintWidth_percent="0.68">
+
+            <!-- Dark gray border/stroke -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/settings_card_border" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="@dimen/match_settings_card_padding"
+                android:layout_margin="2dp"
+                android:gravity="center">
+
+                <!-- Title -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Select Game Mode"
+                    android:textSize="@dimen/match_settings_title_text_size"
+                    android:textStyle="bold"
+                    android:textColor="@android:color/black"
+                    android:gravity="center"
+                    android:layout_marginBottom="@dimen/match_settings_card_margin" />
+
+                <!-- Single Player Campaign Button -->
+                <Button
+                    android:id="@+id/button_single_player"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Single Player Campaign"
+                    android:textSize="@dimen/match_settings_button_text_size"
+                    android:textStyle="bold"
+                    android:background="@drawable/play_button_background"
+                    android:textColor="@android:color/white"
+                    android:minHeight="@dimen/match_settings_button_height"
+                    android:layout_marginBottom="@dimen/match_settings_item_margin" />
+
+                <!-- Multi-Player Match Button -->
+                <Button
+                    android:id="@+id/button_multiplayer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Multi-Player Match"
+                    android:textSize="@dimen/match_settings_button_text_size"
+                    android:textStyle="bold"
+                    android:background="@drawable/play_button_background"
+                    android:textColor="@android:color/white"
+                    android:minHeight="@dimen/match_settings_button_height" />
+
+            </LinearLayout>
+
+        </androidx.cardview.widget.CardView>
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+</ScrollView>
